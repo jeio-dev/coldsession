@@ -1,0 +1,363 @@
+#!/usr/bin/env python3
+"""plan - dependency and context tooling for the planning workflow.
+
+Reads PLAN.md (an index) and the phase file it points at. The phase file's
+frontmatter carries a machine-readable task graph; the body carries the prose.
+Stdlib only, no install step.
+
+  plan status              where the phase stands
+  plan lint                validate the graph, exit 1 on error
+  plan next [--parallel]   next runnable task ids
+  plan brief T2            bounded read list + verify line for one task
+  plan done T2             mark a task done
+  plan block T2 "reason"   mark a task blocked
+  plan version             print the format version this tool speaks
+"""
+
+import os
+import re
+import sys
+
+VERSION = "1.0.0"
+
+ROOT = os.environ.get("PLAN_ROOT", ".")
+INDEX = os.path.join(ROOT, "PLAN.md")
+
+TASK_RE = re.compile(r"^\s{2}(T\d+):\s*\{(.*)\}\s*$")
+HEAD_RE = re.compile(r"^##\s+(T\d+)\b")
+LIST_RE = lambda k: re.compile(k + r":\s*\[([^\]]*)\]")
+WORD_RE = lambda k: re.compile(k + r":\s*([A-Za-z_-]+)")
+STATUSES = ("pending", "in_progress", "done", "blocked")
+
+
+def die(msg, code=1):
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def split_frontmatter(text):
+    if not text.startswith("---"):
+        return "", text
+    end = text.find("\n---", 3)
+    if end == -1:
+        return "", text
+    return text[3:end], text[end + 4:]
+
+
+def csv(raw):
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def read_index():
+    if not os.path.exists(INDEX):
+        die("no PLAN.md at repo root. Run /plan first.")
+    fm, _ = split_frontmatter(open(INDEX, encoding="utf-8").read())
+    m = re.search(r"^current:\s*(\S+)", fm, re.M)
+    if not m:
+        die("PLAN.md frontmatter has no `current:` pointer.")
+    path = os.path.join(ROOT, m.group(1))
+    if not os.path.exists(path):
+        die(f"PLAN.md points at {m.group(1)}, which does not exist.")
+    return path
+
+
+def read_phase(path):
+    text = open(path, encoding="utf-8").read()
+    fm, body = split_frontmatter(text)
+    meta = {}
+    for key in ("phase", "rev", "status", "workflow-rev"):
+        m = re.search(r"^%s:\s*(.+)$" % key, fm, re.M)
+        if m:
+            meta[key] = m.group(1).strip()
+
+    tasks, order, malformed = {}, [], []
+    in_tasks = False
+    for line in fm.splitlines():
+        if re.match(r"^tasks:\s*$", line):
+            in_tasks = True
+            continue
+        if in_tasks:
+            if line.strip() and not line.startswith("  "):
+                in_tasks = False
+                continue
+            if not line.strip():
+                continue
+            m = TASK_RE.match(line)
+            if not m:
+                malformed.append(line.rstrip())
+                continue
+            tid, inner = m.group(1), m.group(2)
+            deps = LIST_RE("deps").search(inner)
+            files = LIST_RE("files").search(inner)
+            status = WORD_RE("status").search(inner)
+            tasks[tid] = {
+                "deps": csv(deps.group(1)) if deps else [],
+                "files": csv(files.group(1)) if files else [],
+                "status": status.group(1) if status else "?",
+            }
+            order.append(tid)
+
+    sections = {}
+    current, buf = None, []
+    for line in body.splitlines():
+        m = HEAD_RE.match(line)
+        if m:
+            if current:
+                sections[current] = "\n".join(buf).strip()
+            current, buf = m.group(1), []
+            continue
+        if current:
+            buf.append(line)
+    if current:
+        sections[current] = "\n".join(buf).strip()
+
+    return {"path": path, "meta": meta, "tasks": tasks, "order": order,
+            "sections": sections, "malformed": malformed, "text": text}
+
+
+def num(tid):
+    return int(tid[1:])
+
+
+def cycles(tasks):
+    color, found = {}, []
+
+    def walk(node, stack):
+        color[node] = 1
+        for dep in tasks.get(node, {}).get("deps", []):
+            if dep not in tasks:
+                continue
+            if color.get(dep) == 1:
+                found.append(" -> ".join(stack + [node, dep]))
+            elif color.get(dep, 0) == 0:
+                walk(dep, stack + [node])
+        color[node] = 2
+
+    for tid in tasks:
+        if color.get(tid, 0) == 0:
+            walk(tid, [])
+    return found
+
+
+def runnable(phase):
+    out = []
+    for tid in phase["order"]:
+        t = phase["tasks"][tid]
+        if t["status"] != "pending":
+            continue
+        if all(phase["tasks"].get(d, {}).get("status") == "done" for d in t["deps"]):
+            out.append(tid)
+    return out
+
+
+def verify_line(phase, tid):
+    for line in phase["sections"].get(tid, "").splitlines():
+        if re.match(r"^\s*[-*]?\s*Verify:", line):
+            return line.strip().lstrip("-* ").strip()
+    return None
+
+
+# ---------------------------------------------------------------- commands
+
+def cmd_status(phase, _args):
+    m = phase["meta"]
+    counts = {s: 0 for s in STATUSES}
+    for t in phase["tasks"].values():
+        counts[t["status"]] = counts.get(t["status"], 0) + 1
+    print(f"phase    {m.get('phase', '?')}  rev {m.get('rev', '?')}  "
+          f"status {m.get('status', '?')}  workflow-rev {m.get('workflow-rev', '?')}")
+    print(f"file     {phase['path']}")
+    print("tasks    " + "  ".join(f"{k} {v}" for k, v in counts.items() if v))
+    nxt = runnable(phase)
+    print("runnable " + (", ".join(nxt) if nxt else "none"))
+    blocked = [t for t in phase["order"] if phase["tasks"][t]["status"] == "blocked"]
+    if blocked:
+        print("blocked  " + ", ".join(blocked))
+
+
+def cmd_lint(phase, _args):
+    errs, warns = [], []
+    t = phase["tasks"]
+
+    for line in phase["malformed"]:
+        errs.append(f"E01 unparseable task line: {line}")
+    if not t:
+        errs.append("E02 no tasks: block in the phase file frontmatter")
+
+    fmt = phase["meta"].get("workflow-rev")
+    if fmt is None:
+        warns.append("W03 phase file has no workflow-rev; it was written by an "
+                     "older coldsession and may not match this tool")
+    elif fmt.split(".")[0] != VERSION.split(".")[0]:
+        errs.append(f"E11 phase file is format {fmt}, tool is {VERSION}; "
+                    "major versions differ and the shapes are not compatible")
+
+    if phase["meta"].get("status") not in ("draft", "approved", None):
+        warns.append(f"W01 unexpected phase status {phase['meta'].get('status')!r}")
+
+    for tid in phase["order"]:
+        task = t[tid]
+        if task["status"] not in STATUSES:
+            errs.append(f"E03 {tid} has status {task['status']!r}")
+        if not task["files"]:
+            errs.append(f"E04 {tid} has an empty files list; build cannot bound its reads")
+        for dep in task["deps"]:
+            if dep not in t:
+                errs.append(f"E05 {tid} depends on {dep}, which is not in this phase")
+            elif num(dep) > num(tid):
+                warns.append(f"W02 {tid} depends on later task {dep}; reorder or renumber")
+        if task["status"] == "done":
+            for dep in task["deps"]:
+                if t.get(dep, {}).get("status") != "done":
+                    errs.append(f"E06 {tid} is done but its dependency {dep} is not")
+        if tid not in phase["sections"]:
+            errs.append(f"E07 {tid} is in the graph but has no `## {tid}` section in the body")
+        elif not verify_line(phase, tid):
+            errs.append(f"E08 {tid} has no Verify: line; build has nothing to run")
+
+    for tid in phase["sections"]:
+        if tid not in t:
+            errs.append(f"E09 `## {tid}` exists in the body but not in the tasks graph")
+
+    for c in cycles(t):
+        errs.append(f"E10 dependency cycle: {c}")
+
+    for line in errs:
+        print(line)
+    for line in warns:
+        print(line)
+    if not errs and not warns:
+        print(f"ok  {len(t)} tasks, graph is acyclic, every task has files and a Verify line")
+    return 1 if errs else 0
+
+
+def cmd_next(phase, args):
+    nxt = runnable(phase)
+    if not nxt:
+        pending = [x for x in phase["order"] if phase["tasks"][x]["status"] == "pending"]
+        if not pending:
+            print("no pending tasks: the phase is complete, run /close")
+        else:
+            print("nothing runnable: every pending task is waiting on an unfinished dependency")
+            for tid in pending:
+                waiting = [d for d in phase["tasks"][tid]["deps"]
+                           if phase["tasks"].get(d, {}).get("status") != "done"]
+                print(f"  {tid} waits on {', '.join(waiting)}")
+        return 0
+
+    if "--parallel" not in args:
+        print(" ".join(nxt))
+        return 0
+
+    groups = []
+    for tid in nxt:
+        files = set(phase["tasks"][tid]["files"])
+        for g in groups:
+            if not files & g["files"]:
+                g["ids"].append(tid)
+                g["files"] |= files
+                break
+        else:
+            groups.append({"ids": [tid], "files": set(files)})
+    print("these can run at the same time, one session each:")
+    for g in groups:
+        print("  " + " ".join(g["ids"]))
+    if len(groups) > 1:
+        print("groups touch overlapping files; run the groups in sequence")
+    return 0
+
+
+def cmd_brief(phase, args):
+    if not args:
+        die("usage: plan brief T2")
+    tid = args[0].upper()
+    if tid not in phase["tasks"]:
+        die(f"{tid} is not in this phase")
+    task = phase["tasks"][tid]
+
+    unmet = [d for d in task["deps"] if phase["tasks"].get(d, {}).get("status") != "done"]
+    reads = ["AGENTS.md", phase["path"]]
+    for dep in task["deps"]:
+        reads += phase["tasks"].get(dep, {}).get("files", [])
+    reads += task["files"]
+
+    seen, ordered = set(), []
+    for r in reads:
+        if r not in seen:
+            seen.add(r)
+            ordered.append(r)
+
+    print(f"task    {tid}   status {task['status']}")
+    print(f"phase   {phase['path']}  (phase status {phase['meta'].get('status', '?')})")
+    if unmet:
+        print(f"BLOCKED unmet dependencies: {', '.join(unmet)} — do not start this task")
+    print("read    " + "\n        ".join(ordered))
+    print("        (nothing else; if you need a file that is not listed, stop and say so)")
+    v = verify_line(phase, tid)
+    print(f"verify  {v[len('Verify:'):].strip() if v and v.startswith('Verify:') else v}")
+    log = phase["path"].replace(".md", ".log.md")
+    if os.path.exists(log):
+        print(f"handoff {log}  (read the last entry only)")
+    return 1 if unmet else 0
+
+
+def _set_status(phase, tid, status, note=None):
+    if tid not in phase["tasks"]:
+        die(f"{tid} is not in this phase")
+    text = phase["text"]
+    pat = re.compile(r"^(\s{2}%s:\s*\{.*?status:\s*)([A-Za-z_-]+)" % tid, re.M)
+    if not pat.search(text):
+        die(f"could not find a status field for {tid}")
+    text = pat.sub(lambda m: m.group(1) + status, text, count=1)
+    open(phase["path"], "w", encoding="utf-8").write(text)
+    print(f"{tid} -> {status}")
+    if note:
+        log = phase["path"].replace(".md", ".log.md")
+        with open(log, "a", encoding="utf-8") as fh:
+            fh.write(f"\n## {tid} blocked\n{note}\n")
+        print(f"note appended to {log}")
+
+
+def cmd_done(phase, args):
+    if not args:
+        die("usage: plan done T2")
+    tid = args[0].upper()
+    task = phase["tasks"].get(tid)
+    if task:
+        unmet = [d for d in task["deps"] if phase["tasks"].get(d, {}).get("status") != "done"]
+        if unmet:
+            die(f"{tid} depends on {', '.join(unmet)}, which are not done")
+    _set_status(phase, tid, "done")
+    return 0
+
+
+def cmd_block(phase, args):
+    if not args:
+        die('usage: plan block T2 "reason"')
+    _set_status(phase, args[0].upper(), "blocked", " ".join(args[1:]) or "no reason given")
+    return 0
+
+
+def cmd_version(_phase, _args):
+    print(VERSION)
+    return 0
+
+
+COMMANDS = {"version": cmd_version, "status": cmd_status, "lint": cmd_lint, "next": cmd_next,
+            "brief": cmd_brief, "done": cmd_done, "block": cmd_block}
+
+
+def main():
+    argv = sys.argv[1:]
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+    name = argv[0]
+    if name not in COMMANDS:
+        die(f"unknown command {name!r}. Try: {', '.join(COMMANDS)}")
+    phase = read_phase(read_index())
+    return COMMANDS[name](phase, argv[1:]) or 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

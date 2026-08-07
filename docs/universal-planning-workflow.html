@@ -1,0 +1,1607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Universal Planning Workflow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0E2038;
+    --panel:#152B48;
+    --panel-2:#1B3A5E;
+    --cyan:#7FD7E8;
+    --cyan-dim:#4E7E92;
+    --paper:#EAF2F5;
+    --muted:#8FA8BE;
+    --mint:#6EE7B7;
+    --sev-critical:#FF6B5E;
+    --sev-high:#FFA85C;
+    --sev-medium:#F0D264;
+    --sev-low:#8FA8BE;
+    --mono:'JetBrains Mono', ui-monospace, monospace;
+    --sans:'IBM Plex Sans', system-ui, sans-serif;
+    --rail-w:76px;
+    --col-w:760px;
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto;}
+    *{transition:none !important; animation:none !important;}
+  }
+
+  body{
+    margin:0;
+    background:var(--ink);
+    color:var(--paper);
+    font-family:var(--sans);
+    line-height:1.65;
+  }
+
+  a{color:var(--cyan);}
+
+  /* background grid, faint, blueprint texture */
+  body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    background-image:
+      linear-gradient(var(--panel) 1px, transparent 1px),
+      linear-gradient(90deg, var(--panel) 1px, transparent 1px);
+    background-size:36px 36px;
+    opacity:0.35;
+    pointer-events:none;
+    z-index:0;
+  }
+
+  /* ---------- SHELL: rail and column share one centered track ---------- */
+  .shell{
+    position:relative;
+    z-index:1;
+    display:flex;
+    align-items:flex-start;
+    max-width:calc(var(--col-w) + var(--rail-w));
+    margin:0 auto;
+  }
+
+  /* ---------- RAIL ---------- */
+  .rail{
+    position:sticky;
+    top:0;
+    flex:0 0 var(--rail-w);
+    height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:16px;
+  }
+  .rail-line{
+    position:absolute;
+    top:8%;
+    bottom:8%;
+    left:50%;
+    width:1px;
+    background:var(--cyan-dim);
+    transform:translateX(-50%);
+    z-index:0;
+  }
+  .rail-step{
+    position:relative;
+    width:32px;
+    height:32px;
+    border-radius:50%;
+    border:1px solid var(--cyan-dim);
+    background:var(--ink);
+    color:var(--muted);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family:var(--mono);
+    font-size:0.78rem;
+    font-weight:600;
+    text-decoration:none;
+    transition:all 0.2s ease;
+    z-index:1;
+  }
+  .rail-step:hover{border-color:var(--cyan); color:var(--cyan);}
+  .rail-step:focus-visible{outline:2px solid var(--cyan); outline-offset:3px;}
+  .rail-step.active{
+    background:var(--cyan);
+    color:var(--ink);
+    border-color:var(--cyan);
+  }
+  .rail-step.build{border-style:dashed;}
+  /* hover label, so nine single characters aren't a memory test */
+  .rail-step::after{
+    content:attr(data-label);
+    position:absolute;
+    left:calc(100% + 8px);
+    white-space:nowrap;
+    font-family:var(--mono);
+    font-size:0.66rem;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--cyan);
+    background:var(--panel);
+    border:1px solid var(--panel-2);
+    padding:3px 7px;
+    border-radius:3px;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 0.15s ease;
+  }
+  .rail-step:hover::after, .rail-step:focus-visible::after{opacity:1;}
+
+  /* ---------- LAYOUT ---------- */
+  main{
+    flex:1 1 auto;
+    min-width:0;
+    padding:64px 28px 120px;
+  }
+
+  @media (max-width:820px){
+    .rail{display:none;}
+    main{padding:40px 20px 80px;}
+  }
+
+  /* ---------- TITLE BLOCK ---------- */
+  .titleblock{
+    border:1px solid var(--cyan-dim);
+    position:relative;
+    margin-bottom:12px;
+  }
+  .titleblock::before, .titleblock::after,
+  .tb-row:last-child::before, .tb-row:last-child::after{
+    content:"";
+    position:absolute;
+    width:10px;
+    height:10px;
+    border:0 solid var(--cyan);
+  }
+  .titleblock::before{ top:-1px; left:-1px; border-width:1px 0 0 1px; }
+  .titleblock::after{ top:-1px; right:-1px; border-width:1px 1px 0 0; }
+  .tb-row:last-child{position:relative;}
+  .tb-row:last-child::before{ bottom:-1px; left:-1px; border-width:0 0 1px 1px; }
+  .tb-row:last-child::after{ bottom:-1px; right:-1px; border-width:0 1px 1px 0; }
+  .tb-row{
+    display:grid;
+    grid-template-columns:110px 1fr;
+    border-top:1px solid var(--cyan-dim);
+  }
+  .tb-row:first-child{border-top:none;}
+  .tb-row span{
+    padding:10px 14px;
+    font-family:var(--mono);
+    font-size:0.78rem;
+  }
+  .tb-row span:first-child{
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    border-right:1px solid var(--cyan-dim);
+  }
+  .tb-row span:last-child{color:var(--paper);}
+
+  h1{
+    font-family:var(--mono);
+    font-size:2rem;
+    letter-spacing:-0.01em;
+    margin:40px 0 6px;
+    color:var(--paper);
+  }
+  .lede{
+    color:var(--muted);
+    font-size:1.05rem;
+    max-width:60ch;
+    margin:0 0 56px;
+  }
+  .lede strong{color:var(--cyan); font-weight:600;}
+
+  section{
+    margin-bottom:64px;
+    scroll-margin-top:40px;
+  }
+
+  .eyebrow{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-family:var(--mono);
+    font-size:0.78rem;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--cyan);
+    margin-bottom:10px;
+  }
+  .eyebrow .num{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:22px;
+    height:22px;
+    border:1px solid var(--cyan);
+    border-radius:50%;
+    font-size:0.72rem;
+  }
+  h2{
+    font-family:var(--sans);
+    font-size:1.5rem;
+    font-weight:600;
+    margin:0 0 14px;
+    color:var(--paper);
+  }
+  h3{
+    font-family:var(--sans);
+    font-size:1.15rem;
+    font-weight:600;
+    margin:34px 0 12px;
+    color:var(--paper);
+  }
+  section p{
+    color:var(--muted);
+    max-width:64ch;
+  }
+  section p strong{color:var(--paper); font-weight:600;}
+  .fine{font-size:0.92rem;}
+
+  /* ---------- CODE BLOCK ---------- */
+  .code-block{
+    position:relative;
+    background:var(--panel);
+    border-left:3px solid var(--cyan);
+    margin:18px 0;
+  }
+  .code-block .code-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    padding:8px 14px;
+    border-bottom:1px solid var(--panel-2);
+  }
+  .code-head span{
+    font-family:var(--mono);
+    font-size:0.72rem;
+    letter-spacing:0.08em;
+    color:var(--muted);
+    text-transform:uppercase;
+  }
+  .copy-btn{
+    font-family:var(--mono);
+    font-size:0.7rem;
+    letter-spacing:0.06em;
+    background:transparent;
+    border:1px solid var(--cyan-dim);
+    color:var(--cyan);
+    padding:5px 10px;
+    border-radius:3px;
+    cursor:pointer;
+    flex:0 0 auto;
+    transition:all 0.15s ease;
+  }
+  .copy-btn:hover{border-color:var(--cyan); background:rgba(127,215,232,0.08);}
+  .copy-btn:focus-visible{outline:2px solid var(--cyan); outline-offset:2px;}
+  .copy-btn.copied{color:var(--mint); border-color:var(--mint);}
+  .copy-btn.failed{color:var(--sev-critical); border-color:var(--sev-critical);}
+  pre{
+    margin:0;
+    padding:18px 20px;
+    overflow-x:auto;
+  }
+  code{
+    font-family:var(--mono);
+    font-size:0.85rem;
+    line-height:1.7;
+    color:var(--paper);
+    white-space:pre-wrap;
+  }
+
+  /* ---------- NOTE / ANNOTATION ---------- */
+  .note{
+    display:flex;
+    gap:12px;
+    margin:18px 0;
+    padding-left:14px;
+    border-left:1px dashed var(--cyan-dim);
+  }
+  .note .tick{
+    font-family:var(--mono);
+    color:var(--cyan);
+    font-size:0.8rem;
+    line-height:1.65;
+  }
+  .note p{
+    margin:0;
+    font-size:0.92rem;
+    color:var(--muted);
+  }
+
+  /* ---------- SEVERITY LEGEND ---------- */
+  .legend{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    margin:16px 0 4px;
+  }
+  .chip{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-family:var(--mono);
+    font-size:0.72rem;
+    letter-spacing:0.04em;
+    color:var(--paper);
+    background:var(--panel);
+    border:1px solid var(--panel-2);
+    padding:5px 10px 5px 8px;
+    border-radius:3px;
+  }
+  .chip .dot{width:8px; height:8px; border-radius:50%;}
+  .chip.critical .dot{background:var(--sev-critical);}
+  .chip.high .dot{background:var(--sev-high);}
+  .chip.medium .dot{background:var(--sev-medium);}
+  .chip.low .dot{background:var(--sev-low);}
+
+  /* ---------- SESSION TAG ---------- */
+  .session{
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    font-family:var(--mono);
+    font-size:0.7rem;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--mint);
+    border:1px dashed var(--mint);
+    padding:4px 10px;
+    border-radius:3px;
+    margin:0 8px 14px 0;
+  }
+  .session.same{color:var(--muted); border-color:var(--cyan-dim);}
+  .session.human{color:var(--sev-medium); border-color:var(--sev-medium);}
+
+  /* ---------- RUNTIME CHIP ---------- */
+  .mode{
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    font-family:var(--mono);
+    font-size:0.7rem;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--cyan);
+    background:var(--panel);
+    border:1px solid var(--panel-2);
+    padding:4px 10px;
+    border-radius:3px;
+    margin:0 8px 14px 0;
+  }
+  .mode.exec{color:var(--muted);}
+
+  /* ---------- GEAR TABLE ---------- */
+  .gears{
+    border:1px solid var(--panel-2);
+    margin:18px 0;
+  }
+  .gear{
+    display:grid;
+    grid-template-columns:150px 1fr;
+    border-top:1px solid var(--panel-2);
+  }
+  .gear:first-child{border-top:none;}
+  .gear > div{padding:12px 15px;}
+  .gear-name{
+    font-family:var(--mono);
+    font-size:0.76rem;
+    letter-spacing:0.04em;
+    color:var(--cyan);
+    border-right:1px solid var(--panel-2);
+  }
+  .gear-body{font-size:0.92rem; color:var(--muted);}
+  .gear-body strong{color:var(--paper); font-weight:600;}
+  @media (max-width:560px){
+    .gear{grid-template-columns:1fr;}
+    .gear-name{border-right:none; border-bottom:1px solid var(--panel-2);}
+  }
+
+  /* ---------- LOOP DIAGRAM ---------- */
+  .diagram-wrap{
+    background:var(--panel);
+    border:1px solid var(--panel-2);
+    padding:24px 12px;
+    margin:18px 0;
+  }
+  .diagram-wrap svg{width:100%; height:auto; display:block;}
+  .diagram-caption{
+    font-size:0.85rem;
+    color:var(--muted);
+    margin-top:10px;
+  }
+  /* diagram styling lives here so print can recolor it */
+  .dg-box{fill:var(--panel); stroke:var(--cyan-dim); stroke-width:1;}
+  .dg-box.key{stroke:var(--cyan);}
+  .dg-box.human{stroke:var(--sev-medium);}
+  .dg-box.ghost{fill:var(--ink); stroke:var(--cyan-dim); stroke-dasharray:4 3;}
+  .dg-box.exit{fill:var(--ink); stroke:var(--mint); stroke-dasharray:4 3;}
+  .dg-label{font-family:var(--mono); font-size:15px; fill:var(--paper);}
+  .dg-label.exit{fill:var(--mint);}
+  .dg-sub{font-family:var(--mono); font-size:10px; fill:var(--muted);}
+  .dg-bracket{fill:none; stroke:var(--cyan-dim); stroke-width:1;}
+  .dg-bracket.human{stroke:var(--sev-medium);}
+  .dg-bracket.exit{stroke:var(--mint);}
+  .dg-tag{font-family:var(--mono); font-size:10px; letter-spacing:1px; fill:var(--muted);}
+  .dg-tag.human{fill:var(--sev-medium);}
+  .dg-tag.exit{fill:var(--mint);}
+  .dg-flow{fill:none; stroke:var(--cyan-dim); stroke-width:1.5;}
+  .dg-loop{fill:none; stroke:var(--cyan); stroke-width:1.5; stroke-dasharray:5 4;}
+  .dg-exit{fill:none; stroke:var(--mint); stroke-width:1.5;}
+  .dg-exit.dashed{stroke-dasharray:5 4;}
+  .dg-block{fill:none; stroke:var(--sev-high); stroke-width:1.5; stroke-dasharray:5 4;}
+  .dg-note{font-family:var(--mono); font-size:11px;}
+  .dg-note.loop{fill:var(--cyan);}
+  .dg-note.exit{fill:var(--mint);}
+  .dg-note.block{fill:var(--sev-high);}
+
+  footer{
+    border-top:1px solid var(--panel-2);
+    padding-top:24px;
+    margin-top:80px;
+    font-family:var(--mono);
+    font-size:0.78rem;
+    color:var(--cyan-dim);
+    letter-spacing:0.04em;
+  }
+
+  /* ---------- PRINT ---------- */
+  @media print{
+    :root{
+      --ink:#ffffff;
+      --panel:#F2F5F7;
+      --panel-2:#C2CFD8;
+      --cyan:#0B5D73;
+      --cyan-dim:#5E7C8C;
+      --paper:#111111;
+      --muted:#37474F;
+      --mint:#0A6B46;
+      --sev-critical:#B3261E;
+      --sev-high:#8A4B00;
+      --sev-medium:#7A5C00;
+      --sev-low:#37474F;
+    }
+    body::before{display:none;}
+    .rail{display:none;}
+    .shell{max-width:none; display:block;}
+    main{padding:0;}
+    .copy-btn{display:none;}
+    a{color:#111; text-decoration:underline;}
+    section{break-inside:avoid;}
+    .code-block, .gears, .diagram-wrap{break-inside:avoid;}
+    footer{margin-top:32px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+<nav class="rail" aria-label="Workflow steps">
+  <div class="rail-line"></div>
+  <a class="rail-step" href="#scale"   data-target="scale"   data-label="Scale">S</a>
+  <a class="rail-step" href="#runtime" data-target="runtime" data-label="Runtime">R</a>
+  <a class="rail-step" href="#commands" data-target="commands" data-label="Commands">C</a>
+  <a class="rail-step" href="#define"  data-target="define"  data-label="Define">0</a>
+  <a class="rail-step" href="#ground"  data-target="ground"  data-label="Groundwork">G</a>
+  <a class="rail-step" href="#plan"    data-target="plan"    data-label="Create plan">1</a>
+  <a class="rail-step" href="#review"  data-target="review"  data-label="Review">2</a>
+  <a class="rail-step" href="#revise"  data-target="revise"  data-label="Revise">3</a>
+  <a class="rail-step" href="#approve" data-target="approve" data-label="Approval">4</a>
+  <a class="rail-step" href="#loop-diagram" data-target="loop-diagram" data-label="The loop">&#8635;</a>
+  <a class="rail-step build" href="#build" data-target="build" data-label="Build mode">B</a>
+</nav>
+
+<main>
+
+  <div class="titleblock">
+    <div class="tb-row"><span>Title</span><span>Universal Planning Workflow</span></div>
+    <div class="tb-row"><span>Version</span><span>v1.0.0</span></div>
+    <div class="tb-row"><span>Scale</span><span>1 idea : 1 shippable plan</span></div>
+    <div class="tb-row"><span>Sessions</span><span>plan · review · approve · 1 per task</span></div>
+    <div class="tb-row"><span>State</span><span>PLAN.md + docs/plans/ + task graph</span></div>
+    <div class="tb-row"><span>Date</span><span>2026-08-07</span></div>
+  </div>
+
+  <h1>Define → Plan → Review → Revise → Approve → Build</h1>
+  <p class="lede">
+    A six-step loop for planning software with an AI coding agent. Every step
+    is gated by <strong>task IDs</strong> and <strong>finding IDs</strong>, so
+    nothing moves forward on a vague "looks good." State lives on disk from
+    Step 1 in <strong>PLAN.md</strong> and a phase file, and
+    <strong>every step that judges the previous one runs in a fresh
+    session</strong> so it can't inherit the assumptions it's supposed to
+    catch.
+  </p>
+
+  <!-- S. SCALE -->
+  <section id="scale">
+    <div class="eyebrow"><span class="num">S</span>Scale</div>
+    <h2>Pick a gear first</h2>
+    <p>The full loop costs four sessions before a line of code exists. That
+      pays for itself on a new surface area and is pure overhead on a copy
+      change. Match the gear to the blast radius, not to the enthusiasm.</p>
+
+    <div class="gears">
+      <div class="gear">
+        <div class="gear-name">Direct</div>
+        <div class="gear-body"><strong>Skip the workflow.</strong> Reversible,
+          one or two files, obvious correct answer. Just ask for the change.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Short loop</div>
+        <div class="gear-body"><strong>Plan → Review → Build</strong>, one
+          session, no files on disk. A feature inside existing architecture.
+          Skip Define, Revise inline, no formal approval.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Greenfield</div>
+        <div class="gear-body"><strong>Define → Groundwork → full loop.</strong>
+          Empty repo. Nothing to read, no conventions to follow, no commands
+          that work. Step G exists to end that state before Step 1 runs.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Full loop</div>
+        <div class="gear-body"><strong>All six steps, split across sessions.</strong>
+          New app, new phase, schema changes, auth, payments, anything where
+          being wrong is expensive to unwind.</div>
+      </div>
+    </div>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>Touching data ownership, auth, or money puts you in the full loop
+        regardless of how small the diff looks.</p>
+    </div>
+  </section>
+
+  <!-- R. RUNTIME -->
+  <section id="runtime">
+    <div class="eyebrow"><span class="num">R</span>Runtime</div>
+    <h2>Route the model to the step</h2>
+    <p>Planning is worth the expensive model. Executing an approved spec is
+      not. Rather than remembering that at 4am, let the alias do it: in
+      <code>opusplan</code>, plan mode runs Opus and execution runs Sonnet.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>.claude/settings.json</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>{
+  "model": "opusplan",
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
+  }
+}</code></pre>
+    </div>
+
+    <p>Which gives one rule for the whole workflow: <strong>reason in plan
+      mode, exit plan mode to write.</strong> The thinking runs on Opus, the
+      typing runs on Sonnet, and the reasoning is already in context by the
+      time the cheaper model does the writing.</p>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>Exiting plan mode changes model, and the next response re-reads the
+        full history without cached context. That's fine once per session and
+        expensive if you toggle back and forth. Reason, exit, write, stop.</p>
+    </div>
+
+    <div class="gears">
+      <div class="gear">
+        <div class="gear-name">Build effort</div>
+        <div class="gear-body">Launch build sessions with
+          <code>claude --effort medium</code>. The ladder is
+          low / medium / high / xhigh / max, the default is high, and a task
+          that already survived a review cycle doesn't need it.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Check the defaults</div>
+        <div class="gear-body">A model chosen with <code>/model</code> is saved
+          into <code>~/.claude/settings.json</code> and quietly applies to every
+          session after. <code>effortLevel</code> in the same file behaves the
+          same way. Clear both keys so the project setting and the launch flag
+          win.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Never switch mid-session</div>
+        <div class="gear-body">Set the model at launch with
+          <code>--model</code>, which is session-only. Switching inside a long
+          conversation re-reads the entire history uncached.</div>
+      </div>
+    </div>
+
+    <p class="fine">Every step below carries the mode and model it should run
+      on.</p>
+  </section>
+
+  <!-- C. COMMANDS -->
+  <section id="commands">
+    <div class="eyebrow"><span class="num">C</span>Commands</div>
+    <h2>Commit the prompts, don't paste them</h2>
+    <p>The prompts below are long on purpose, and pasting a 30-line block by
+      hand at every step is where this workflow rots. The text drifts between
+      projects, an improvement you make today is invisible to every repo
+      already mid-phase, and nothing records which version of the loop a given
+      plan was built under.</p>
+
+    <p>Commit each step as a command file instead. The page you're reading
+      then holds the reasoning — why a fresh session, why the gear rule — and
+      the repo holds the executable version, which git can diff.</p>
+
+    <h3>How a command file works</h3>
+    <p>A command is a markdown file in <code>.claude/commands/</code>. The
+      filename becomes the slash name, so <code>build.md</code> gives you
+      <code>/build</code>. The frontmatter is metadata for the picker; the
+      body below it is the prompt, sent verbatim.
+      <code>$ARGUMENTS</code> is replaced by everything you typed after the
+      command name, and <code>$1</code> by the first word of it. Put the files
+      in <code>.claude/commands/</code> to commit them with the repo, or
+      <code>~/.claude/commands/</code> to have them everywhere.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>every prompt below is one of these</span></div>
+      <pre><code>.claude/commands/
+├── define.md      /define &lt;rough idea&gt;   step 0
+├── groundwork.md  /groundwork            step G, greenfield only
+├── plan.md        /plan                  step 1
+├── review.md      /review                step 2, round 1
+├── recheck.md     /recheck               step 2, round 2 and after
+├── revise.md      /revise                step 3
+├── approve.md     /approve               step 4
+├── build.md       /build T7              build, one task
+├── close.md       /close                 phase close
+└── status.md      /status                where am I
+
+.claude/bin/plan   the task graph tool every command above calls
+</code></pre>
+    </div>
+
+    <p>Each step below is printed as its finished command file — frontmatter
+      included, placeholders already replaced with arguments. Copy the block,
+      save it at the path in its header, and that step is a slash command.
+      Nothing else in this document changes.</p>
+
+    <h3>What a command does not carry</h3>
+    <p>This is the part that bites. A command supplies the prompt text and
+      nothing else. It does not start a new session, it does not enter plan
+      mode, and it does not pick a model. Typing <code>/review</code> in the
+      session that just wrote the plan gives you a compromised review with
+      correct wording, which is worse than no review because it looks like
+      one.</p>
+
+    <div class="gears">
+      <div class="gear">
+        <div class="gear-name">You do</div>
+        <div class="gear-body">Start the session, enter or exit plan mode, set
+          <code>--effort</code> at launch. The session and mode chips on each
+          step below are still the instruction — the command file can't
+          enforce them.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Settings do</div>
+        <div class="gear-body">Model routing, via <code>opusplan</code> in
+          <code>.claude/settings.json</code>. Plan mode gets Opus, execution
+          gets Sonnet, with no per-command configuration.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">The command does</div>
+        <div class="gear-body">The prompt text, the argument substitution, and
+          the fact that it's the same text in every repo and every run.</div>
+      </div>
+    </div>
+
+    <h3>Setting it up</h3>
+    <div class="code-block">
+      <div class="code-head"><span>bash</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>git clone https://github.com/&lt;you&gt;/coldsession ~/src/coldsession
+cd ~/my-project &amp;&amp; ~/src/coldsession/install.sh
+git add .claude templates &amp;&amp; git commit -m "chore: coldsession"</code></pre>
+    </div>
+
+    <p class="fine">Installing per project rather than globally is
+      deliberate: the workflow version is pinned with the code, so a phase
+      planned six months ago still reads the way it was planned. Record it: add
+      <code>workflow-rev: 1.0.0</code> to PLAN.md's frontmatter, so a phase
+      planned under an older loop is readable as an older plan rather than a
+      wrong-looking one.</p>
+  </section>
+
+  <!-- 0. DEFINE -->
+  <section id="define">
+    <div class="eyebrow"><span class="num">0</span>Define</div>
+    <div class="session">Session 1</div><div class="mode">Plan mode · opus</div>
+    <h2>Turn the idea into an objective</h2>
+    <p>Run this once, before Step 1 has anything to plan. It converts a rough
+      app idea into a scoped brief.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>.claude/commands/define.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>---
+description: Turn a rough idea into a scoped objective brief
+argument-hint: [rough app idea]
+---
+
+Help me turn this idea into a well-defined objective I can hand off for
+detailed planning:
+
+$ARGUMENTS
+
+If the line above is blank, ask me for the idea and stop.
+
+Produce an Objective Brief containing:
+- Problem statement: what problem this solves, and for whom
+- Core value proposition, in one or two sentences
+- Primary users and their main use case
+- MVP feature list: the smallest version that delivers the value proposition
+- Explicitly out of scope for v1
+- Constraints: platform, tech stack preferences, budget, timeline,
+  integrations, hosting
+- Success criteria: how we'll know the MVP works
+- Open questions you need me to answer before planning can start
+
+Ask me the open questions directly. Do not guess at answers.
+Do not break this into tasks or phases. Do not write code.</code></pre>
+    </div>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>Answer the open questions in your reply. The finished brief is what
+        <code>/plan</code> picks up from this session — skim it yourself
+        before running Step 1, because nothing downstream re-derives it.</p>
+    </div>
+  </section>
+
+  <!-- G. GROUNDWORK -->
+  <section id="ground">
+    <div class="eyebrow"><span class="num">G</span>Groundwork</div>
+    <div class="session same">Same session as Define</div><div class="mode exec">Normal · sonnet</div>
+    <h2>Make the repo readable before you plan against it</h2>
+    <p>Every later step opens AGENTS.md and the codebase. On an empty repo
+      both are missing, so Review has nothing to review against and a fresh
+      Build session starts from zero every time. Step G is Phase 0: it exists
+      to make Step 1 possible.</p>
+
+    <p>It does not run the loop. The scaffold is mostly determined by the
+      brief, and it is cheap to delete and regenerate, which by the gear rule
+      above puts it well below the cost of a review cycle.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>.claude/commands/groundwork.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>---
+description: Phase 0 scaffold and ground rules for a greenfield repo
+---
+
+This is a greenfield repo. Set up the ground rules before any feature work.
+
+From the objective brief, write:
+
+1. AGENTS.md, under 60 lines. One line on what this is, the stack, and the
+   constraints that must never be violated. Leave the Commands section empty
+   until the scaffold exists.
+2. CLAUDE.md, containing @AGENTS.md plus any Claude Code specific lines.
+3. docs/architecture.md: each decision from the brief with what was rejected
+   and why. Not a stack list; package.json is the stack list.
+4. docs/data-model.md: the schema, plus the ownership rules the schema does
+   not express. Skip if there is no datastore.
+5. PLAN.md from templates/PLAN.md, with this groundwork as Phase 0.
+
+Do not invent conventions you have no basis for. If the brief does not
+determine it, leave it out.
+
+Then enforce in code what markdown cannot:
+- .gitignore covering env files, build output, and local state
+- .env.example, committed, keys only, no values
+- lint, format, and typecheck installed and runnable
+- one pre-commit or CI check that fails on a committed secret
+
+Scaffold the project. Run every command you are about to put in AGENTS.md,
+fix the ones that fail, and only then write them down.
+
+Acceptance: I open a new session and ask what this project is and how to run
+it. It answers from AGENTS.md alone, without reading source.</code></pre>
+    </div>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>The last line is the whole test. If a fresh session can't orient
+        itself from the files, Phase 0 isn't done, and every session after
+        this one pays for it.</p>
+    </div>
+
+    <h3>What not to write yet</h3>
+    <p>AGENTS.md is for what the agent gets wrong without it. On day one you
+      don't know what that is, and a long file of guessed conventions is worse
+      than a short one, because the codebase will drift from it and you'll
+      trust it anyway. Sixty lines is a ceiling, not a target.</p>
+
+    <div class="gears">
+      <div class="gear">
+        <div class="gear-name">Skills</div>
+        <div class="gear-body">A skill encodes a procedure you've run at
+          least twice. Write them at a phase close, from what you actually
+          did, not up front from what you imagine doing.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Path rules</div>
+        <div class="gear-body"><code>.claude/rules/</code> scoped to paths
+          that don't exist yet is dead weight. Add one the first time a
+          constraint proves it needs enforcing in a specific directory.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">File trees</div>
+        <div class="gear-body">A hand-maintained directory listing is stale
+          within one session and derivable in one tool call. Write the rule
+          instead: where things go, and why.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 1. PLAN -->
+  <section id="plan">
+    <div class="eyebrow"><span class="num">1</span>Create Plan</div>
+    <div class="session same">Same session as Define</div><div class="mode exec">Exit plan mode to write · sonnet</div>
+    <h2>Define the work</h2>
+    <p>The objective becomes numbered tasks. Task IDs are what every later
+      step points at instead of re-describing work in prose. Everything is
+      written to disk here, not at Approval, so a lost session doesn't cost
+      you the plan and so Review has something to open.</p>
+
+    <p>Two files, two jobs. <code>PLAN.md</code> is a short index that lists
+      the phases and points at the current one. The phase file holds the
+      tasks. There is no separate init step: the phase list <em>is</em> the
+      plan's top level, so Step 1 creates it on the first run and corrects it
+      on every run after.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>layout</span></div>
+      <pre><code>PLAN.md                       # index: phase list + current pointer
+docs/plans/01-auth-shell.md   # done
+docs/plans/02-offline-sync.md # current phase, task level detail
+</code></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-head"><span>.claude/commands/plan.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>---
+description: Turn the objective brief into a phased plan on disk
+argument-hint: [objective, or blank to use the brief from this session]
+---
+
+Create a complete implementation plan for the following objective:
+
+$ARGUMENTS
+
+If the line above is blank, use the objective brief produced earlier in this
+session. If there is no brief in this session either, stop and tell me to run
+/define first.
+
+Break the work into logical phases, and phases into numbered tasks
+(T1, T2, T3, ...).
+
+## Files
+
+PLAN.md is the index: a `current:` pointer and a checklist of phases in
+dependency order, one line each, linking to their phase files. Create it from
+templates/PLAN.md if absent; otherwise add or correct phases and set
+`current:` to this one. Never copy task detail into PLAN.md.
+
+Write the current phase to docs/plans/(NN)-(slug).md using
+templates/phase.md. Detail only the current phase at task level. Phases
+beyond it are provisional: reorder, split, merge, or drop them freely at each
+boundary.
+
+## Task graph
+
+The phase file's frontmatter carries a machine-readable graph. One line per
+task, exactly this shape, or the tooling cannot read it:
+
+  T2: {deps: [T1], status: pending, files: [src/sync/queue.ts]}
+
+- `deps` are task IDs in this phase only. Acyclic, and prefer depending
+  backwards so IDs read in execution order.
+- `files` is the complete set this task may open or write. A build session is
+  bounded to this list plus its dependencies' files, so a missing entry stalls
+  the build and an over-broad one wastes context. This is the single most
+  important field you write.
+- `status` starts as pending.
+
+## Task body
+
+One `## T(n)` section per task, matching the graph exactly:
+- Goal
+- Deliverables
+- Acceptance Criteria
+- Verify: the exact command I run and the exact output that means it passed.
+  If the only check is visual, name the screen and what I should see. Never
+  write "manually confirm it works".
+
+## Size
+
+Cap a phase at eight tasks. A ninth is a signal the phase should split: every
+later session pays to read this file, so it stays small. Each phase must end
+in a state I can run.
+
+## Also include
+
+- Assumptions you are proceeding on without confirming
+- Open questions that need my input before this plan is final
+- Out of scope items
+
+Then run `.claude/bin/plan lint` and fix anything it reports.
+
+Ask me the open questions directly rather than guessing. Do not write code.</code></pre>
+    </div>
+
+    <h3>The task graph</h3>
+    <p>The phase file's frontmatter is machine-readable and its body is prose.
+      Neither duplicates the other, and <code>plan lint</code> fails if they
+      drift. One line per task, exactly this shape:</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>docs/plans/02-offline-sync.md</span></div>
+      <pre><code>---
+phase: 02-offline-sync
+rev: 3
+status: approved
+workflow-rev: 1.0.0
+tasks:
+  T1: {deps: [], status: done, files: [src/db/schema.ts]}
+  T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts]}
+  T3: {deps: [T1], status: pending, files: [src/sync/worker.ts]}
+  T4: {deps: [T2, T3], status: pending, files: [src/sync/index.ts]}
+---
+
+## T2 &#8212; write queue
+Goal: ...
+Acceptance Criteria: ...
+Verify: `npm test -- queue` exits 0</code></pre>
+    </div>
+
+    <p><code>files</code> is the field that carries the most weight and the one
+      most likely to be written carelessly. It is the contract a build session
+      is bounded to: a missing entry stalls the build, an over-broad one
+      spends context you don't get back. The linter can only check that it's
+      non-empty, so Step 2 checks it against the actual codebase.</p>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>Eight tasks is the cap. Every session in the phase re-reads this
+        file, so a ninth task isn't a longer plan — it's a phase that should
+        have split.</p>
+    </div>
+
+    <p class="fine">Assumptions and open questions are kept separate on
+      purpose: assumptions are commitments Review can challenge; open
+      questions are things the model shouldn't be guessing at all.</p>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>The Verify line is load-bearing later. Build is not allowed to call
+        a task done without running it and showing the output, so a task whose
+        verification is "check that it works" is a task Build can pass by
+        asserting. Write the command here or you lose the gate there.</p>
+    </div>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>Planning all fifty tasks up front produces fiction after roughly the
+        tenth: T40 is written against a codebase state that won't survive T1
+        through T39. Task-level detail stops at the current phase boundary,
+        and the phase list you write today is your least informed guess about
+        phase four — it's meant to be rewritten.</p>
+    </div>
+  </section>
+
+  <!-- 2. REVIEW -->
+  <section id="review">
+    <div class="eyebrow"><span class="num">2</span>Review</div>
+    <div class="session">New session — required</div><div class="mode">Plan mode · opus</div>
+    <h2>Challenge the plan</h2>
+    <p>Telling a model to "assume another team wrote it" does nothing if it's
+      the same context that just wrote it: it still holds every assumption
+      that produced the plan, and it cannot see what it never considered.
+      Start a fresh session and hand it the file.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>.claude/commands/review.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>---
+description: Independent review of the current phase, round 1
+---
+
+Run `.claude/bin/plan lint` and `.claude/bin/plan status` first. Treat every
+E-code it prints as a Critical finding and every W-code as at least Medium,
+then read PLAN.md, the phase file it points at, AGENTS.md, and the codebase.
+
+You did not write this plan. Review it as an independent senior engineer
+inheriting someone else's work. Be skeptical.
+
+For each issue found, provide:
+- Finding ID (F1, F2, ...)
+- Severity: Critical, High, Medium, or Low
+- Category: Missing work / Incorrect assumption / Risk / Task ordering /
+  Architectural issue / Missing acceptance criteria / Unnecessary scope /
+  Wrong file list
+- Affected task ID(s)
+- Description
+- Recommended fix
+
+Beyond the linter, which only checks shape:
+- Treat any unresolved open question from the plan as Critical.
+- Treat any task whose Verify line is not a runnable command or a named
+  screen as High.
+- Check every `files` list against the codebase. A task that will obviously
+  need a file it does not list is High: it will stall a bounded build session.
+- Check the dependency edges are true. The linter proves the graph is
+  acyclic, not that T4 actually needs T2.
+- Review the phase ordering in PLAN.md too, not just the tasks in this phase.
+
+Order findings by impact. Do not inflate severity to look thorough — a Medium
+labeled Critical is itself a review failure. If nothing rises above Medium,
+say so and give the two things most likely to break anyway.
+
+Do not rewrite the plan.</code></pre>
+    </div>
+
+    <div class="legend">
+      <span class="chip critical"><span class="dot"></span>Critical</span>
+      <span class="chip high"><span class="dot"></span>High</span>
+      <span class="chip medium"><span class="dot"></span>Medium</span>
+      <span class="chip low"><span class="dot"></span>Low</span>
+    </div>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>Zero findings on a fresh-session review of a whole phase means the
+        reviewer didn't read the codebase. Check that it actually opened the
+        files before you accept the result.</p>
+    </div>
+
+    <h3>Round 2 and after: scope it</h3>
+    <p>A second full review is a cold read of a plan that changed in three
+      places, and it is the most expensive redundant thing in the loop. Once a
+      changelog exists, re-review against the changelog rather than the whole
+      phase — still in a new session, because independence is the point, not
+      ignorance.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>.claude/commands/recheck.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>---
+description: Scoped re-review against the changelog, round 2 and after
+---
+
+Run `.claude/bin/plan lint`. Then read the phase file's changelog and
+frontmatter, and only the tasks the changelog names. Do not re-review the
+phase end to end.
+
+For each finding ID the changelog claims resolved, decide: actually resolved,
+partially resolved, or not resolved. Quote the plan line that settles it.
+
+Then check only three things beyond that:
+- Did any resolution create a new dependency, ordering, or scope problem?
+  New findings continue the existing numbering.
+- Did any resolution change what a task touches without updating its `files`
+  list?
+- Did any Medium marked "not adopted" get a real reason, or a restatement of
+  the finding?
+
+End with one line: what this pass did NOT look at.</code></pre>
+    </div>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>Stop condition: if round three still produces a Critical, the problem
+        isn't the wording of the plan. The phase is too large or the objective
+        is wrong. Split the phase and re-plan rather than revising a fourth
+        time — a loop with no exit is how a planning workflow becomes a way of
+        avoiding the build.</p>
+    </div>
+  </section>
+
+  <!-- 3. REVISE -->
+  <section id="revise">
+    <div class="eyebrow"><span class="num">3</span>Revise</div>
+    <div class="session same">Same session as Review</div><div class="mode exec">Exit plan mode to write · sonnet</div>
+    <h2>Address the findings</h2>
+    <p>Revise where the findings already live, so nothing has to be
+      re-explained. Approval and any further review round both start a new
+      session.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>.claude/commands/revise.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>---
+description: Resolve findings in place and write the changelog
+---
+
+Revise the phase file in place. Bump `rev` in its frontmatter. Do not create a
+second file. If a finding changes the phase ordering, update PLAN.md as well.
+
+Resolve every Critical and High finding.
+For each Medium finding, either implement the recommendation or state why it
+was not adopted.
+Low findings may be addressed at your discretion.
+
+Preserve task IDs where possible. If tasks are added, removed, or split,
+update the frontmatter graph in the same edit — the graph and the `## T(n)`
+sections must stay in sync, and `.claude/bin/plan lint` will fail if they
+drift. Run it when you are done.
+
+Include a changelog mapping each finding ID to the resolution taken, and for
+each one, the task ID or plan line that now carries the fix.</code></pre>
+    </div>
+
+    <p class="fine">The finding-ID → resolution → plan-line changelog is what
+      turns Approval into a checklist instead of a full re-read of the plan,
+      and it's what the scoped round-2 review reads instead of the phase.</p>
+  </section>
+
+  <!-- 4. APPROVE -->
+  <section id="approve">
+    <div class="eyebrow"><span class="num">4</span>Approval</div>
+    <div class="session">New session — required</div><div class="session human">You sign it off</div><div class="mode exec">Normal · sonnet</div>
+    <h2>Decide if it's ready</h2>
+    <p>A model grading its own revision against criteria it just satisfied
+      will pass itself every time. Two things follow from that, and rev 06
+      only did one of them. The model produces the evidence and you produce
+      the verdict — and the evidence comes from a session that didn't write
+      the revision. A fresh session reading the phase file and the changelog
+      is cheap; it doesn't need the codebase.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>.claude/commands/approve.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>---
+description: Readiness checklist with evidence, no verdict
+---
+
+Run `.claude/bin/plan lint`, then read the phase file and its changelog. You
+did not write either. Do not approve or reject. Produce the readiness
+checklist only.
+
+For each line, give PASS or FAIL plus the evidence — quote the finding ID,
+task ID, linter output, or plan line that proves it. "Looks fine" is a FAIL.
+
+- The linter exits clean.
+- Every Critical and High finding has a changelog entry, and the plan line it
+  points at actually contains the fix.
+- Every task has acceptance criteria and a Verify line I could run today.
+- Every task's `files` list is complete enough that a session bounded to it
+  could finish the task.
+- Every remaining Medium/Low finding is explicitly accepted or justified.
+- The phase ends in a state I can run.
+
+Then list, in one line each, the riskiest thing still in the plan.
+
+Do not set `status: approved`. I do that.</code></pre>
+    </div>
+
+    <p class="fine">If the checklist is clean, set <code>status: approved</code>
+      in the phase file's frontmatter yourself and open Build. That
+      frontmatter line is the gate every later step reads; you are the only
+      thing that writes it. If the checklist isn't clean, start a new session
+      at Step 2 with the remaining finding IDs.</p>
+  </section>
+
+  <!-- LOOP DIAGRAM -->
+  <section id="loop-diagram">
+    <div class="eyebrow">Flow</div>
+    <h2>The loop</h2>
+    <p>Not approved doesn't send you back to Define. The plan already exists
+      as a file — you cycle Review → Revise → Approval until it clears, and
+      each round that judges the previous one gets a clean session.</p>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 700 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flow diagram: Define and Groundwork and Create Plan in session one, Review and Revise in session two, Approval in session three, then Build with one session per task. Not approved loops back to Review. A blocked build task also returns to Review.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--cyan)"/>
+          </marker>
+          <marker id="arrowDim" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--cyan-dim)"/>
+          </marker>
+          <marker id="arrowMint" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--mint)"/>
+          </marker>
+          <marker id="arrowWarn" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--sev-high)"/>
+          </marker>
+        </defs>
+
+        <!-- session brackets -->
+        <path class="dg-bracket" d="M52,12 L44,12 L44,238 L52,238"/>
+        <path class="dg-bracket" d="M52,282 L44,282 L44,418 L52,418"/>
+        <path class="dg-bracket human" d="M52,462 L44,462 L44,508 L52,508"/>
+        <path class="dg-bracket exit" d="M52,562 L44,562 L44,608 L52,608"/>
+
+        <text class="dg-tag" transform="translate(28,125) rotate(-90)" text-anchor="middle">SESSION 1</text>
+        <text class="dg-tag" transform="translate(28,350) rotate(-90)" text-anchor="middle">SESSION 2</text>
+        <text class="dg-tag human" transform="translate(28,485) rotate(-90)" text-anchor="middle">SESSION 3</text>
+        <text class="dg-tag exit" transform="translate(28,585) rotate(-90)" text-anchor="middle">1 / TASK</text>
+
+        <!-- boxes -->
+        <rect class="dg-box key" x="60" y="10" width="320" height="50"/>
+        <text class="dg-label" x="220" y="40" text-anchor="middle">0 · Define</text>
+
+        <rect class="dg-box ghost" x="60" y="100" width="320" height="50"/>
+        <text class="dg-label" x="220" y="123" text-anchor="middle">G · Groundwork</text>
+        <text class="dg-sub" x="220" y="140" text-anchor="middle">greenfield only, runs once</text>
+
+        <rect class="dg-box" x="60" y="190" width="320" height="50"/>
+        <text class="dg-label" x="220" y="220" text-anchor="middle">1 · Create Plan</text>
+
+        <rect class="dg-box key" x="60" y="280" width="320" height="50"/>
+        <text class="dg-label" x="220" y="310" text-anchor="middle">2 · Review</text>
+
+        <rect class="dg-box" x="60" y="370" width="320" height="50"/>
+        <text class="dg-label" x="220" y="400" text-anchor="middle">3 · Revise</text>
+
+        <rect class="dg-box human" x="60" y="460" width="320" height="50"/>
+        <text class="dg-label" x="220" y="481" text-anchor="middle">4 · Approval</text>
+        <text class="dg-sub" x="220" y="499" text-anchor="middle">model gathers evidence, you sign it off</text>
+
+        <rect class="dg-box exit" x="60" y="560" width="320" height="50"/>
+        <text class="dg-label exit" x="220" y="590" text-anchor="middle">Build Mode</text>
+
+        <!-- plan file annotation -->
+        <text class="dg-sub" x="392" y="212">PLAN.md +</text>
+        <text class="dg-sub" x="392" y="226">phase file</text>
+
+        <!-- straight arrows down -->
+        <line class="dg-flow" x1="220" y1="60"  x2="220" y2="98"  marker-end="url(#arrowDim)"/>
+        <line class="dg-flow" x1="220" y1="150" x2="220" y2="188" marker-end="url(#arrowDim)"/>
+        <line class="dg-flow" x1="220" y1="240" x2="220" y2="278" marker-end="url(#arrowDim)"/>
+        <line class="dg-flow" x1="220" y1="330" x2="220" y2="368" marker-end="url(#arrowDim)"/>
+        <line class="dg-flow" x1="220" y1="420" x2="220" y2="458" marker-end="url(#arrowDim)"/>
+
+        <!-- approved: straight down -->
+        <line class="dg-exit" x1="220" y1="510" x2="220" y2="558" marker-end="url(#arrowMint)"/>
+        <text class="dg-note exit" x="300" y="540" text-anchor="middle">APPROVED</text>
+
+        <!-- not approved: loop back to review, fresh session -->
+        <path class="dg-loop" d="M 380 490 C 500 490 500 300 382 300" marker-end="url(#arrow)"/>
+        <text class="dg-note loop" transform="translate(516,395) rotate(-90)" text-anchor="middle">NOT APPROVED &#8594; NEW SESSION</text>
+
+        <!-- blocked build task: back to review, not redesign in place -->
+        <path class="dg-block" d="M 380 575 C 600 575 600 320 382 320" marker-end="url(#arrowWarn)"/>
+        <text class="dg-note block" transform="translate(616,450) rotate(-90)" text-anchor="middle">BLOCKED &#8594; STEP 2</text>
+
+        <!-- build self-loop: one task per session -->
+        <path class="dg-exit dashed" d="M 380 598 C 452 598 452 572 382 572" marker-end="url(#arrowMint)"/>
+        <text class="dg-sub" x="466" y="582" fill="var(--mint)">NEXT TASK,</text>
+        <text class="dg-sub" x="466" y="596" fill="var(--mint)">NEW SESSION</text>
+      </svg>
+    </div>
+    <p class="diagram-caption">Dashed cyan is the retry loop, always in a new
+      session. Orange is a build task that hit a wall: it writes the blocker
+      into the phase file and re-enters at Review rather than redesigning on
+      the spot. Mint is the exit once approved, and the per-task build loop.
+      Groundwork is drawn dashed because it runs once, on an empty repo, and
+      never again.</p>
+  </section>
+
+  <!-- BUILD -->
+  <section id="build">
+    <div class="eyebrow"><span class="num">B</span>Build Mode</div>
+    <div class="session">New session per task</div><div class="mode exec">Normal · sonnet · medium effort</div>
+    <h2>Execute without redesigning</h2>
+    <p>One task, one verification, one commit. State lives in the phase file
+      and in git, not in the conversation, because a fresh session has no
+      memory of the last one.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>launch</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>claude --effort medium</code></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-head"><span>.claude/commands/build.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>---
+description: Implement one approved task, verify it, commit, stop
+argument-hint: [task-id]
+---
+
+Run `.claude/bin/plan brief $1`.
+
+If $1 is blank, run `.claude/bin/plan next` and stop: tell me the runnable
+task IDs and let me choose. If the brief prints BLOCKED, stop.
+
+## Reading
+
+Read exactly the files the brief lists, in the order it lists them, starting
+with AGENTS.md. Nothing else. That order is fixed so the cached prefix is
+reused across build sessions; do not read anything before it or reorder it.
+
+If you need a file the brief does not list, stop and say which one and why.
+That is a bug in the plan's `files` list, not something to work around.
+
+If you need to locate something rather than read something, dispatch a search
+subagent and take back the file:line answer only. Do not fill this session
+with search output.
+
+## Doing
+
+Implement task $1 only. Do not change the architecture or the plan. Do not
+start the next task. Restate the acceptance criteria and the Verify line
+before you begin.
+
+A task is done only when you have run its Verify command and shown me the
+output. Not "the tests should pass" — the run, and what it printed. If there
+is no runnable check, say so explicitly and tell me the single manual step I
+have to take.
+
+## Finishing
+
+When the Verify output is clean:
+1. `.claude/bin/plan done $1` — do not hand-edit the frontmatter.
+2. Commit, with the task ID in the message.
+3. Append to docs/plans/(NN)-(slug).log.md, ten lines maximum:
+   `## $1` then only what the next session cannot work out from the repo —
+   a decision you made that the plan did not specify, a gotcha you hit, a
+   file whose actual contents differ from what the plan assumed. If there is
+   nothing, write "nothing to carry". Never summarize the diff; git has it.
+4. Run `.claude/bin/plan next` and print the result.
+5. Stop. Exit the session rather than compacting.
+
+If you hit a blocker:
+- Stop. Do not work around it.
+- `.claude/bin/plan block $1 "one line reason"`.
+- Write it into the phase file as finding F(n) and tell me to re-enter at
+  /review.</code></pre>
+    </div>
+
+    <h3>The context envelope</h3>
+    <p><code>plan brief T2</code> prints the read list: AGENTS.md, the phase
+      file, then the files of T2's direct dependencies, then T2's own. Direct
+      dependencies only — the transitive closure is the whole repo by about
+      task five.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>.claude/bin/plan brief T2</span></div>
+      <pre><code>task    T2   status pending
+phase   docs/plans/02-offline-sync.md  (phase status approved)
+read    AGENTS.md
+        docs/plans/02-offline-sync.md
+        src/db/schema.ts
+        src/sync/queue.ts
+        src/sync/types.ts
+        (nothing else; if you need a file that is not listed, stop and say so)
+verify  `npm test -- queue` exits 0
+handoff docs/plans/02-offline-sync.log.md  (read the last entry only)</code></pre>
+    </div>
+
+    <p>Two things follow from reading exactly that list, in exactly that
+      order. A wrong <code>files</code> entry surfaces as a session that stops
+      and tells you, instead of one that quietly explores half the repo. And
+      the prefix is identical across every build session in the phase, so
+      everything before the task's own files is a cache read rather than a
+      fresh one.</p>
+
+    <p>Searching is not reading. When a session needs to locate something it
+      dispatches a subagent and takes back the <code>file:line</code>, so grep
+      output never lands in the context that has to hold the task.</p>
+
+    <h3>Handoffs on disk</h3>
+    <p>Each task appends at most ten lines to
+      <code>docs/plans/NN-slug.log.md</code>: decisions the plan didn't
+      specify, gotchas, places the code differed from what the plan assumed.
+      Never a summary of the diff — git has that. The next session reads the
+      last entry, so nothing has to survive in a terminal you closed.</p>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>The Verify paragraph is the one addition that changes what this
+        workflow produces. Without it, "acceptance criteria are met" is a
+        judgement the model makes by reading its own diff, and a phase can
+        close with every task marked done and nothing ever executed.</p>
+    </div>
+
+    <h3>When two tasks can share a session</h3>
+    <p>One session per task is the default, not a law. The reason for it is
+      context hygiene — a session that already argued its way through T4
+      brings those assumptions to T5 — and that reason doesn't apply to two
+      tasks that touch the same file with nothing structural between them.
+      Rollback isn't the reason: git is the rollback, and it works the same
+      either way.</p>
+
+    <div class="gears">
+      <div class="gear">
+        <div class="gear-name">Share a session</div>
+        <div class="gear-body">Consecutive tasks, same files, no schema,
+          interface, or dependency change between them, and the first one's
+          Verify passed. Commit separately per task ID anyway.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Always split</div>
+        <div class="gear-body">A task that crosses a module boundary, changes
+          a shape another task depends on, or follows a task you had to
+          correct. A corrected session is a polluted session.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Exit, don't compact</div>
+        <div class="gear-body">When the next-session prompt appears, exit the
+          process. <code>/compact</code> reprocesses the whole conversation
+          and then charges you to re-read the summary.</div>
+      </div>
+    </div>
+
+    <h3>At the phase close</h3>
+    <p>Corrections are the raw material for AGENTS.md, but you can't count
+      them inside a session that only lives for one task. Collect them at the
+      boundary instead, where you can see the whole phase.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>.claude/commands/close.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>---
+description: Harvest repeated corrections, then close the phase
+---
+
+Run `.claude/bin/plan status`. If any task is not done, stop and say which.
+
+Read this phase's commits, its log file, and the phase file including every
+finding.
+
+List the things I had to correct more than once across the phase, or that a
+session got wrong because the repo never told it otherwise. Ignore one-off
+mistakes.
+
+For each, propose exactly one of:
+- a line for AGENTS.md, if it applies everywhere
+- a rule in .claude/rules/, if it only applies to one directory
+- a skill, if it's a procedure we ran at least twice
+
+Propose nothing you can't tie to a specific commit, log entry, or finding.
+
+Then audit the delivered phase against its acceptance criteria and report
+gaps, dead code, and anything left unwired.
+
+Finally: tick this phase in PLAN.md, advance `current:` to the next phase
+file, and tell me to run /define for it.</code></pre>
+    </div>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>PLAN.md is the one file nothing else updates on its own. If the
+        phase-close instruction gets skipped, the index drifts and the next
+        session confidently opens the wrong plan.</p>
+    </div>
+  </section>
+
+  <!-- CHANGES -->
+  <section id="changes">
+    <div class="eyebrow">v1.0.0</div>
+    <h2>What this version added</h2>
+    <p>The previous revision was a document you copied from. This one is a repo you install,
+      and the three additions are the ones that only work with a tool
+      underneath them.</p>
+    <div class="gears">
+      <div class="gear">
+        <div class="gear-name">Task graph</div>
+        <div class="gear-body">Dependencies, status, and a file list per task,
+          in parseable frontmatter. <code>plan lint</code> catches cycles,
+          forward references, tasks marked done ahead of their dependencies,
+          missing Verify lines, and graph/body drift — so shape errors never
+          burn a human review round.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Context envelope</div>
+        <div class="gear-body">Build reads the list
+          <code>plan brief</code> prints and nothing else, in fixed order. A
+          wrong file list now stops a session instead of quietly widening it,
+          and the cached prefix is identical across every build session in the
+          phase.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Dependency awareness</div>
+        <div class="gear-body"><code>plan next</code> picks the runnable task,
+          <code>--parallel</code> groups the ones with no shared files, and
+          <code>plan done</code> refuses a task whose dependency isn't
+          finished. Rev 07 wrote dependencies down and nothing read them.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Handoffs on disk</div>
+        <div class="gear-body">The next-session note is appended to a log file
+          instead of printed for you to paste. Ten lines, only what the repo
+          can't tell you.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Phase cap</div>
+        <div class="gear-body">Eight tasks. Every session re-reads the phase
+          file, so length is a recurring cost, not a one-off.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Search isolation</div>
+        <div class="gear-body">Locating something is a subagent returning
+          <code>file:line</code>. Grep output stays out of the session that
+          has to hold the task.</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    PROMPTS FOR USE WITH ANY PLAN-THEN-ACT AGENT — CLAUDE CODE, CLINE, OPENCODE, OR EQUIVALENT.
+  </footer>
+
+</main>
+
+</div>
+
+<script>
+  async function copyText(text){
+    try{
+      if(navigator.clipboard && window.isSecureContext){
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    }catch(e){ /* fall through to the file:// path */ }
+    try{
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly','');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    }catch(e){
+      return false;
+    }
+  }
+
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const block = btn.closest('.code-block').querySelector('code');
+      const ok = await copyText(block.textContent.trim());
+      const original = 'Copy';
+      btn.textContent = ok ? 'Copied' : 'Select it';
+      btn.classList.add(ok ? 'copied' : 'failed');
+      if(!ok){
+        const range = document.createRange();
+        range.selectNodeContents(block);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.classList.remove('copied','failed');
+      }, 1600);
+    });
+  });
+
+  const steps = document.querySelectorAll('.rail-step');
+  const stepMap = {};
+  steps.forEach(s => stepMap[s.dataset.target] = s);
+
+  function setActive(step){
+    steps.forEach(s => { s.classList.remove('active'); s.removeAttribute('aria-current'); });
+    step.classList.add('active');
+    step.setAttribute('aria-current','true');
+  }
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const step = stepMap[entry.target.id];
+      if (step && entry.isIntersecting) setActive(step);
+    });
+  }, { rootMargin: '-35% 0px -50% 0px', threshold: 0 });
+
+  // only observe sections the rail can represent, so it never freezes on a
+  // step you scrolled past
+  document.querySelectorAll('main section[id]').forEach(sec => {
+    if (stepMap[sec.id]) observer.observe(sec);
+  });
+</script>
+
+</body>
+</html>

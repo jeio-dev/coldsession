@@ -1,0 +1,68 @@
+---
+description: Turn the objective brief into a phased plan on disk
+argument-hint: [objective, or blank to use the brief from this session]
+---
+
+Create a complete implementation plan for the following objective:
+
+$ARGUMENTS
+
+If the line above is blank, use the objective brief produced earlier in this
+session. If there is no brief in this session either, stop and tell me to run
+/define first.
+
+Break the work into logical phases, and phases into numbered tasks
+(T1, T2, T3, ...).
+
+## Files
+
+PLAN.md is the index: a `current:` pointer and a checklist of phases in
+dependency order, one line each, linking to their phase files. Create it from
+templates/PLAN.md if absent; otherwise add or correct phases and set
+`current:` to this one. Never copy task detail into PLAN.md.
+
+Write the current phase to docs/plans/(NN)-(slug).md using
+templates/phase.md. Detail only the current phase at task level. Phases
+beyond it are provisional: reorder, split, merge, or drop them freely at each
+boundary.
+
+## Task graph
+
+The phase file's frontmatter carries a machine-readable graph. One line per
+task, exactly this shape, or the tooling cannot read it:
+
+  T2: {deps: [T1], status: pending, files: [src/sync/queue.ts]}
+
+- `deps` are task IDs in this phase only. Acyclic, and prefer depending
+  backwards so IDs read in execution order.
+- `files` is the complete set this task may open or write. A build session is
+  bounded to this list plus its dependencies' files, so a missing entry stalls
+  the build and an over-broad one wastes context. This is the single most
+  important field you write.
+- `status` starts as pending.
+
+## Task body
+
+One `## T(n)` section per task, matching the graph exactly:
+- Goal
+- Deliverables
+- Acceptance Criteria
+- Verify: the exact command I run and the exact output that means it passed.
+  If the only check is visual, name the screen and what I should see. Never
+  write "manually confirm it works".
+
+## Size
+
+Cap a phase at eight tasks. A ninth is a signal the phase should split: every
+later session pays to read this file, so it stays small. Each phase must end
+in a state I can run.
+
+## Also include
+
+- Assumptions you are proceeding on without confirming
+- Open questions that need my input before this plan is final
+- Out of scope items
+
+Then run `.claude/bin/plan lint` and fix anything it reports.
+
+Ask me the open questions directly rather than guessing. Do not write code.
