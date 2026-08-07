@@ -4,6 +4,21 @@ Format version and release version are the same number. A phase file records
 the version it was planned under as `workflow-rev`, and `plan lint` refuses a
 file whose major version differs from the tool's.
 
+## [1.0.2] — 2026-08-07
+
+Bugfix release for `install.ps1` on Windows PowerShell.
+
+- Fixed a parse error on the final line: `<your idea>` inside a double-quoted
+  string, where `<`/`>` are reserved operators. Switched to a single-quoted
+  literal.
+- Fixed a second, hidden parse error: an em-dash in a UTF-8 file without BOM.
+  Windows PowerShell 5.1 decodes BOM-less files as ANSI, misreading the
+  em-dash's bytes as `”` (U+201D), which prematurely closed the string and
+  cascaded into a "Missing closing '}'" error. Replaced the em-dash with an
+  ASCII hyphen.
+- Both `install.ps1` copies (repo and Desktop) verified clean with the
+  PowerShell AST parser.
+
 ## [1.0.1] — 2026-08-07
 
 Audit release. No command prompt content changed.

@@ -64,7 +64,7 @@ if (-not (Test-Path $SETTINGS)) {
     $json | Set-Content -Path $SETTINGS -Encoding UTF8
     Write-Host "wrote .claude/settings.json"
 } else {
-    Write-Host "kept existing .claude/settings.json — add this yourself:"
+    Write-Host "kept existing .claude/settings.json - add this yourself:"
     Write-Host '  "model": "opusplan"'
     Write-Host '  "permissions": { "allow": ["Bash(.claude/bin/plan:*)"] }'
 }
@@ -75,4 +75,4 @@ Write-Host "  .claude\commands\   10 commands"
 Write-Host "  .claude\bin\plan    dependency + context tool"
 Write-Host "  templates\          PLAN.md, phase.md"
 Write-Host ""
-Write-Host "next: claude, then /define <your idea>"
+Write-Host 'next: claude, then /define <your idea>'
