@@ -4,6 +4,20 @@ Format version and release version are the same number. A phase file records
 the version it was planned under as `workflow-rev`, and `plan lint` refuses a
 file whose major version differs from the tool's.
 
+## [1.0.1] — 2026-08-07
+
+Audit release. No command prompt content changed.
+
+- Reviewed all ten `commands/*.md` files against Anthropic's July 2026
+  guidance on Claude 5-generation context engineering (rigid rules replaced
+  with judgment-based instructions where the rule was compensating for
+  weaker model judgment). Found nothing to change: this tool has no
+  docstring/comment-style rules, and its hard "Never/Do not" rules are either
+  mechanical parser requirements, self-grading/corner-cutting guardrails, or
+  context-budget discipline — none are model-capability crutches.
+- `bin/plan` and `install.sh` marked executable (file mode only, no content
+  change).
+
 ## [1.0.0] — 2026-08-07
 
 First release.

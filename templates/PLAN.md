@@ -1,6 +1,6 @@
 ---
 current: docs/plans/01-<slug>.md
-workflow-rev: 1.0.0
+workflow-rev: 1.0.1
 ---
 
 # Plan
