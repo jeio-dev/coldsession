@@ -18,6 +18,21 @@ cd ~/my-project
 git add .claude templates && git commit -m "chore: coldsession"
 ```
 
+**Windows (PowerShell):**
+
+```powershell
+git clone https://github.com/jeio-dev/coldsession.git $HOME\src\coldsession
+cd $HOME\my-project
+..\src\coldsession\install.ps1
+git add .claude templates; git commit -m "chore: coldsession"
+```
+
+`install.ps1` mirrors `install.sh`: it copies the commands, the `plan` tool,
+and the templates, and writes `.claude/settings.json` only if one doesn't
+already exist. It needs `python3` (or `python`) on `PATH`. The script is
+BOM-less UTF-8 and ASCII-only, so it parses cleanly under Windows PowerShell
+5.1 as well as PowerShell 7+.
+
 ```
 .claude/commands/*.md    the ten commands
 .claude/bin/plan         the graph and context tool
