@@ -12,7 +12,7 @@ build session reads a computed list of files rather than a codebase.
 ## Install
 
 ```bash
-git clone https://github.com/<you>/coldsession.git ~/src/coldsession
+git clone https://github.com/jeio-dev/coldsession.git ~/src/coldsession
 cd ~/my-project
 ~/src/coldsession/install.sh
 git add .claude templates && git commit -m "chore: coldsession"
