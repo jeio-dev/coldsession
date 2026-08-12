@@ -4,6 +4,105 @@ Format version and release version are the same number. A phase file records
 the version it was planned under as `workflow-rev`, and `plan lint` refuses a
 file whose major version differs from the tool's.
 
+## [1.1.0] — 2026-08-13
+
+Findings became a file rather than a transcript, and the tool now says what to
+run next.
+
+### Findings on disk
+
+Before this release `/review` printed its findings into a session that then
+ended. `/revise` and `/recheck` had nothing to point at but whatever survived
+in the terminal, which is the one thing a cold-session workflow guarantees is
+gone. Findings now live in the phase file's `## Findings` block, one per line,
+in a seven-field shape the tool parses:
+
+    F1 | Critical | Task ordering | T3 | open | description | recommended fix
+
+- `/review` writes them and runs `plan reviewed`. It exits plan mode to do it;
+  that block and the `reviewed:` field are its only writes.
+- `/revise` runs `plan bump` first, then closes each one with
+  `plan resolve F1 resolved "T3 now depends on T2"`, which flips the status
+  and writes the changelog entry in one step. A note that names no task ID or
+  plan line is refused.
+- `/recheck` reads `plan findings` and the changelog rather than the phase,
+  and reopens what does not hold up with `plan resolve F2 open "..."`.
+
+### A next step the tool computes
+
+`plan recommend` derives the next command from the phase file, and every
+command from `/plan` onward ends by printing it. `/define` and `/groundwork`
+recommend statically, since nothing is on disk yet to derive from.
+
+The recommendation reads `reviewed:` against `rev:`: unreviewed sends you to
+`/review`, open findings to `/revise`, a revision newer than its last review
+pass to `/recheck`, a clean reviewed rev to `/approve`, an approved phase to
+`/build` with the first runnable id, and a finished one to `/close`. At rev 3
+with an open Critical it recommends splitting the phase, which is the stop
+condition the README already documented and nothing enforced.
+
+### New in `plan`
+
+- `plan recommend`, `plan findings [--open]`, `plan resolve F1 STATE "note"`,
+  `plan bump`, `plan reviewed`.
+- `plan status` gained a findings count and the `next` line.
+- `plan brief` prints `NOT APPROVED` when the phase is not approved, so a
+  `/build` typed too early stops before it reads anything.
+- New lint rules: `E12` unparseable finding line, `E13` duplicate finding id,
+  `E14` finding naming a task not in the phase, `E15` approved phase with an
+  open Critical or High, `W04` finding closed with no changelog entry, `W05`
+  the rev-3 stop condition.
+- Fixed: body sections were only opened by a `## T(n)` heading, so everything
+  under `## Findings` was parsed as part of the last task. A `Verify:` line in
+  a finding description could satisfy `E08` for the wrong task.
+- `plan version` no longer requires a PLAN.md to answer.
+- Tool output is ASCII again; the two em-dashes in `plan brief` mangled on a
+  cp1252 console, the same failure the 1.0.2 install fix was about.
+
+### Windows
+
+The commands called `.claude/bin/plan` as a bare path, which only ever worked
+from a POSIX shell. `plan` is extension-less with a shebang: Git Bash runs it,
+PowerShell refuses with "Cannot run a document in the middle of a pipeline",
+and PowerShell does not apply `PATHEXT` to an explicit path, so dropping a
+`.cmd` beside it is not enough on its own.
+
+- Added `bin/plan.cmd`, which resolves `python3`/`python`/`py` and forwards
+  arguments and exit codes. It runs from PowerShell, cmd.exe, and Git Bash.
+  The `exit /b` is kept out of the parenthesised block on purpose:
+  `%ERRORLEVEL%` expands at parse time inside one, which silently turned
+  `plan lint`'s exit 1 into exit 0.
+- `install.ps1` installs both entry points and repoints the commands it copies
+  at `plan.cmd`, with a negative lookahead so re-running it cannot produce
+  `plan.cmd.cmd`. `install.sh` installs both too and leaves the commands on
+  the POSIX path, so a repo installed on either platform still runs on the
+  other after its own installer is run.
+- `plan` now reads files as `utf-8-sig`. Windows PowerShell writes a UTF-8 BOM
+  by default, and a BOM ahead of the opening `---` meant `split_frontmatter`
+  found no frontmatter at all, so a phase file written by `Set-Content
+  -Encoding UTF8` read as having no tasks. Files are still written without
+  one, so a BOM'd file is normalised the first time the tool writes it.
+- Fixed in `install.ps1`: it never created `templates/`, so the template copy
+  failed on any fresh project. `install.sh` had always created it.
+- `install.ps1` writes `settings.json` without a BOM, and allows the
+  `plan.cmd` path.
+- Added `.gitattributes` pinning `*.cmd` and `*.ps1` to CRLF and `bin/plan`
+  and `*.sh` to LF. A CRLF after `#!/usr/bin/env python3` sends the kernel
+  looking for an interpreter named `python3\r`.
+
+### Compatibility
+
+`workflow-rev` is now 1.1.0. Phase files written under 1.0.x still lint and
+build: no `## Findings` block means no findings, and a missing `reviewed:`
+field reads as never reviewed, which starts the loop at `/review`. The fields
+are added in place the first time `plan reviewed` or `plan resolve` runs. The
+task graph shape, the command names, the subcommand exit codes, and the
+install paths are unchanged.
+
+`.claude/bin/plan.cmd` is a new install path, not a moved one. A project that
+upgrades by re-running `install.sh` keeps calling `.claude/bin/plan` and needs
+no other change.
+
 ## [1.0.2] — 2026-08-07
 
 Bugfix release for `install.ps1` on Windows PowerShell.

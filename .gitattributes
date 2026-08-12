@@ -1,0 +1,14 @@
+# Line endings are load-bearing here, in both directions.
+#
+# cmd.exe is unreliable reading an LF-only .cmd, and Windows PowerShell 5.1
+# has already cost this project one release over how it decodes a script
+# file. Both must arrive as CRLF regardless of the platform that checked
+# them out.
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# `plan` is an extension-less Python file with a shebang. A CRLF after
+# `#!/usr/bin/env python3` makes the kernel look for an interpreter named
+# "python3\r", which does not exist.
+bin/plan  text eol=lf
+*.sh      text eol=lf

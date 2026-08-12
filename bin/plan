@@ -2,37 +2,60 @@
 """plan - dependency and context tooling for the planning workflow.
 
 Reads PLAN.md (an index) and the phase file it points at. The phase file's
-frontmatter carries a machine-readable task graph; the body carries the prose.
+frontmatter carries a machine-readable task graph, its `## Findings` block
+carries a machine-readable finding list, and the body carries the prose.
 Stdlib only, no install step.
 
-  plan status              where the phase stands
-  plan lint                validate the graph, exit 1 on error
-  plan next [--parallel]   next runnable task ids
-  plan brief T2            bounded read list + verify line for one task
-  plan done T2             mark a task done
-  plan block T2 "reason"   mark a task blocked
-  plan version             print the format version this tool speaks
+  plan status                     where the phase stands, and what to run next
+  plan recommend                  one line: the next command to run, and why
+  plan lint                       validate graph and findings, exit 1 on error
+  plan next [--parallel]          next runnable task ids
+  plan brief T2                   bounded read list + verify line for one task
+  plan done T2                    mark a task done
+  plan block T2 "reason"          mark a task blocked
+  plan findings [--open]          the finding list
+  plan resolve F1 STATE "note"    set a finding state, log it to the changelog
+  plan bump                       bump the phase rev, at the start of a revise
+  plan reviewed                   record that this rev has had a review pass
+  plan version                    print the format version this tool speaks
 """
 
 import os
 import re
 import sys
 
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 
 ROOT = os.environ.get("PLAN_ROOT", ".")
 INDEX = os.path.join(ROOT, "PLAN.md")
 
 TASK_RE = re.compile(r"^\s{2}(T\d+):\s*\{(.*)\}\s*$")
-HEAD_RE = re.compile(r"^##\s+(T\d+)\b")
+HEAD_RE = re.compile(r"^##\s+(.+?)\s*$")
+TASK_HEAD_RE = re.compile(r"^(T\d+)\b")
+FINDING_RE = re.compile(r"^F\d+\b")
+CHANGE_RE = re.compile(r"^rev\s+(\d+)\s*\|\s*(F\d+)\s*\|\s*([A-Za-z_-]+)\s*\|\s*(.*)$")
 LIST_RE = lambda k: re.compile(k + r":\s*\[([^\]]*)\]")
 WORD_RE = lambda k: re.compile(k + r":\s*([A-Za-z_-]+)")
 STATUSES = ("pending", "in_progress", "done", "blocked")
+FSTATUSES = ("open", "resolved", "accepted")
+SEVERITIES = ("Critical", "High", "Medium", "Low")
+META_KEYS = ("phase", "rev", "status", "reviewed", "workflow-rev")
 
 
 def die(msg, code=1):
     print(f"error: {msg}", file=sys.stderr)
     sys.exit(code)
+
+
+def read_text(path):
+    """Read a file, tolerating a UTF-8 BOM.
+
+    Windows PowerShell writes one by default - `Set-Content -Encoding UTF8`
+    and `Out-File` both do - and a BOM ahead of the opening `---` means
+    split_frontmatter sees no frontmatter at all, so the phase reads as
+    having no tasks. Files are always written back without one.
+    """
+    return open(path, encoding="utf-8-sig").read()
 
 
 def split_frontmatter(text):
@@ -44,14 +67,25 @@ def split_frontmatter(text):
     return text[3:end], text[end + 4:]
 
 
+def join_frontmatter(fm, body):
+    return "---" + fm + "\n---" + body
+
+
 def csv(raw):
     return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def intof(value, default=0):
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
 
 
 def read_index():
     if not os.path.exists(INDEX):
         die("no PLAN.md at repo root. Run /plan first.")
-    fm, _ = split_frontmatter(open(INDEX, encoding="utf-8").read())
+    fm, _ = split_frontmatter(read_text(INDEX))
     m = re.search(r"^current:\s*(\S+)", fm, re.M)
     if not m:
         die("PLAN.md frontmatter has no `current:` pointer.")
@@ -61,15 +95,7 @@ def read_index():
     return path
 
 
-def read_phase(path):
-    text = open(path, encoding="utf-8").read()
-    fm, body = split_frontmatter(text)
-    meta = {}
-    for key in ("phase", "rev", "status", "workflow-rev"):
-        m = re.search(r"^%s:\s*(.+)$" % key, fm, re.M)
-        if m:
-            meta[key] = m.group(1).strip()
-
+def parse_tasks(fm):
     tasks, order, malformed = {}, [], []
     in_tasks = False
     for line in fm.splitlines():
@@ -96,23 +122,112 @@ def read_phase(path):
                 "status": status.group(1) if status else "?",
             }
             order.append(tid)
+    return tasks, order, malformed
 
-    sections = {}
-    current, buf = None, []
+
+def parse_blocks(body):
+    """Every `## Heading` in the body, mapped to its text."""
+    blocks, current, buf = {}, None, []
     for line in body.splitlines():
         m = HEAD_RE.match(line)
         if m:
-            if current:
-                sections[current] = "\n".join(buf).strip()
-            current, buf = m.group(1), []
+            if current is not None:
+                blocks[current] = "\n".join(buf).strip()
+            current, buf = m.group(1).strip(), []
             continue
-        if current:
+        if current is not None:
             buf.append(line)
-    if current:
-        sections[current] = "\n".join(buf).strip()
+    if current is not None:
+        blocks[current] = "\n".join(buf).strip()
+    return blocks
+
+
+COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+
+
+def block(blocks, name):
+    """A block's text with HTML comments removed.
+
+    The templates carry their format examples inside comments; a commented
+    finding is documentation, not a finding, including when the comment spans
+    several lines and the example sits on one of the inner ones.
+    """
+    for head, text in blocks.items():
+        if head.lower() == name.lower():
+            return COMMENT_RE.sub("", text)
+    return ""
+
+
+def parse_findings(text):
+    """One finding per line:
+
+      F1 | Critical | Task ordering | T3 | open | description | recommended fix
+
+    Prose and HTML comments are ignored. A line that starts with an F-id but
+    does not carry seven fields is reported rather than silently dropped.
+    """
+    findings, order, malformed, dupes = {}, [], [], []
+    for raw in text.splitlines():
+        line = raw.strip().lstrip("-*").strip()
+        if not line or line.startswith("<!--"):
+            continue
+        if not FINDING_RE.match(line):
+            continue
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) != 7:
+            malformed.append(line)
+            continue
+        fid, sev, cat, tasks, status, desc, fix = parts
+        if sev.title() not in SEVERITIES or status.lower() not in FSTATUSES:
+            malformed.append(line)
+            continue
+        if fid in findings:
+            dupes.append(fid)
+            continue
+        findings[fid] = {"severity": sev.title(), "category": cat,
+                         "tasks": csv(tasks), "status": status.lower(),
+                         "desc": desc, "fix": fix}
+        order.append(fid)
+    return findings, order, malformed, dupes
+
+
+def parse_changelog(text):
+    """One entry per line:  rev 2 | F1 | resolved | what carries the fix"""
+    entries = []
+    for raw in text.splitlines():
+        line = raw.strip().lstrip("-*").strip()
+        m = CHANGE_RE.match(line)
+        if m:
+            entries.append({"rev": intof(m.group(1)), "fid": m.group(2),
+                            "state": m.group(3).lower(), "note": m.group(4).strip()})
+    return entries
+
+
+def read_phase(path):
+    text = read_text(path)
+    fm, body = split_frontmatter(text)
+    meta = {}
+    for key in META_KEYS:
+        m = re.search(r"^%s:\s*(.+)$" % key, fm, re.M)
+        if m:
+            meta[key] = m.group(1).strip()
+
+    tasks, order, malformed = parse_tasks(fm)
+    blocks = parse_blocks(body)
+
+    sections = {}
+    for head, chunk in blocks.items():
+        m = TASK_HEAD_RE.match(head)
+        if m:
+            sections[m.group(1)] = chunk
+
+    findings, forder, fmalformed, fdupes = parse_findings(block(blocks, "Findings"))
 
     return {"path": path, "meta": meta, "tasks": tasks, "order": order,
-            "sections": sections, "malformed": malformed, "text": text}
+            "sections": sections, "blocks": blocks, "malformed": malformed,
+            "findings": findings, "forder": forder, "fmalformed": fmalformed,
+            "fdupes": fdupes, "changelog": parse_changelog(block(blocks, "Changelog")),
+            "text": text}
 
 
 def num(tid):
@@ -150,6 +265,18 @@ def runnable(phase):
     return out
 
 
+def open_findings(phase, severities=None):
+    out = []
+    for fid in phase["forder"]:
+        f = phase["findings"][fid]
+        if f["status"] != "open":
+            continue
+        if severities and f["severity"] not in severities:
+            continue
+        out.append(fid)
+    return out
+
+
 def verify_line(phase, tid):
     for line in phase["sections"].get(tid, "").splitlines():
         if re.match(r"^\s*[-*]?\s*Verify:", line):
@@ -157,25 +284,9 @@ def verify_line(phase, tid):
     return None
 
 
-# ---------------------------------------------------------------- commands
+# ------------------------------------------------------------------- lint
 
-def cmd_status(phase, _args):
-    m = phase["meta"]
-    counts = {s: 0 for s in STATUSES}
-    for t in phase["tasks"].values():
-        counts[t["status"]] = counts.get(t["status"], 0) + 1
-    print(f"phase    {m.get('phase', '?')}  rev {m.get('rev', '?')}  "
-          f"status {m.get('status', '?')}  workflow-rev {m.get('workflow-rev', '?')}")
-    print(f"file     {phase['path']}")
-    print("tasks    " + "  ".join(f"{k} {v}" for k, v in counts.items() if v))
-    nxt = runnable(phase)
-    print("runnable " + (", ".join(nxt) if nxt else "none"))
-    blocked = [t for t in phase["order"] if phase["tasks"][t]["status"] == "blocked"]
-    if blocked:
-        print("blocked  " + ", ".join(blocked))
-
-
-def cmd_lint(phase, _args):
+def lint_issues(phase):
     errs, warns = [], []
     t = phase["tasks"]
 
@@ -222,12 +333,239 @@ def cmd_lint(phase, _args):
     for c in cycles(t):
         errs.append(f"E10 dependency cycle: {c}")
 
+    for line in phase["fmalformed"]:
+        errs.append(f"E12 unparseable finding line: {line}")
+    for fid in phase["fdupes"]:
+        errs.append(f"E13 finding {fid} is defined more than once")
+
+    logged = {c["fid"] for c in phase["changelog"]}
+    for fid in phase["forder"]:
+        f = phase["findings"][fid]
+        for ref in f["tasks"]:
+            if re.match(r"^T\d+$", ref) and ref not in t:
+                errs.append(f"E14 finding {fid} names {ref}, which is not in this phase")
+        if f["status"] != "open" and fid not in logged:
+            warns.append(f"W04 {fid} is marked {f['status']} but no changelog entry "
+                         "says what carries the fix")
+
+    if phase["meta"].get("status") == "approved":
+        stuck = open_findings(phase, ("Critical", "High"))
+        if stuck:
+            errs.append(f"E15 phase is approved with open Critical/High findings: "
+                        f"{', '.join(stuck)}")
+
+    if intof(phase["meta"].get("rev"), 1) >= 3 and open_findings(phase, ("Critical",)):
+        warns.append("W05 round 3 still has an open Critical; the phase is too large "
+                     "or the objective is wrong. Split it and re-plan rather than "
+                     "revising again")
+
+    return errs, warns
+
+
+# -------------------------------------------------------------- recommend
+
+def recommend(phase):
+    """What to run next, derived from the file rather than from memory.
+
+    Returns (command, why). The command is what a human types; the reason is
+    the state that produced it, so a wrong recommendation is debuggable.
+    """
+    meta = phase["meta"]
+    rev = intof(meta.get("rev"), 1)
+    reviewed = intof(meta.get("reviewed"), 0) if meta.get("reviewed") else 0
+    status = meta.get("status", "draft")
+    opened = open_findings(phase)
+
+    errs, _ = lint_issues(phase)
+    if errs:
+        return ("(fix the linter first)",
+                f"plan lint reports {len(errs)} error(s); nothing downstream can trust "
+                "this file until they are fixed")
+
+    started = [x for x in phase["order"]
+               if phase["tasks"][x]["status"] in ("done", "in_progress")]
+
+    if status == "approved" or started:
+        nxt = runnable(phase)
+        pending = [x for x in phase["order"] if phase["tasks"][x]["status"] == "pending"]
+        blocked = [x for x in phase["order"] if phase["tasks"][x]["status"] == "blocked"]
+        if nxt:
+            return (f"/build {nxt[0]}",
+                    f"{len(started)} of {len(phase['order'])} tasks done; "
+                    f"{nxt[0]} is runnable")
+        if blocked and not pending:
+            return ("/review",
+                    f"{', '.join(blocked)} blocked and nothing else is pending; "
+                    "re-enter the loop at review")
+        if pending:
+            waiting = []
+            for tid in pending:
+                unmet = [d for d in phase["tasks"][tid]["deps"]
+                         if phase["tasks"].get(d, {}).get("status") != "done"]
+                waiting.append(f"{tid} waits on {', '.join(unmet) or 'nothing runnable'}")
+            return ("(nothing runnable)", "; ".join(waiting))
+        return ("/close", "every task is done")
+
+    if intof(meta.get("rev"), 1) >= 3 and open_findings(phase, ("Critical",)):
+        return ("/plan",
+                f"rev {rev} still has an open Critical "
+                f"({', '.join(open_findings(phase, ('Critical',)))}); split this phase "
+                "and re-plan rather than revising a fourth time")
+
+    if not reviewed:
+        return ("/review", "this phase has had no review pass; start one in a NEW session")
+
+    if opened:
+        sev = ", ".join(sorted({phase["findings"][f]["severity"] for f in opened}))
+        return ("/revise", f"{len(opened)} open finding(s) ({sev}): {', '.join(opened)}")
+
+    if reviewed < rev:
+        return ("/recheck",
+                f"rev {rev} has not been checked since the last revision "
+                f"(last review pass was rev {reviewed}); run it in a NEW session")
+
+    if status != "approved":
+        return ("/approve",
+                f"rev {rev} is reviewed with no open findings; /approve produces the "
+                "evidence, then you set `status: approved` yourself")
+
+    return ("/build", "the phase is approved")
+
+
+# ---------------------------------------------------------------- writing
+
+def write_phase(phase, text):
+    open(phase["path"], "w", encoding="utf-8").write(text)
+
+
+def sub_outside_comments(pat, repl, text):
+    """Replace the first match that is not inside an HTML comment.
+
+    The read path drops commented lines, so the write path has to as well.
+    Otherwise `plan resolve F1` edits the F1 in the template's format example
+    and reports success while the real finding stays open.
+    """
+    spans = [(m.start(), m.end()) for m in COMMENT_RE.finditer(text)]
+    for m in pat.finditer(text):
+        if any(a <= m.start() < b for a, b in spans):
+            continue
+        return text[:m.start()] + repl(m) + text[m.end():], True
+    return text, False
+
+
+def set_meta(text, key, value):
+    """Set a frontmatter field, inserting it after `status:` if absent."""
+    fm, body = split_frontmatter(text)
+    pat = re.compile(r"^(%s:\s*).*$" % re.escape(key), re.M)
+    if pat.search(fm):
+        fm = pat.sub(lambda m: m.group(1) + str(value), fm, count=1)
+    else:
+        anchor = re.compile(r"^(status:.*)$", re.M)
+        if anchor.search(fm):
+            fm = anchor.sub(lambda m: m.group(1) + f"\n{key}: {value}", fm, count=1)
+        else:
+            fm = fm.rstrip("\n") + f"\n{key}: {value}\n"
+    return join_frontmatter(fm, body)
+
+
+def append_to_block(text, name, line):
+    """Insert a line at the end of a `## Name` block, creating it if absent."""
+    fm, body = split_frontmatter(text)
+    lines = body.splitlines()
+    start = None
+    for i, raw in enumerate(lines):
+        m = HEAD_RE.match(raw)
+        if m and m.group(1).strip().lower() == name.lower():
+            start = i
+            break
+    if start is None:
+        body = body.rstrip("\n") + f"\n\n## {name}\n\n{line}\n"
+        return join_frontmatter(fm, body)
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if HEAD_RE.match(lines[i]):
+            end = i
+            break
+    tail = end
+    while tail > start + 1 and not lines[tail - 1].strip():
+        tail -= 1
+    if tail == start + 1:
+        lines.insert(tail, "")
+        tail += 1
+    lines.insert(tail, line)
+    return join_frontmatter(fm, "\n".join(lines))
+
+
+def _set_status(phase, tid, status, note=None):
+    if tid not in phase["tasks"]:
+        die(f"{tid} is not in this phase")
+    pat = re.compile(r"^(\s{2}%s:\s*\{.*?status:\s*)([A-Za-z_-]+)" % tid, re.M)
+    text, hit = sub_outside_comments(pat, lambda m: m.group(1) + status, phase["text"])
+    if not hit:
+        die(f"could not find a status field for {tid}")
+    write_phase(phase, text)
+    print(f"{tid} -> {status}")
+    if note:
+        log = phase["path"].replace(".md", ".log.md")
+        with open(log, "a", encoding="utf-8") as fh:
+            fh.write(f"\n## {tid} blocked\n{note}\n")
+        print(f"note appended to {log}")
+
+
+# ---------------------------------------------------------------- commands
+
+def print_recommend(phase, prefix="next"):
+    cmd, why = recommend(phase)
+    print(f"{prefix}     {cmd}")
+    print(f"          why: {why}")
+
+
+def cmd_status(phase, _args):
+    m = phase["meta"]
+    counts = {s: 0 for s in STATUSES}
+    for t in phase["tasks"].values():
+        counts[t["status"]] = counts.get(t["status"], 0) + 1
+    reviewed = m.get("reviewed")
+    print(f"phase    {m.get('phase', '?')}  rev {m.get('rev', '?')}  "
+          f"status {m.get('status', '?')}  "
+          f"reviewed {reviewed if reviewed else 'never'}  "
+          f"workflow-rev {m.get('workflow-rev', '?')}")
+    print(f"file     {phase['path']}")
+    print("tasks    " + "  ".join(f"{k} {v}" for k, v in counts.items() if v))
+    if phase["forder"]:
+        opened = open_findings(phase)
+        detail = ""
+        if opened:
+            by = {}
+            for fid in opened:
+                by[phase["findings"][fid]["severity"]] = \
+                    by.get(phase["findings"][fid]["severity"], 0) + 1
+            detail = "  (" + ", ".join(f"{v} {k}" for k, v in by.items()) + ")"
+        print(f"findings {len(phase['forder'])} total  {len(opened)} open{detail}")
+    nxt = runnable(phase)
+    print("runnable " + (", ".join(nxt) if nxt else "none"))
+    blocked = [t for t in phase["order"] if phase["tasks"][t]["status"] == "blocked"]
+    if blocked:
+        print("blocked  " + ", ".join(blocked))
+    print_recommend(phase)
+
+
+def cmd_recommend(phase, _args):
+    cmd, why = recommend(phase)
+    print(f"{cmd}   why: {why}")
+    return 0
+
+
+def cmd_lint(phase, _args):
+    errs, warns = lint_issues(phase)
     for line in errs:
         print(line)
     for line in warns:
         print(line)
     if not errs and not warns:
-        print(f"ok  {len(t)} tasks, graph is acyclic, every task has files and a Verify line")
+        print(f"ok  {len(phase['tasks'])} tasks, graph is acyclic, every task has files "
+              f"and a Verify line; {len(phase['forder'])} findings, "
+              f"{len(open_findings(phase))} open")
     return 1 if errs else 0
 
 
@@ -287,10 +625,14 @@ def cmd_brief(phase, args):
             seen.add(r)
             ordered.append(r)
 
+    status = phase["meta"].get("status", "?")
     print(f"task    {tid}   status {task['status']}")
-    print(f"phase   {phase['path']}  (phase status {phase['meta'].get('status', '?')})")
+    print(f"phase   {phase['path']}  (phase status {status})")
+    if status != "approved":
+        cmd, _ = recommend(phase)
+        print(f"NOT APPROVED this phase is {status}, not approved - run {cmd} first")
     if unmet:
-        print(f"BLOCKED unmet dependencies: {', '.join(unmet)} — do not start this task")
+        print(f"BLOCKED unmet dependencies: {', '.join(unmet)} - do not start this task")
     print("read    " + "\n        ".join(ordered))
     print("        (nothing else; if you need a file that is not listed, stop and say so)")
     v = verify_line(phase, tid)
@@ -301,21 +643,63 @@ def cmd_brief(phase, args):
     return 1 if unmet else 0
 
 
-def _set_status(phase, tid, status, note=None):
-    if tid not in phase["tasks"]:
-        die(f"{tid} is not in this phase")
-    text = phase["text"]
-    pat = re.compile(r"^(\s{2}%s:\s*\{.*?status:\s*)([A-Za-z_-]+)" % tid, re.M)
-    if not pat.search(text):
-        die(f"could not find a status field for {tid}")
-    text = pat.sub(lambda m: m.group(1) + status, text, count=1)
-    open(phase["path"], "w", encoding="utf-8").write(text)
-    print(f"{tid} -> {status}")
-    if note:
-        log = phase["path"].replace(".md", ".log.md")
-        with open(log, "a", encoding="utf-8") as fh:
-            fh.write(f"\n## {tid} blocked\n{note}\n")
-        print(f"note appended to {log}")
+def cmd_findings(phase, args):
+    only_open = "--open" in args
+    rows = [f for f in phase["forder"]
+            if not only_open or phase["findings"][f]["status"] == "open"]
+    if not rows:
+        print("no open findings" if only_open else
+              "no findings recorded; /review writes them into the phase file")
+        return 0
+    for fid in rows:
+        f = phase["findings"][fid]
+        print(f"{fid:<4} {f['severity']:<9} {f['status']:<9} "
+              f"{','.join(f['tasks']) or '-':<10} {f['category']}")
+        print(f"     {f['desc']}")
+        print(f"     fix: {f['fix']}")
+    opened = open_findings(phase)
+    print(f"{len(phase['forder'])} findings, {len(opened)} open")
+    return 0
+
+
+def cmd_resolve(phase, args):
+    if len(args) < 2:
+        die('usage: plan resolve F1 <open|resolved|accepted> "what carries the fix"')
+    fid, state = args[0].upper(), args[1].lower()
+    note = " ".join(args[2:]).strip()
+    if fid not in phase["findings"]:
+        die(f"{fid} is not a finding in this phase")
+    if state not in FSTATUSES:
+        die(f"state must be one of {', '.join(FSTATUSES)}")
+    if state != "open" and not note:
+        die(f"{fid} -> {state} needs a note naming the task or plan line that "
+            "carries the fix")
+
+    pat = re.compile(r"^(\s*[-*]?\s*%s\s*\|[^|]*\|[^|]*\|[^|]*\|\s*)([A-Za-z_-]+)" % fid, re.M)
+    text, hit = sub_outside_comments(pat, lambda m: m.group(1) + state, phase["text"])
+    if not hit:
+        die(f"could not find the status field of {fid}; check its line has seven "
+            "pipe-separated fields")
+    rev = intof(phase["meta"].get("rev"), 1)
+    text = append_to_block(text, "Changelog",
+                           f"rev {rev} | {fid} | {state} | {note or 'reopened'}")
+    write_phase(phase, text)
+    print(f"{fid} -> {state}, logged to the changelog at rev {rev}")
+    return 0
+
+
+def cmd_bump(phase, _args):
+    rev = intof(phase["meta"].get("rev"), 1) + 1
+    write_phase(phase, set_meta(phase["text"], "rev", rev))
+    print(f"rev -> {rev}")
+    return 0
+
+
+def cmd_reviewed(phase, _args):
+    rev = intof(phase["meta"].get("rev"), 1)
+    write_phase(phase, set_meta(phase["text"], "reviewed", rev))
+    print(f"reviewed -> {rev}")
+    return 0
 
 
 def cmd_done(phase, args):
@@ -343,8 +727,10 @@ def cmd_version(_phase, _args):
     return 0
 
 
-COMMANDS = {"version": cmd_version, "status": cmd_status, "lint": cmd_lint, "next": cmd_next,
-            "brief": cmd_brief, "done": cmd_done, "block": cmd_block}
+COMMANDS = {"version": cmd_version, "status": cmd_status, "lint": cmd_lint,
+            "next": cmd_next, "brief": cmd_brief, "done": cmd_done, "block": cmd_block,
+            "findings": cmd_findings, "resolve": cmd_resolve, "bump": cmd_bump,
+            "reviewed": cmd_reviewed, "recommend": cmd_recommend}
 
 
 def main():
@@ -355,6 +741,8 @@ def main():
     name = argv[0]
     if name not in COMMANDS:
         die(f"unknown command {name!r}. Try: {', '.join(COMMANDS)}")
+    if name == "version":
+        return cmd_version(None, argv[1:])
     phase = read_phase(read_index())
     return COMMANDS[name](phase, argv[1:]) or 0
 

@@ -30,3 +30,9 @@ fix the ones that fail, and only then write them down.
 
 Acceptance: I open a new session and ask what this project is and how to run
 it. It answers from AGENTS.md alone, without reading source.
+
+## Next
+
+Commit the scaffold, then tell me to run `/plan` for Phase 1 with the
+objective brief. If PLAN.md now exists, run `.claude/bin/plan recommend` and
+print it instead — from here the phase file decides, not the command.

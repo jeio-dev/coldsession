@@ -29,17 +29,27 @@ git add .claude templates; git commit -m "chore: coldsession"
 
 `install.ps1` mirrors `install.sh`: it copies the commands, the `plan` tool,
 and the templates, and writes `.claude/settings.json` only if one doesn't
-already exist. It needs `python3` (or `python`) on `PATH`. The script is
-BOM-less UTF-8 and ASCII-only, so it parses cleanly under Windows PowerShell
-5.1 as well as PowerShell 7+.
+already exist. It needs `python3` (or `python`, or `py`) on `PATH`. The script
+is BOM-less UTF-8 and ASCII-only, so it parses cleanly under Windows
+PowerShell 5.1 as well as PowerShell 7+.
 
 ```
 .claude/commands/*.md    the ten commands
 .claude/bin/plan         the graph and context tool
+.claude/bin/plan.cmd     the same tool, entered from Windows
 .claude/settings.json    opusplan routing + permission for the tool
 templates/               PLAN.md, phase.md
 docs/plans/              phase files land here
 ```
+
+`plan` is an extension-less Python file with a shebang. POSIX shells and Git
+Bash run it directly; PowerShell cannot run an extension-less file at all, and
+does not apply `PATHEXT` to an explicit path, so a `.cmd` sitting next to it
+isn't found either. `install.ps1` therefore points the commands it installs at
+`.claude/bin/plan.cmd`, which works from PowerShell, cmd.exe, and Git Bash
+alike. Both installers ship both files, so a repo installed on one platform
+still runs on the other; a teammate on the other OS re-runs their own
+installer, which repoints the commands and touches nothing else.
 
 Installs per project, not globally, so the workflow version pins with the
 code and a phase planned six months ago still reads the way it was planned.
@@ -67,13 +77,50 @@ enter plan mode, or pick a model. `/review` typed into the session that wrote
 the plan gives you a compromised review with correct wording, which is worse
 than skipping it — it looks like a review.
 
+Every command from `/plan` onward ends by printing `plan recommend`, so the
+next step comes from the phase file rather than from you remembering the
+order. `/define` and `/groundwork` recommend statically; nothing is on disk
+yet to derive from.
+
 `/approve` deliberately cannot approve. You set `status: approved` in the
 phase file's frontmatter yourself. A model grading its own revision against
 criteria it just satisfied passes itself every time.
 
 **Stop condition.** If round three still produces a Critical, the phase is
 too large or the objective is wrong. Split it and re-plan. A loop with no exit
-is how a planning workflow becomes a way of avoiding the build.
+is how a planning workflow becomes a way of avoiding the build. `plan lint`
+warns at that point (`W05`) and `plan recommend` sends you to `/plan` instead
+of `/revise`.
+
+## Findings
+
+A finding that only exists in the session that found it is gone, because that
+session is meant to end. `/review` writes its findings into the phase file's
+`## Findings` block, one per line, seven fields:
+
+```
+F1 | Critical | Task ordering | T3 | open | T3 reads the queue but does not depend on T2 | add T2 to T3 deps
+F3 | Medium   | Unnecessary scope | T2 | accepted | types.ts duplicates the schema | drop it or import from T1
+```
+
+Same bargain as the task graph: a narrow shape the tool can parse, no pipes
+inside the prose, and a malformed line fails loudly as `E12` rather than
+disappearing. `/revise` closes each one with
+
+```
+plan resolve F1 resolved "T3 now depends on T2"
+```
+
+which flips the status and appends `rev 2 | F1 | resolved | T3 now depends on
+T2` to the changelog in the same step, so the two can't disagree. `resolved`
+means the plan changed; `accepted` means it didn't and here's why. The note
+has to name a task ID or plan line — `/approve` fails a changelog entry that
+just says "fixed", and `/recheck` reads the changelog rather than the phase,
+so an entry that names nothing gives it nothing to check.
+
+`reviewed:` in the frontmatter carries the rev of the last review pass.
+Against `rev:`, it is what tells `/recheck` there is something new to look at
+and what stops `/approve` from grading an unreviewed revision.
 
 ## The task graph
 
@@ -85,7 +132,8 @@ duplicates the other, and `plan lint` fails if they drift.
 phase: 02-offline-sync
 rev: 3
 status: approved
-workflow-rev: 1.0.0
+reviewed: 3
+workflow-rev: 1.1.0
 tasks:
   T1: {deps: [], status: done, files: [src/db/schema.ts]}
   T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts]}
@@ -112,19 +160,33 @@ treats one as a High finding.
 ## plan
 
 ```
-plan status              phase, counts, what's runnable, what's blocked
-plan lint                validate the graph; exit 1 on error
+plan status              phase, counts, findings, what's runnable, what's next
+plan recommend           one line: the next command to run, and why
+plan lint                validate graph and findings; exit 1 on error
 plan next [--parallel]   next runnable ids; --parallel groups by file overlap
 plan brief T2            bounded read list + verify line for one task
 plan done T2             mark done, refusing if a dependency isn't
 plan block T2 "reason"   mark blocked and append to the phase log
+plan findings [--open]   the finding list
+plan resolve F1 STATE    close or reopen a finding, logging it to the changelog
+plan bump                bump the phase rev, at the start of a revise pass
+plan reviewed            record that this rev has had a review pass
 ```
 
 `lint` catches unparseable task lines, unknown or cyclic dependencies, tasks
 marked done ahead of their dependencies, empty `files` lists, missing
-`Verify:` lines, graph entries with no body section, and body sections with no
-graph entry. `/review` and `/approve` both run it, so shape errors never
-consume a human review round.
+`Verify:` lines, graph entries with no body section, body sections with no
+graph entry, malformed or duplicated findings, findings naming tasks that
+don't exist, findings closed without a changelog entry, and an approved phase
+with an open Critical or High. `/review`, `/recheck`, and `/approve` all run
+it, so shape errors never consume a human review round.
+
+`recommend` derives the next command from the file: unreviewed sends you to
+`/review`, open findings to `/revise`, a revision newer than its last review
+pass to `/recheck`, a clean reviewed rev to `/approve`, an approved phase to
+`/build` with the first runnable id, a finished one to `/close`. It prints the
+state that produced the answer, so a recommendation you disagree with is one
+you can check rather than guess at.
 
 The frontmatter parser is regex-based on a deliberately narrow one-line-per-
 task shape rather than a real YAML parse, to stay stdlib-only. A malformed
@@ -215,10 +277,11 @@ small the diff looks.
 Semver applies to four things. Everything else is free to change in a patch.
 
 1. **Command names.** `/build T2` keeps working.
-2. **The `tasks:` frontmatter shape.** Phase files planned under 1.x stay
-   readable by 1.x tooling.
+2. **The `tasks:` frontmatter shape, and the `## Findings` line shape.** Phase
+   files planned under 1.x stay readable by 1.x tooling. A file written before
+   findings existed still lints and builds.
 3. **`plan` subcommands and exit codes.** `lint` exits 1 on error; scripts can
-   rely on it.
+   rely on it. Subcommands get added in a minor release, never removed in one.
 4. **Install paths.** `.claude/commands/`, `.claude/bin/plan`, `templates/`.
 
 Prompt wording inside a command is not part of the contract — it will change

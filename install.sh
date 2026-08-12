@@ -19,6 +19,11 @@ cp "$SRC"/commands/*.md "$DEST/.claude/commands/"
 cp "$SRC/bin/plan" "$DEST/.claude/bin/plan"
 chmod +x "$DEST/.claude/bin/plan"
 
+# Ship the Windows entry point too, so a repo installed here still works for a
+# teammate on Windows. The commands installed by this script call the POSIX
+# `plan`; a Windows teammate re-runs install.ps1, which repoints them.
+cp "$SRC/bin/plan.cmd" "$DEST/.claude/bin/plan.cmd"
+
 mkdir -p "$DEST/templates"
 for t in PLAN.md phase.md; do
   [ -f "$DEST/templates/$t" ] || cp "$SRC/templates/$t" "$DEST/templates/$t"
@@ -33,7 +38,10 @@ if [ ! -f "$SETTINGS" ]; then
     "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
   },
   "permissions": {
-    "allow": ["Bash(.claude/bin/plan:*)"]
+    "allow": [
+      "Bash(.claude/bin/plan:*)",
+      "Bash(.claude/bin/plan.cmd:*)"
+    ]
   }
 }
 JSON
@@ -41,13 +49,14 @@ JSON
 else
   echo "kept existing .claude/settings.json — add this yourself:"
   echo '  "model": "opusplan"'
-  echo '  "permissions": { "allow": ["Bash(.claude/bin/plan:*)"] }'
+  echo '  "permissions": { "allow": ["Bash(.claude/bin/plan:*)", "Bash(.claude/bin/plan.cmd:*)"] }'
 fi
 
 echo
 echo "installed into $DEST"
-echo "  .claude/commands/   10 commands"
-echo "  .claude/bin/plan    dependency + context tool"
-echo "  templates/          PLAN.md, phase.md"
+echo "  .claude/commands/     10 commands, calling .claude/bin/plan"
+echo "  .claude/bin/plan      dependency + context tool"
+echo "  .claude/bin/plan.cmd  the same tool, for teammates on Windows"
+echo "  templates/            PLAN.md, phase.md"
 echo
 echo "next: claude, then /define <your idea>"

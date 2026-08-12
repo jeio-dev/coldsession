@@ -63,6 +63,16 @@ in a state I can run.
 - Open questions that need my input before this plan is final
 - Out of scope items
 
-Then run `.claude/bin/plan lint` and fix anything it reports.
+Leave the `## Findings` and `## Changelog` sections in place and empty.
+/review writes the first, /revise writes the second, and they are how those
+sessions hand work to each other. Do not add a `reviewed:` field — the phase
+has not been reviewed, and the tooling reads its absence.
 
 Ask me the open questions directly rather than guessing. Do not write code.
+
+## Finishing
+
+1. `.claude/bin/plan lint` — fix anything it reports.
+2. `.claude/bin/plan recommend` and print it. It will send you to /review.
+3. Stop, and tell me to run /review in a NEW session. /review typed here
+   reviews its own work and will agree with itself.

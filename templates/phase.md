@@ -2,7 +2,7 @@
 phase: 02-<slug>
 rev: 1
 status: draft
-workflow-rev: 1.0.1
+workflow-rev: 1.1.0
 tasks:
   T1: {deps: [], status: pending, files: [src/db/schema.ts]}
   T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts]}
@@ -50,8 +50,18 @@ Verify: `<exact command>` prints/exits `<exact expected result>`
 
 ## Findings
 
-<!-- F1 | Critical | Task ordering | T3 | description | recommended fix -->
+<!-- /review and /recheck write here. One finding per line, seven fields:
+     id | severity | category | tasks | status | description | recommended fix
+     severity: Critical | High | Medium | Low
+     status:   open | resolved | accepted   (set it with `plan resolve`)
+     tasks:    comma-separated task ids, or - for a plan-level finding
+     No pipes inside a description or fix; the parser splits on them.
+
+F1 | Critical | Task ordering | T3 | open | T3 reads the queue but does not depend on T2 | add T2 to T3 deps
+-->
 
 ## Changelog
 
-<!-- rev 2: F1 -> resolved, T3 now depends on T2 -->
+<!-- `plan resolve` writes here. One line per resolution:
+     rev N | F1 | resolved | the task id or plan line that now carries the fix
+-->

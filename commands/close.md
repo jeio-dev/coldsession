@@ -2,7 +2,8 @@
 description: Harvest repeated corrections, then close the phase
 ---
 
-Run `.claude/bin/plan status`. If any task is not done, stop and say which.
+Run `.claude/bin/plan status`. If any task is not done, stop, say which, and
+print `.claude/bin/plan recommend` — it names what to run instead.
 
 Read this phase's commits, its log file, and the phase file including every
 finding.
@@ -21,5 +22,13 @@ Propose nothing you can't tie to a specific commit, log entry, or finding.
 Then audit the delivered phase against its acceptance criteria and report
 gaps, dead code, and anything left unwired.
 
-Finally: tick this phase in PLAN.md, advance `current:` to the next phase
-file, and tell me to run /define for it.
+Finally: tick this phase in PLAN.md and advance `current:` to the next phase
+file.
+
+## Next
+
+- A next phase exists in PLAN.md: tell me to run `/plan` for it in a NEW
+  session, and `/define` first if its objective is more than one line in
+  PLAN.md. The new phase file starts unreviewed, so `plan recommend` will
+  pick the loop up from /review on its own.
+- No phase left: say the plan is complete, and do not invent one.
