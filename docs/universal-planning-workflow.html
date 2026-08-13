@@ -704,10 +704,15 @@
     <h3>Setting it up</h3>
     <div class="code-block">
       <div class="code-head"><span>bash</span><button class="copy-btn" type="button">Copy</button></div>
-      <pre><code>git clone https://github.com/&lt;you&gt;/coldsession ~/src/coldsession
-cd ~/my-project &amp;&amp; ~/src/coldsession/install.sh
+      <pre><code>cd ~/my-project
+git clone --depth 1 https://github.com/&lt;you&gt;/coldsession .coldsession
+.coldsession/install.sh
 git add .claude templates &amp;&amp; git commit -m "chore: coldsession"</code></pre>
     </div>
+
+    <p class="fine">The clone goes inside the project and the installer deletes
+      it when it's done, so the only copy of the workflow that outlives the
+      install is the one committed with the code.</p>
 
     <p class="fine">Installing per project rather than globally is
       deliberate: the workflow version is pinned with the code, so a phase

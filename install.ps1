@@ -1,11 +1,30 @@
 # Install the planning workflow into the current project.
-#   .\install.ps1 [target-dir]   default: $PWD
+#   .\install.ps1 [target-dir] [-Keep]   default target: $PWD
+#
+# The documented flow clones this repo into the project as .coldsession and
+# runs it from there, so nothing has to live outside the project:
+#
+#   cd $HOME\my-project
+#   git clone --depth 1 https://github.com/jeio-dev/coldsession.git .coldsession
+#   .\.coldsession\install.ps1
+#
+# When this script is that clone - $DEST\.coldsession - it deletes itself once
+# the install is done. A checkout you keep somewhere else is never touched,
+# and -Keep skips the cleanup either way.
+param(
+    [string]$Target,
+    [switch]$Keep
+)
 $ErrorActionPreference = "Stop"
 
-$SRC = Split-Path -Parent $MyInvocation.MyCommand.Definition | Resolve-Path
-$DEST = if ($args[0]) { Resolve-Path $args[0] } else { Get-Location }
+function Get-FullPath($p) {
+    return ([System.IO.Path]::GetFullPath((Resolve-Path $p).ProviderPath)).TrimEnd('\')
+}
 
-if ((Resolve-Path $SRC) -eq (Resolve-Path $DEST)) {
+$SRC = Get-FullPath (Split-Path -Parent $MyInvocation.MyCommand.Definition)
+$DEST = if ($Target) { Get-FullPath $Target } else { Get-FullPath (Get-Location).Path }
+
+if ($SRC -eq $DEST) {
     Write-Error "refusing to install into the workflow repo itself"
     exit 1
 }
@@ -101,3 +120,30 @@ Write-Host "  .claude\bin\plan.cmd  the entry point PowerShell can actually run"
 Write-Host "  templates\            PLAN.md, phase.md"
 Write-Host ""
 Write-Host 'next: claude, then /define <your idea>'
+
+# Clean up the throwaway clone. Only $DEST\.coldsession qualifies: a clone
+# under another name, or a checkout outside the project, is something you
+# chose to keep, and this script does not get to decide otherwise.
+# PowerShell parses a script into memory before running it, so deleting the
+# file this code lives in is safe; the working directory is not, hence the
+# Set-Location first.
+if ($SRC -eq "$DEST\.coldsession") {
+    if ($Keep) {
+        Write-Host ""
+        Write-Host "kept $SRC (-Keep)"
+    } else {
+        Write-Host ""
+        Write-Host "removing $SRC"
+        Set-Location $DEST
+        try {
+            # -Force also clears the read-only bit git sets on its objects
+            Remove-Item -LiteralPath $SRC -Recurse -Force -Confirm:$false
+        } catch {
+            Write-Host "could not remove $SRC - delete it yourself"
+            Write-Host "  $($_.Exception.Message)"
+        }
+    }
+} elseif ($SRC.StartsWith("$DEST\", [System.StringComparison]::OrdinalIgnoreCase)) {
+    Write-Host ""
+    Write-Host "note: $SRC is inside the project; remove it when you're done"
+}

@@ -4,6 +4,26 @@ Format version and release version are the same number. A phase file records
 the version it was planned under as `workflow-rev`, and `plan lint` refuses a
 file whose major version differs from the tool's.
 
+## [v1.1.1]
+
+### The installer disposes of itself
+
+Install used to ask for a clone somewhere outside the project — `~/src` in the
+README — which left a second copy of the workflow on disk with nothing to keep
+it current. The clone now goes inside the project and the installer removes it
+as its last act:
+
+    cd ~/my-project
+    git clone --depth 1 https://github.com/jeio-dev/coldsession.git .coldsession
+    .coldsession/install.sh
+
+Only `.coldsession` at the root of the target is treated as disposable. A
+checkout that lives elsewhere, or a clone under another name, is left alone;
+`--keep` (`-Keep` under PowerShell) skips the cleanup either way. `install.sh`
+`exec`s the removal so the shell is replaced before the script it is reading
+goes away, and `install.ps1` sets the working directory out of the clone first
+and passes `-Force`, which clears the read-only bit git leaves on its objects.
+
 ## [1.1.0] — 2026-08-13
 
 Findings became a file rather than a transcript, and the tool now says what to

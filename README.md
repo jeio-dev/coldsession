@@ -11,21 +11,31 @@ build session reads a computed list of files rather than a codebase.
 
 ## Install
 
+Clone into the project, run it, and it deletes itself.
+
 ```bash
-git clone https://github.com/jeio-dev/coldsession.git ~/src/coldsession
 cd ~/my-project
-~/src/coldsession/install.sh
+git clone --depth 1 https://github.com/jeio-dev/coldsession.git .coldsession
+.coldsession/install.sh
 git add .claude templates && git commit -m "chore: coldsession"
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-git clone https://github.com/jeio-dev/coldsession.git $HOME\src\coldsession
 cd $HOME\my-project
-..\src\coldsession\install.ps1
+git clone --depth 1 https://github.com/jeio-dev/coldsession.git .coldsession
+.\.coldsession\install.ps1
 git add .claude templates; git commit -m "chore: coldsession"
 ```
+
+The clone never outlives the install, so nothing has to live outside the
+project and there is no second copy to remember to update. Pass `--keep`
+(`-Keep` under PowerShell) to leave it in place. Only `.coldsession` at the
+root of the target is treated as disposable — a clone under another name, or a
+checkout you keep somewhere else, is left alone and merely mentioned. Both
+installers take the target directory as their first argument, defaulting to
+the current one.
 
 `install.ps1` mirrors `install.sh`: it copies the commands, the `plan` tool,
 and the templates, and writes `.claude/settings.json` only if one doesn't
