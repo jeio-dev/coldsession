@@ -24,7 +24,7 @@ import os
 import re
 import sys
 
-VERSION = "1.1.2"
+VERSION = "1.2.0"
 
 ROOT = os.environ.get("PLAN_ROOT", ".")
 INDEX = os.path.join(ROOT, "PLAN.md")
@@ -37,6 +37,7 @@ CHANGE_RE = re.compile(r"^rev\s+(\d+)\s*\|\s*(F\d+)\s*\|\s*([A-Za-z_-]+)\s*\|\s*
 LIST_RE = lambda k: re.compile(k + r":\s*\[([^\]]*)\]")
 WORD_RE = lambda k: re.compile(k + r":\s*([A-Za-z_-]+)")
 STATUSES = ("pending", "in_progress", "done", "blocked")
+PSTATUSES = ("draft", "approved", "closed")
 FSTATUSES = ("open", "resolved", "accepted")
 SEVERITIES = ("Critical", "High", "Medium", "Low")
 META_KEYS = ("phase", "rev", "status", "reviewed", "workflow-rev")
@@ -91,7 +92,11 @@ def read_index():
         die("PLAN.md frontmatter has no `current:` pointer.")
     path = os.path.join(ROOT, m.group(1))
     if not os.path.exists(path):
-        die(f"PLAN.md points at {m.group(1)}, which does not exist.")
+        die(f"PLAN.md points at {m.group(1)}, which does not exist.\n"
+            "  A phase was probably closed and the next one not planned yet.\n"
+            "  Run /plan for it in a new session -- /plan writes the phase file\n"
+            "  and moves `current:` to it -- or point `current:` back at the\n"
+            "  phase file you are still working in.")
     return path
 
 
@@ -303,7 +308,7 @@ def lint_issues(phase):
         errs.append(f"E11 phase file is format {fmt}, tool is {VERSION}; "
                     "major versions differ and the shapes are not compatible")
 
-    if phase["meta"].get("status") not in ("draft", "approved", None):
+    if phase["meta"].get("status") not in PSTATUSES + (None,):
         warns.append(f"W01 unexpected phase status {phase['meta'].get('status')!r}")
 
     for tid in phase["order"]:
@@ -348,11 +353,11 @@ def lint_issues(phase):
             warns.append(f"W04 {fid} is marked {f['status']} but no changelog entry "
                          "says what carries the fix")
 
-    if phase["meta"].get("status") == "approved":
+    if phase["meta"].get("status") in ("approved", "closed"):
         stuck = open_findings(phase, ("Critical", "High"))
         if stuck:
-            errs.append(f"E15 phase is approved with open Critical/High findings: "
-                        f"{', '.join(stuck)}")
+            errs.append(f"E15 phase is {phase['meta']['status']} with open "
+                        f"Critical/High findings: {', '.join(stuck)}")
 
     if intof(phase["meta"].get("rev"), 1) >= 3 and open_findings(phase, ("Critical",)):
         warns.append("W05 round 3 still has an open Critical; the phase is too large "
@@ -381,6 +386,11 @@ def recommend(phase):
         return ("(fix the linter first)",
                 f"plan lint reports {len(errs)} error(s); nothing downstream can trust "
                 "this file until they are fixed")
+
+    if status == "closed":
+        return ("/plan",
+                "this phase is closed; the next one has no file yet, and /plan "
+                "writes it and moves `current:` onto it")
 
     started = [x for x in phase["order"]
                if phase["tasks"][x]["status"] in ("done", "in_progress")]
@@ -573,7 +583,9 @@ def cmd_next(phase, args):
     nxt = runnable(phase)
     if not nxt:
         pending = [x for x in phase["order"] if phase["tasks"][x]["status"] == "pending"]
-        if not pending:
+        if phase["meta"].get("status") == "closed":
+            print("this phase is closed: run /plan for the next one")
+        elif not pending:
             print("no pending tasks: the phase is complete, run /close")
         else:
             print("nothing runnable: every pending task is waiting on an unfinished dependency")

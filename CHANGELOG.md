@@ -4,6 +4,47 @@ Format version and release version are the same number. A phase file records
 the version it was planned under as `workflow-rev`, and `plan lint` refuses a
 file whose major version differs from the tool's.
 
+## [v1.2.0]
+
+### The loop closes at /plan, not /define
+
+Finishing a phase sent you back to `/define`. `/close` said to run `/plan`,
+"and `/define` first if its objective is more than one line in PLAN.md" — but
+PLAN.md is defined as one line per phase and nothing else, so the condition
+could never be read literally, and a session read it as intent instead: is
+this more than one line's *worth* of design? For any phase worth having, yes.
+`/plan` then bounced to `/define` on its own, because `/close` sends you to a
+new session and `/plan` required an objective brief held in the session's own
+memory. Both paths landed on a command that produces a whole-product MVP
+brief — primary users, out of scope for v1, hosting — and writes none of it to
+disk, at a point where the product scope was settled several phases ago.
+
+`/close` now hands off to `/plan` and names the phase. `/plan` opened cold
+falls back to what is on disk: the phase's line in PLAN.md, the closed phase
+file and its log, AGENTS.md, and architecture notes. A one-line phase name is
+an intention rather than a specification, so it asks its open questions before
+writing, which it was already meant to do. `/define` goes back to being what
+it is — the one-time front door.
+
+### /close no longer points `current:` at a file that does not exist
+
+`/close` advanced `current:` to the next phase file, which `/plan` had not
+written yet. `read_index` refuses a pointer it cannot resolve and every
+subcommand goes through it, so `plan status`, `plan recommend`, and `plan
+brief` all failed between the two commands — the one moment the workflow's
+"just run `plan recommend`" answer was unavailable. `/close` now leaves the
+pointer alone and `/plan` moves it in the same edit that writes the file it
+points at. When a pointer does dangle, the error says a phase was probably
+closed without the next being planned, and names both ways out.
+
+### A closed phase says what to do next
+
+`/close` sets `status: closed` in the phase file. `recommend` returns `/plan`
+for it instead of recommending the `/close` you just ran, `plan next` says the
+same, and `lint` accepts the status. `E15` — approved with an open Critical or
+High — now covers closed phases too, so moving a phase off `approved` does not
+quietly retire the check.
+
 ## [v1.1.2]
 
 ### `plan brief` reads the full dependency chain

@@ -7,7 +7,7 @@ and one dependency-free script. The session that reviews a plan never held
 the pen that wrote it, the phase file carries a linted task graph, and a
 build session reads a computed list of files rather than a codebase.
 
-    /define → /plan → /review → /revise → /approve → /build → /close
+    /define → /plan → /review → /revise → /approve → /build → /close → /plan …
 
 ## Install
 
@@ -15,7 +15,7 @@ Clone into the project, run it, and it deletes itself.
 
 ```bash
 cd ~/my-project
-git clone --depth 1 --branch v1.1.2 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v1.2.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/install.sh
 git add .claude templates && git commit -m "chore: coldsession"
 ```
@@ -24,12 +24,12 @@ git add .claude templates && git commit -m "chore: coldsession"
 
 ```powershell
 cd $HOME\my-project
-git clone --depth 1 --branch v1.1.2 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v1.2.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .\.coldsession\install.ps1
 git add .claude templates; git commit -m "chore: coldsession"
 ```
 
-`--branch v1.1.2` pins the clone to a tagged release rather than whatever's
+`--branch v1.2.0` pins the clone to a tagged release rather than whatever's
 on `main`, so following this README always gets a tested version; bump it to
 the latest tag from the [releases page](https://github.com/jeio-dev/coldsession/tags)
 if this copy of the README is older than the repo. The clone never outlives
@@ -58,7 +58,7 @@ to run against a project with no existing install, and never touches
 
 ```bash
 cd ~/my-project
-git clone --depth 1 --branch v1.1.2 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v1.2.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/update.sh
 git add .claude && git commit -m "chore: update coldsession"
 ```
@@ -103,7 +103,7 @@ Needs `python3` and an agent that reads `.claude/commands/`.
 | `/recheck` | 3, new | plan · opus | Rounds 2+. Reads the changelog, not the phase. |
 | `/approve` | new | normal · sonnet | Evidence checklist. Issues no verdict. |
 | `/build T2` | one per task | normal · sonnet · `--effort medium` | One task, verified, committed. |
-| `/close` | new | normal · sonnet | Harvest corrections, audit, advance the pointer. |
+| `/close` | new | normal · sonnet | Harvest corrections, audit, close the phase. |
 | `/status` | anywhere | any | Four lines. Reads no source. |
 
 A command supplies prompt text and nothing else. It does not start a session,
@@ -167,7 +167,7 @@ phase: 02-offline-sync
 rev: 3
 status: approved
 reviewed: 3
-workflow-rev: 1.1.0
+workflow-rev: 1.2.0
 tasks:
   T1: {deps: [], status: done, files: [src/db/schema.ts]}
   T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts]}
@@ -211,16 +211,33 @@ plan reviewed            record that this rev has had a review pass
 marked done ahead of their dependencies, empty `files` lists, missing
 `Verify:` lines, graph entries with no body section, body sections with no
 graph entry, malformed or duplicated findings, findings naming tasks that
-don't exist, findings closed without a changelog entry, and an approved phase
-with an open Critical or High. `/review`, `/recheck`, and `/approve` all run
+don't exist, findings closed without a changelog entry, and an approved or
+closed phase with an open Critical or High. `/review`, `/recheck`, and `/approve` all run
 it, so shape errors never consume a human review round.
 
 `recommend` derives the next command from the file: unreviewed sends you to
 `/review`, open findings to `/revise`, a revision newer than its last review
 pass to `/recheck`, a clean reviewed rev to `/approve`, an approved phase to
-`/build` with the first runnable id, a finished one to `/close`. It prints the
-state that produced the answer, so a recommendation you disagree with is one
-you can check rather than guess at.
+`/build` with the first runnable id, a finished one to `/close`, and a closed
+one to `/plan` for the phase after it. It prints the state that produced the
+answer, so a recommendation you disagree with is one you can check rather than
+guess at.
+
+## The phase boundary
+
+`/close` ticks the phase in PLAN.md and marks the phase file `status: closed`.
+It does not touch `current:`. Moving the pointer is `/plan`'s job, in the same
+edit that writes the new phase file, because a `current:` naming a file that
+doesn't exist yet is a pointer every `plan` subcommand refuses to read — the
+one moment you'd most want to ask the tool what to do next.
+
+So the loop closes at `/plan`, not `/define`. `/define` is a whole-product
+brief: it runs once, before Phase 01, and produces something no file on disk
+holds. Phase 02 has no product scope left to settle — `/plan` opens in a new
+session with no brief, reads the PLAN.md line, the phase you just closed and
+its log, and AGENTS.md, then asks you what a one-line phase name can't say.
+
+    /plan → /review → /revise → /approve → /build → /close → /plan …
 
 The frontmatter parser is regex-based on a deliberately narrow one-line-per-
 task shape rather than a real YAML parse, to stay stdlib-only. A malformed
@@ -307,7 +324,7 @@ itself on a new surface area and is pure overhead on a copy change. Touching
 data ownership, auth, or money puts you in the full loop regardless of how
 small the diff looks.
 
-## What v1.0.0 commits to
+## What 1.x commits to
 
 Semver applies to four things. Everything else is free to change in a patch.
 

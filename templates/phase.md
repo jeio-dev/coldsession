@@ -2,7 +2,7 @@
 phase: 02-<slug>
 rev: 1
 status: draft
-workflow-rev: 1.1.0
+workflow-rev: 1.2.0
 tasks:
   T1: {deps: [], status: pending, files: [src/db/schema.ts]}
   T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts]}

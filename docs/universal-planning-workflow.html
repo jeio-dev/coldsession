@@ -508,11 +508,11 @@
 
   <div class="titleblock">
     <div class="tb-row"><span>Title</span><span>Universal Planning Workflow</span></div>
-    <div class="tb-row"><span>Version</span><span>v1.0.0</span></div>
+    <div class="tb-row"><span>Version</span><span>v1.2.0</span></div>
     <div class="tb-row"><span>Scale</span><span>1 idea : 1 shippable plan</span></div>
     <div class="tb-row"><span>Sessions</span><span>plan · review · approve · 1 per task</span></div>
     <div class="tb-row"><span>State</span><span>PLAN.md + docs/plans/ + task graph</span></div>
-    <div class="tb-row"><span>Date</span><span>2026-08-07</span></div>
+    <div class="tb-row"><span>Date</span><span>2026-08-14</span></div>
   </div>
 
   <h1>Define → Plan → Review → Revise → Approve → Build</h1>
@@ -705,7 +705,7 @@
     <div class="code-block">
       <div class="code-head"><span>bash</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>cd ~/my-project
-git clone --depth 1 https://github.com/&lt;you&gt;/coldsession .coldsession
+git clone --depth 1 --branch v1.2.0 https://github.com/&lt;you&gt;/coldsession .coldsession
 .coldsession/install.sh
 git add .claude templates &amp;&amp; git commit -m "chore: coldsession"</code></pre>
     </div>
@@ -717,7 +717,7 @@ git add .claude templates &amp;&amp; git commit -m "chore: coldsession"</code></
     <p class="fine">Installing per project rather than globally is
       deliberate: the workflow version is pinned with the code, so a phase
       planned six months ago still reads the way it was planned. Record it: add
-      <code>workflow-rev: 1.0.0</code> to PLAN.md's frontmatter, so a phase
+      <code>workflow-rev: 1.2.0</code> to PLAN.md's frontmatter, so a phase
       planned under an older loop is readable as an older plan rather than a
       wrong-looking one.</p>
   </section>
@@ -887,9 +887,21 @@ Create a complete implementation plan for the following objective:
 
 $ARGUMENTS
 
-If the line above is blank, use the objective brief produced earlier in this
-session. If there is no brief in this session either, stop and tell me to run
-/define first.
+If the line above is blank, work out what you are planning against, in this
+order:
+
+1. An objective brief produced earlier in this session: use it.
+2. No brief, but PLAN.md exists: this is a phase boundary, and the objective
+   is the phase `current:` names, or the first unticked phase if `current:`
+   names a closed one. Read its line in PLAN.md, the closed phase file and
+   its `.log.md` for what carries forward, AGENTS.md, and
+   docs/architecture.md if it exists. Nothing else. The product scope is
+   settled; do not re-derive it, and do not run /define.
+3. Neither: stop and tell me to run /define first.
+
+Coming in at a boundary you will have real questions — a one-line phase name
+is an intention, not a specification. Ask them, per `## Also include` below,
+before you write the file.
 
 Break the work into logical phases, and phases into numbered tasks
 (T1, T2, T3, ...).
@@ -900,6 +912,10 @@ PLAN.md is the index: a `current:` pointer and a checklist of phases in
 dependency order, one line each, linking to their phase files. Create it from
 templates/PLAN.md if absent; otherwise add or correct phases and set
 `current:` to this one. Never copy task detail into PLAN.md.
+
+Setting `current:` is yours alone. /close leaves it on the phase it closed,
+so at a boundary it still names the previous phase until you move it. Move it
+in the same edit that writes the new phase file, never before.
 
 Write the current phase to docs/plans/(NN)-(slug).md using
 templates/phase.md. Detail only the current phase at task level. Phases
@@ -943,9 +959,19 @@ in a state I can run.
 - Open questions that need my input before this plan is final
 - Out of scope items
 
-Then run `.claude/bin/plan lint` and fix anything it reports.
+Leave the `## Findings` and `## Changelog` sections in place and empty.
+/review writes the first, /revise writes the second, and they are how those
+sessions hand work to each other. Do not add a `reviewed:` field — the phase
+has not been reviewed, and the tooling reads its absence.
 
-Ask me the open questions directly rather than guessing. Do not write code.</code></pre>
+Ask me the open questions directly rather than guessing. Do not write code.
+
+## Finishing
+
+1. `.claude/bin/plan lint` — fix anything it reports.
+2. `.claude/bin/plan recommend` and print it. It will send you to /review.
+3. Stop, and tell me to run /review in a NEW session. /review typed here
+   reviews its own work and will agree with itself.</code></pre>
     </div>
 
     <h3>The task graph</h3>
@@ -959,7 +985,7 @@ Ask me the open questions directly rather than guessing. Do not write code.</cod
 phase: 02-offline-sync
 rev: 3
 status: approved
-workflow-rev: 1.0.0
+workflow-rev: 1.2.0
 tasks:
   T1: {deps: [], status: done, files: [src/db/schema.ts]}
   T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts]}
@@ -1448,7 +1474,8 @@ handoff docs/plans/02-offline-sync.log.md  (read the last entry only)</code></pr
 description: Harvest repeated corrections, then close the phase
 ---
 
-Run `.claude/bin/plan status`. If any task is not done, stop and say which.
+Run `.claude/bin/plan status`. If any task is not done, stop, say which, and
+print `.claude/bin/plan recommend` — it names what to run instead.
 
 Read this phase's commits, its log file, and the phase file including every
 finding.
@@ -1467,8 +1494,22 @@ Propose nothing you can't tie to a specific commit, log entry, or finding.
 Then audit the delivered phase against its acceptance criteria and report
 gaps, dead code, and anything left unwired.
 
-Finally: tick this phase in PLAN.md, advance `current:` to the next phase
-file, and tell me to run /define for it.</code></pre>
+Finally: tick this phase in PLAN.md, and set `status: closed` in the phase
+file's frontmatter. Leave `current:` pointing at this phase. /plan moves it
+when it writes the next phase file, so the pointer never names a file that
+does not exist yet.
+
+## Next
+
+- A next phase exists in PLAN.md: tell me to run `/plan` for it in a NEW
+  session. Name the phase and quote its PLAN.md line, so I can paste it if I
+  want to. /plan reads this closed phase and its log for what carries
+  forward, and asks its open questions before it writes. Do not send me to
+  /define; the product scope was settled before Phase 01.
+- No phase left: say the plan is complete, and do not invent one.
+
+The new phase file starts unreviewed, so `plan recommend` picks the loop up
+from /review on its own once /plan has written it.</code></pre>
     </div>
 
     <div class="note">
@@ -1477,12 +1518,27 @@ file, and tell me to run /define for it.</code></pre>
         phase-close instruction gets skipped, the index drifts and the next
         session confidently opens the wrong plan.</p>
     </div>
+
+    <p>What /close does <em>not</em> do is move <code>current:</code> to the
+      next phase. That file does not exist until /plan writes it, and a
+      pointer at a file that isn't there is one no <code>plan</code> subcommand
+      will read — leaving the boundary as the single place where the tool
+      can't tell you what to run next. /plan moves the pointer in the same
+      edit that creates what it points at.</p>
+
+    <p>Nor does the boundary go back through /define. /define is the front
+      door: it runs once, on a rough idea, and produces a product brief that
+      lives in the session rather than on disk. By Phase 02 the product scope
+      is settled and the useful context is on disk — the phase's line in
+      PLAN.md, the phase you just closed, its log, AGENTS.md. /plan opened
+      cold reads exactly that, then asks what a one-line phase name can't
+      say.</p>
   </section>
 
   <!-- CHANGES -->
   <section id="changes">
     <div class="eyebrow">v1.0.0</div>
-    <h2>What this version added</h2>
+    <h2>What v1.0.0 added</h2>
     <p>The previous revision was a document you copied from. This one is a repo you install,
       and the three additions are the ones that only work with a tool
       underneath them.</p>

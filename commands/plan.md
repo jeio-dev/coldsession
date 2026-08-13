@@ -7,9 +7,21 @@ Create a complete implementation plan for the following objective:
 
 $ARGUMENTS
 
-If the line above is blank, use the objective brief produced earlier in this
-session. If there is no brief in this session either, stop and tell me to run
-/define first.
+If the line above is blank, work out what you are planning against, in this
+order:
+
+1. An objective brief produced earlier in this session: use it.
+2. No brief, but PLAN.md exists: this is a phase boundary, and the objective
+   is the phase `current:` names, or the first unticked phase if `current:`
+   names a closed one. Read its line in PLAN.md, the closed phase file and
+   its `.log.md` for what carries forward, AGENTS.md, and
+   docs/architecture.md if it exists. Nothing else. The product scope is
+   settled; do not re-derive it, and do not run /define.
+3. Neither: stop and tell me to run /define first.
+
+Coming in at a boundary you will have real questions — a one-line phase name
+is an intention, not a specification. Ask them, per `## Also include` below,
+before you write the file.
 
 Break the work into logical phases, and phases into numbered tasks
 (T1, T2, T3, ...).
@@ -20,6 +32,10 @@ PLAN.md is the index: a `current:` pointer and a checklist of phases in
 dependency order, one line each, linking to their phase files. Create it from
 templates/PLAN.md if absent; otherwise add or correct phases and set
 `current:` to this one. Never copy task detail into PLAN.md.
+
+Setting `current:` is yours alone. /close leaves it on the phase it closed,
+so at a boundary it still names the previous phase until you move it. Move it
+in the same edit that writes the new phase file, never before.
 
 Write the current phase to docs/plans/(NN)-(slug).md using
 templates/phase.md. Detail only the current phase at task level. Phases
