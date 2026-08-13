@@ -24,7 +24,7 @@ import os
 import re
 import sys
 
-VERSION = "1.1.0"
+VERSION = "1.1.2"
 
 ROOT = os.environ.get("PLAN_ROOT", ".")
 INDEX = os.path.join(ROOT, "PLAN.md")
@@ -605,6 +605,21 @@ def cmd_next(phase, args):
     return 0
 
 
+def _transitive_deps(phase, tid):
+    """All ancestor task ids reachable via deps, in dependency-first order."""
+    seen, order = set(), []
+
+    def visit(t):
+        for d in phase["tasks"].get(t, {}).get("deps", []):
+            if d not in seen:
+                seen.add(d)
+                visit(d)
+                order.append(d)
+
+    visit(tid)
+    return order
+
+
 def cmd_brief(phase, args):
     if not args:
         die("usage: plan brief T2")
@@ -615,7 +630,7 @@ def cmd_brief(phase, args):
 
     unmet = [d for d in task["deps"] if phase["tasks"].get(d, {}).get("status") != "done"]
     reads = ["AGENTS.md", phase["path"]]
-    for dep in task["deps"]:
+    for dep in _transitive_deps(phase, tid):
         reads += phase["tasks"].get(dep, {}).get("files", [])
     reads += task["files"]
 

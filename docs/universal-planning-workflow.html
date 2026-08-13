@@ -1365,9 +1365,8 @@ If you hit a blocker:
 
     <h3>The context envelope</h3>
     <p><code>plan brief T2</code> prints the read list: AGENTS.md, the phase
-      file, then the files of T2's direct dependencies, then T2's own. Direct
-      dependencies only — the transitive closure is the whole repo by about
-      task five.</p>
+      file, then the files of every task T2 depends on transitively, then
+      T2's own.</p>
 
     <div class="code-block">
       <div class="code-head"><span>.claude/bin/plan brief T2</span></div>

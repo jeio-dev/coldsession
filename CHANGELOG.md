@@ -4,6 +4,27 @@ Format version and release version are the same number. A phase file records
 the version it was planned under as `workflow-rev`, and `plan lint` refuses a
 file whose major version differs from the tool's.
 
+## [v1.1.2]
+
+### `plan brief` reads the full dependency chain
+
+`plan brief` only pulled `files` from a task's *direct* deps. A phase shaped
+like `T1 → (T2, T3) → T4` never surfaced T1's files in T4's brief, because T1
+is not in T4's `deps` list — only in T2's and T3's. The build session then
+either stalled on a missing file or went reading for it outside the bounded
+list, defeating the point of a computed read list. `plan brief` now walks the
+transitive closure of `deps` and pulls `files` from every ancestor task, not
+just the immediate ones.
+
+### An update script for existing installs
+
+Install pins the tool's version into the project on purpose, but that meant
+picking up a fix required redoing the whole install by hand. `update.sh`
+(`update.ps1` on Windows) re-copies `.claude/commands/`, `.claude/bin/plan`,
+and `.claude/bin/plan.cmd` from a fresh clone, refuses to run against a
+project with nothing installed yet, and leaves `templates/` and
+`.claude/settings.json` alone. Same clone-and-self-delete shape as install.
+
 ## [v1.1.1]
 
 ### The installer disposes of itself

@@ -43,6 +43,26 @@ already exist. It needs `python3` (or `python`, or `py`) on `PATH`. The script
 is BOM-less UTF-8 and ASCII-only, so it parses cleanly under Windows
 PowerShell 5.1 as well as PowerShell 7+.
 
+## Update
+
+An install pins the tool's version into the project, so a fix to `plan` or
+the commands doesn't reach an already-installed project on its own.
+`update.sh` (`update.ps1` on Windows) re-copies just `.claude/commands/`,
+`.claude/bin/plan`, and `.claude/bin/plan.cmd` from a fresh clone; it refuses
+to run against a project with no existing install, and never touches
+`templates/` or `.claude/settings.json` — those are yours once installed.
+
+```bash
+cd ~/my-project
+git clone --depth 1 https://github.com/jeio-dev/coldsession.git .coldsession
+.coldsession/update.sh
+git add .claude && git commit -m "chore: update coldsession"
+```
+
+Same `--keep`/`-Keep` and self-deleting clone as install. Prints the version
+before and after, so `git diff .claude` isn't the only way to tell what
+changed — `plan version` on its own does too.
+
 ```
 .claude/commands/*.md    the ten commands
 .claude/bin/plan         the graph and context tool
@@ -206,8 +226,9 @@ silently mis-parsing.
 ## Context
 
 `plan brief T2` prints a fixed read list: `AGENTS.md`, the phase file, the
-files of T2's *direct* dependencies, then T2's own. Direct only — the
-transitive closure is the whole repo by about task five.
+files of every task T2 depends on transitively, then T2's own. Full closure,
+not just direct deps — a file that only reaches T2 through T1→T3→T2 still
+belongs in the brief.
 
 ```
 task    T2   status pending
