@@ -15,7 +15,7 @@ Clone into the project, run it, and it deletes itself.
 
 ```bash
 cd ~/my-project
-git clone --depth 1 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v1.1.2 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/install.sh
 git add .claude templates && git commit -m "chore: coldsession"
 ```
@@ -24,13 +24,17 @@ git add .claude templates && git commit -m "chore: coldsession"
 
 ```powershell
 cd $HOME\my-project
-git clone --depth 1 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v1.1.2 https://github.com/jeio-dev/coldsession.git .coldsession
 .\.coldsession\install.ps1
 git add .claude templates; git commit -m "chore: coldsession"
 ```
 
-The clone never outlives the install, so nothing has to live outside the
-project and there is no second copy to remember to update. Pass `--keep`
+`--branch v1.1.2` pins the clone to a tagged release rather than whatever's
+on `main`, so following this README always gets a tested version; bump it to
+the latest tag from the [releases page](https://github.com/jeio-dev/coldsession/tags)
+if this copy of the README is older than the repo. The clone never outlives
+the install, so nothing has to live outside the project and there is no
+second copy to remember to update. Pass `--keep`
 (`-Keep` under PowerShell) to leave it in place. Only `.coldsession` at the
 root of the target is treated as disposable — a clone under another name, or a
 checkout you keep somewhere else, is left alone and merely mentioned. Both
@@ -54,7 +58,7 @@ to run against a project with no existing install, and never touches
 
 ```bash
 cd ~/my-project
-git clone --depth 1 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v1.1.2 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/update.sh
 git add .claude && git commit -m "chore: update coldsession"
 ```
