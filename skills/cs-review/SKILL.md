@@ -1,6 +1,6 @@
 ---
 name: cs-review
-description: Independently review the current coldsession phase and record severity-tagged findings without revising the plan. Use in a fresh chat when the user invokes $cs-review or asks for the workflow's first review pass.
+description: Independently review the current coldsession phase and record severity-tagged findings without revising the plan. Use in a fresh chat when the user invokes $cs-review, asks for the first review pass, or wants to verify a revised phase against its changelog.
 ---
 
 # Coldsession Review

@@ -21,9 +21,9 @@ cd /tmp/coldsession-check \
 ```
 
 Also validate every Codex skill with the `quick_validate.py` shipped by
-Codex's `skill-creator` skill, and confirm an install contains ten `cs-*`
-directories under `.agents/skills/` plus ten patched canonical commands under
-`.agents/coldsession/commands/`.
+Codex's `skill-creator` skill, and confirm an install contains nine canonical
+`cs-*` skills and commands plus the explicit-only `cs-recheck` compatibility
+alias on both surfaces.
 
 The shipped templates must pass their own linter. That is the whole test
 suite; keep it that way or add a real one.

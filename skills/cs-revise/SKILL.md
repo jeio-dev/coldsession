@@ -11,7 +11,7 @@ as the working directory.
 
 Translate suggested next steps for Codex users:
 
-- `/cs-recheck` -> `$cs-recheck`
+- `/cs-review` -> `$cs-review`
 - Any other slash command printed by `plan recommend` maps to the skill with
   the same `cs-` name, with `/` replaced by `$`.
 

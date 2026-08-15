@@ -32,7 +32,8 @@ hand-editing its line:
 
 `resolved` means the plan changed. `accepted` means it did not and here is
 why. The note must name the task ID or plan line that now carries the fix —
-"done" or "fixed" tells /cs-recheck nothing, and /cs-approve will fail that line.
+"done" or "fixed" tells the next /cs-review nothing, and /cs-approve will fail
+that line.
 `plan resolve` writes the changelog entry for you; do not also write one by
 hand.
 
@@ -41,7 +42,8 @@ Leave a finding `open` if you could not resolve it, and say which and why.
 ## Finishing
 
 1. `.claude/bin/plan lint` — fix anything it reports.
-2. `.claude/bin/plan recommend` and print it. It will send you to /cs-recheck,
-   which reads the changelog you just wrote.
-3. Stop, and exit the session. /cs-recheck must not run here: it would be
-   grading its own work.
+2. `.claude/bin/plan recommend` and print it. It will send you to /cs-review,
+   which detects the newer revision and checks only the changelog and affected
+   tasks.
+3. Stop, and exit the session. /cs-review must run in a new session; running it
+   here would grade its own work.

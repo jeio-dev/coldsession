@@ -4,6 +4,20 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
+## [Unreleased]
+
+### One state-aware review command
+
+- Folded the changelog-scoped recheck pass into `/cs-review` and `$cs-review`.
+  A phase without `reviewed:` gets the full independent review; a newer `rev:`
+  gets the narrower changelog and affected-task pass.
+- Changed `plan recommend` and the revise handoff to return to `cs-review`
+  after every revision, producing `review → revise → review` until approval.
+- Kept `cs-recheck` as a deprecated 2.x compatibility alias. Its Codex skill
+  allows explicit invocation only and routes directly to the canonical review.
+- Kept the phase format, review metadata, findings, changelog, and `plan`
+  subcommands unchanged.
+
 ## [v2.0.0]
 
 ### One installer for install, update, and agent selection

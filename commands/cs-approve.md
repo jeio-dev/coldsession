@@ -26,7 +26,8 @@ Do not set `status: approved`. I do that.
 
 ## Next
 
-If any line FAILs, tell me to run /cs-revise for the specific gaps and stop.
+If any line FAILs, tell me to run /cs-revise for the specific gaps, followed
+by /cs-review in a new session, and stop.
 
 If every line PASSes, tell me to set `status: approved` in the phase file
 frontmatter myself, and that the build starts with the first id from

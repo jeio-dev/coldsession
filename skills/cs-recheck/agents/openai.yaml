@@ -1,4 +1,6 @@
 interface:
-  display_name: "Coldsession Recheck"
-  short_description: "Recheck revisions against the changelog"
-  default_prompt: "Use $cs-recheck to verify the latest plan revisions."
+  display_name: "Coldsession Recheck (Deprecated)"
+  short_description: "Deprecated explicit alias for review"
+  default_prompt: "Use $cs-recheck as a compatibility alias for $cs-review."
+policy:
+  allow_implicit_invocation: false

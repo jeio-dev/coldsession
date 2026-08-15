@@ -652,8 +652,9 @@
       in <code>.claude/commands/</code> to commit them with the repo, or
       <code>~/.claude/commands/</code> to have them everywhere.</p>
 
-    <p>Codex uses repository-scoped skills instead. The installer adds ten
-      adapters under <code>.agents/skills/</code>; each one loads a
+    <p>Codex uses repository-scoped skills instead. The installer adds nine
+      canonical adapters plus an explicit-only compatibility alias under
+      <code>.agents/skills/</code>; each one loads a
       runtime-patched copy of the same canonical command from
       <code>.agents/coldsession/commands/</code>. Invoke
       <code>/cs-build T2</code> in Claude Code or <code>$cs-build T2</code> in
@@ -666,8 +667,8 @@
 ├── cs-define.md      /cs-define &lt;rough idea&gt;   step 0
 ├── cs-groundwork.md  /cs-groundwork            step G, greenfield only
 ├── cs-plan.md        /cs-plan                  step 1
-├── cs-review.md      /cs-review                step 2, round 1
-├── cs-recheck.md     /cs-recheck               step 2, round 2 and after
+├── cs-review.md      /cs-review                step 2, every round
+├── cs-recheck.md     /cs-recheck               deprecated 2.x alias
 ├── cs-revise.md      /cs-revise                step 3
 ├── cs-approve.md     /cs-approve               step 4
 ├── cs-build.md       /cs-build T7              build, one task
@@ -1058,17 +1059,30 @@ Verify: `npm test -- queue` exits 0</code></pre>
     <div class="code-block">
       <div class="code-head"><span>.claude/commands/cs-review.md</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>---
-description: Independent review of the current phase, round 1
+description: State-aware independent review of the current phase
 ---
 
-Run `.claude/bin/plan lint` and `.claude/bin/plan status` first. Treat every
-E-code it prints as a Critical finding and every W-code as at least Medium,
-then read PLAN.md, the phase file it points at, AGENTS.md, and the codebase.
+Run `.claude/bin/plan lint`, `.claude/bin/plan status`, and
+`.claude/bin/plan findings` first. Read `rev:` and `reviewed:` from the phase
+frontmatter to choose exactly one review scope.
 
-You did not write this plan. Review it as an independent senior engineer
-inheriting someone else's work. Be skeptical.
+- If `reviewed:` is absent, this is the first pass. Run **First review**.
+- If `reviewed:` is lower than `rev:`, this is a revised plan. Run
+  **Revision review**.
+- If `reviewed:` equals or exceeds `rev:`, this revision has already been
+  reviewed. Run `.claude/bin/plan recommend`, print it, and stop without
+  reading or writing anything else.
 
-For each issue found, provide:
+You did not write the plan or the revisions you are reviewing.
+
+## First review
+
+Read PLAN.md, the phase file it points at, AGENTS.md, and the codebase. Review
+the phase as an independent senior engineer inheriting someone else's work.
+Be skeptical.
+
+Treat every E-code from the linter as a Critical finding and every W-code as
+at least Medium. For each issue found, provide:
 - Finding ID (F1, F2, ...)
 - Severity: Critical, High, Medium, or Low
 - Category: Missing work / Incorrect assumption / Risk / Task ordering /
@@ -1092,7 +1106,56 @@ Order findings by impact. Do not inflate severity to look thorough — a Medium
 labeled Critical is itself a review failure. If nothing rises above Medium,
 say so and give the two things most likely to break anyway.
 
-Do not rewrite the plan.</code></pre>
+## Revision review
+
+Read the phase file's `## Changelog` and frontmatter, and only the tasks the
+changelog names. Do not re-review the phase end to end: the first pass already
+did that, and the revision-stamped changelog defines what changed.
+
+For each finding the changelog claims `resolved` or `accepted`, decide:
+actually resolved, partially resolved, or not resolved. Quote the plan line
+that settles it. A note that does not name a task ID or plan line is not
+evidence; reopen that finding:
+
+  .claude/bin/plan resolve F2 open "worker.ts still missing from T4 files"
+
+Then check only three things beyond that:
+- Did any resolution create a new dependency, ordering, or scope problem?
+  Record it as a new finding with the next free F-id.
+- Did any resolution change what a task touches without updating its `files`
+  list?
+- Did any Medium marked `accepted` get a real reason, or a restatement of the
+  finding?
+
+## Record findings
+
+Findings only in this session's transcript are findings /cs-revise and the
+next review cannot read. Reason in plan mode, then exit plan mode and append
+new findings to the phase file's `## Findings` section, one line per finding,
+seven fields:
+
+  F1 | Critical | Task ordering | T3 | open | description | recommended fix
+
+Continue the existing finding numbering. Every new finding starts `open`.
+Use `-` in the task field for a plan-level finding. No pipes inside the
+description or fix — the parser splits on them, and `plan lint` will reject
+the line. If the phase file has no `## Findings` section, add one.
+
+The Findings section, changelog entries written by `plan resolve`, and
+`plan reviewed` are the only writes you make. Do not rewrite the plan, resolve
+your own new findings, or touch the task graph; /cs-revise does that.
+
+## Finishing
+
+1. `.claude/bin/plan reviewed` — record that this rev had a review pass.
+2. `.claude/bin/plan lint` — confirm the findings and resolutions parse.
+3. `.claude/bin/plan recommend` and print it. Open findings send you to
+   /cs-revise; a clean pass sends you to /cs-approve. At rev 3 with a Critical
+   still open, follow the stop condition and split the phase instead.
+4. After a revision review, end with one line naming what this pass did not
+   inspect.
+5. Stop. /cs-revise can run in this session, but the review after it must run
+   in a new one.</code></pre>
     </div>
 
     <div class="legend">
@@ -1109,36 +1172,18 @@ Do not rewrite the plan.</code></pre>
         files before you accept the result.</p>
     </div>
 
-    <h3>Round 2 and after: scope it</h3>
+    <h3>Round 2 and after: the same command narrows its scope</h3>
     <p>A second full review is a cold read of a plan that changed in three
       places, and it is the most expensive redundant thing in the loop. Once a
-      changelog exists, re-review against the changelog rather than the whole
-      phase — still in a new session, because independence is the point, not
-      ignorance.</p>
+      changelog exists, <code>/cs-review</code> compares <code>reviewed:</code>
+      with <code>rev:</code> and checks the changelog and affected tasks rather
+      than the whole phase — still in a new session, because independence is
+      the point, not ignorance.</p>
 
-    <div class="code-block">
-      <div class="code-head"><span>.claude/commands/cs-recheck.md</span><button class="copy-btn" type="button">Copy</button></div>
-      <pre><code>---
-description: Scoped re-review against the changelog, round 2 and after
----
-
-Run `.claude/bin/plan lint`. Then read the phase file's changelog and
-frontmatter, and only the tasks the changelog names. Do not re-review the
-phase end to end.
-
-For each finding ID the changelog claims resolved, decide: actually resolved,
-partially resolved, or not resolved. Quote the plan line that settles it.
-
-Then check only three things beyond that:
-- Did any resolution create a new dependency, ordering, or scope problem?
-  New findings continue the existing numbering.
-- Did any resolution change what a task touches without updating its `files`
-  list?
-- Did any Medium marked "not adopted" get a real reason, or a restatement of
-  the finding?
-
-End with one line: what this pass did NOT look at.</code></pre>
-    </div>
+    <p class="fine"><code>/cs-recheck</code> remains installed only as a
+      deprecated 2.x compatibility alias. It delegates to
+      <code>/cs-review</code> and is never emitted by
+      <code>plan recommend</code>.</p>
 
     <div class="note">
       <span class="tick">&gt;</span>

@@ -50,7 +50,7 @@ Verify: `<exact command>` prints/exits `<exact expected result>`
 
 ## Findings
 
-<!-- /cs-review and /cs-recheck write here. One finding per line, seven fields:
+<!-- /cs-review writes here on every review round. One finding per line, seven fields:
      id | severity | category | tasks | status | description | recommended fix
      severity: Critical | High | Medium | Low
      status:   open | resolved | accepted   (set it with `plan resolve`)

@@ -431,7 +431,7 @@ def recommend(phase):
         return ("/cs-revise", f"{len(opened)} open finding(s) ({sev}): {', '.join(opened)}")
 
     if reviewed < rev:
-        return ("/cs-recheck",
+        return ("/cs-review",
                 f"rev {rev} has not been checked since the last revision "
                 f"(last review pass was rev {reviewed}); run it in a NEW session")
 

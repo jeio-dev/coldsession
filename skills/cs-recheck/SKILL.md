@@ -1,19 +1,20 @@
 ---
 name: cs-recheck
-description: Recheck a revised coldsession phase against its changelog and reopen unsupported resolutions. Use in a fresh chat when the user invokes $cs-recheck or asks for review round two or later.
+description: Deprecated explicit compatibility alias for cs-review. Use only when the user directly invokes $cs-recheck; route the request through the state-aware review workflow.
 ---
 
-# Coldsession Recheck
+# Coldsession Recheck Compatibility Alias
 
-Read `.agents/coldsession/commands/cs-recheck.md` completely and follow its workflow.
+Read `.agents/coldsession/commands/cs-review.md` completely and follow its workflow.
 Resolve it from the repository root and perform the workflow with that root
 as the working directory.
 
+Treat this as `$cs-review`, not as a separate workflow stage. Show
+`$cs-review` as the canonical command in every next step.
+
 Translate suggested next steps for Codex users:
 
-- `/cs-revise` -> `$cs-revise`
-- `/cs-approve` -> `$cs-approve`
-- `/cs-plan` -> `$cs-plan`
+- `/cs-review` -> `$cs-review`
 - Any other slash command printed by `plan recommend` maps to the skill with
   the same `cs-` name, with `/` replaced by `$`.
 

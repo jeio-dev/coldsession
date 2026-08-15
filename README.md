@@ -2,8 +2,9 @@
 
 Every step that judges the previous one runs cold.
 
-A six-step planning loop for Claude Code and Codex, packaged as ten Claude
-slash commands, ten matching Codex skills, and one dependency-free script.
+A six-step planning loop for Claude Code and Codex, packaged as nine canonical
+commands and matching skills, one explicit compatibility alias, and one
+dependency-free script.
 The session that reviews a plan never held the pen that wrote it, the phase
 file carries a linted task graph, and a build session reads a computed list
 of files rather than a codebase.
@@ -122,13 +123,16 @@ skills remain small adapters for invocation arguments and next-step display.
 | `/cs-define <idea>` | 1 | plan · opus | Idea → objective brief. Asks, doesn't guess. |
 | `/cs-groundwork` | 1 | normal · sonnet | Greenfield only. AGENTS.md, scaffold, commands that actually run. |
 | `/cs-plan` | 1 | write · sonnet | Brief → `PLAN.md` + a phase file with a task graph. |
-| `/cs-review` | 2, new | plan · opus | Independent skeptic. Severity-tagged findings. |
+| `/cs-review` | 2+, new | plan · opus | Full first pass; changelog-scoped after revision. |
 | `/cs-revise` | 2 | write · sonnet | Resolve findings, write the changelog. |
-| `/cs-recheck` | 3, new | plan · opus | Rounds 2+. Reads the changelog, not the phase. |
 | `/cs-approve` | new | normal · sonnet | Evidence checklist. Issues no verdict. |
 | `/cs-build T2` | one per task | normal · sonnet · `--effort medium` | One task, verified, committed. |
 | `/cs-close` | new | normal · sonnet | Harvest corrections, audit, close the phase. |
 | `/cs-status` | anywhere | any | Four lines. Reads no source. |
+
+`/cs-recheck` and `$cs-recheck` remain as deprecated 2.x compatibility aliases.
+They are never recommended, and the Codex alias cannot be selected implicitly;
+an explicit invocation runs the same state-aware review shown above.
 
 A command or skill supplies prompt text and nothing else. It does not start a
 session, enter plan mode, or pick a model. `/cs-review` (or `$cs-review`)
@@ -174,12 +178,12 @@ which flips the status and appends `rev 2 | F1 | resolved | T3 now depends on
 T2` to the changelog in the same step, so the two can't disagree. `resolved`
 means the plan changed; `accepted` means it didn't and here's why. The note
 has to name a task ID or plan line — `/cs-approve` fails a changelog entry that
-just says "fixed", and `/cs-recheck` reads the changelog rather than the phase,
-so an entry that names nothing gives it nothing to check.
+just says "fixed", and a later `/cs-review` reads the changelog rather than the
+whole phase, so an entry that names nothing gives it nothing to check.
 
 `reviewed:` in the frontmatter carries the rev of the last review pass.
-Against `rev:`, it is what tells `/cs-recheck` there is something new to look
-at and what stops `/cs-approve` from grading an unreviewed revision.
+Against `rev:`, it tells `/cs-review` to use the changelog-scoped branch and
+stops `/cs-approve` from grading an unreviewed revision.
 
 ## The task graph
 
@@ -237,13 +241,12 @@ marked done ahead of their dependencies, empty `files` lists, missing
 `Verify:` lines, graph entries with no body section, body sections with no
 graph entry, malformed or duplicated findings, findings naming tasks that
 don't exist, findings closed without a changelog entry, and an approved or
-closed phase with an open Critical or High. `/cs-review`, `/cs-recheck`, and
-`/cs-approve` all run
+closed phase with an open Critical or High. `/cs-review` and `/cs-approve` both run
 it, so shape errors never consume a human review round.
 
 `recommend` derives the next command from the file: unreviewed sends you to
 `/cs-review`, open findings to `/cs-revise`, a revision newer than its last
-review pass to `/cs-recheck`, a clean reviewed rev to `/cs-approve`, an
+review pass back to `/cs-review`, a clean reviewed rev to `/cs-approve`, an
 approved phase to `/cs-build` with the first runnable id, a finished one to
 `/cs-close`, and a closed one to `/cs-plan` for the phase after it. It prints
 the state that produced the
@@ -310,7 +313,7 @@ reads the last entry, so nothing has to survive in a terminal you closed.
 
 1. Bounded reads. A build session opens a listed set, not a codebase.
 2. Fixed read order, so the cache prefix is reused instead of rebuilt.
-3. `/cs-recheck` instead of a second full `/cs-review`.
+3. Changelog-scoped later rounds inside `/cs-review`, instead of another full read.
 4. Eight tasks per phase, capped, because every session re-reads the file.
 5. Moderate reasoning effort for build. In Claude Code that is
    `claude --effort medium`; in Codex, use the equivalent session setting.
@@ -360,7 +363,8 @@ small the diff looks.
 Semver applies to four things. Everything else is free to change in a patch.
 
 1. **Entry-point names.** In 2.x, Claude's `/cs-build T2` and Codex's
-   `$cs-build T2` keep working.
+   `$cs-build T2` keep working. The deprecated `cs-recheck` name remains an
+   explicit alias for `cs-review`.
 2. **The `tasks:` frontmatter shape, and the `## Findings` line shape.** Phase
    files using the 1.x format remain readable by the 2.x tool. A file written
    before findings existed still lints and builds.
