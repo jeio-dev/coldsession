@@ -2,7 +2,7 @@
 phase: 02-<slug>
 rev: 1
 status: draft
-workflow-rev: 1.2.0
+workflow-rev: 1.3.0
 tasks:
   T1: {deps: [], status: pending, files: [src/db/schema.ts]}
   T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts]}
@@ -50,7 +50,7 @@ Verify: `<exact command>` prints/exits `<exact expected result>`
 
 ## Findings
 
-<!-- /review and /recheck write here. One finding per line, seven fields:
+<!-- /cs-review and /cs-recheck write here. One finding per line, seven fields:
      id | severity | category | tasks | status | description | recommended fix
      severity: Critical | High | Medium | Low
      status:   open | resolved | accepted   (set it with `plan resolve`)

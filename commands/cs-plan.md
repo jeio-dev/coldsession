@@ -16,8 +16,8 @@ order:
    names a closed one. Read its line in PLAN.md, the closed phase file and
    its `.log.md` for what carries forward, AGENTS.md, and
    docs/architecture.md if it exists. Nothing else. The product scope is
-   settled; do not re-derive it, and do not run /define.
-3. Neither: stop and tell me to run /define first.
+   settled; do not re-derive it, and do not run /cs-define.
+3. Neither: stop and tell me to run /cs-define first.
 
 Coming in at a boundary you will have real questions — a one-line phase name
 is an intention, not a specification. Ask them, per `## Also include` below,
@@ -33,7 +33,7 @@ dependency order, one line each, linking to their phase files. Create it from
 templates/PLAN.md if absent; otherwise add or correct phases and set
 `current:` to this one. Never copy task detail into PLAN.md.
 
-Setting `current:` is yours alone. /close leaves it on the phase it closed,
+Setting `current:` is yours alone. /cs-close leaves it on the phase it closed,
 so at a boundary it still names the previous phase until you move it. Move it
 in the same edit that writes the new phase file, never before.
 
@@ -80,7 +80,7 @@ in a state I can run.
 - Out of scope items
 
 Leave the `## Findings` and `## Changelog` sections in place and empty.
-/review writes the first, /revise writes the second, and they are how those
+/cs-review writes the first, /cs-revise writes the second, and they are how those
 sessions hand work to each other. Do not add a `reviewed:` field — the phase
 has not been reviewed, and the tooling reads its absence.
 
@@ -89,6 +89,6 @@ Ask me the open questions directly rather than guessing. Do not write code.
 ## Finishing
 
 1. `.claude/bin/plan lint` — fix anything it reports.
-2. `.claude/bin/plan recommend` and print it. It will send you to /review.
-3. Stop, and tell me to run /review in a NEW session. /review typed here
+2. `.claude/bin/plan recommend` and print it. It will send you to /cs-review.
+3. Stop, and tell me to run /cs-review in a NEW session. /cs-review typed here
    reviews its own work and will agree with itself.

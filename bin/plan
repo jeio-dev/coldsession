@@ -17,14 +17,15 @@ Stdlib only, no install step.
   plan resolve F1 STATE "note"    set a finding state, log it to the changelog
   plan bump                       bump the phase rev, at the start of a revise
   plan reviewed                   record that this rev has had a review pass
-  plan version                    print the format version this tool speaks
+  plan version                    print the coldsession release version
 """
 
 import os
 import re
 import sys
 
-VERSION = "1.2.0"
+TOOL_VERSION = "2.0.0"
+FORMAT_VERSION = "1.3.0"
 
 ROOT = os.environ.get("PLAN_ROOT", ".")
 INDEX = os.path.join(ROOT, "PLAN.md")
@@ -85,7 +86,7 @@ def intof(value, default=0):
 
 def read_index():
     if not os.path.exists(INDEX):
-        die("no PLAN.md at repo root. Run /plan first.")
+        die("no PLAN.md at repo root. Run /cs-plan first.")
     fm, _ = split_frontmatter(read_text(INDEX))
     m = re.search(r"^current:\s*(\S+)", fm, re.M)
     if not m:
@@ -94,7 +95,7 @@ def read_index():
     if not os.path.exists(path):
         die(f"PLAN.md points at {m.group(1)}, which does not exist.\n"
             "  A phase was probably closed and the next one not planned yet.\n"
-            "  Run /plan for it in a new session -- /plan writes the phase file\n"
+            "  Run /cs-plan for it in a new session -- /cs-plan writes the phase file\n"
             "  and moves `current:` to it -- or point `current:` back at the\n"
             "  phase file you are still working in.")
     return path
@@ -304,8 +305,8 @@ def lint_issues(phase):
     if fmt is None:
         warns.append("W03 phase file has no workflow-rev; it was written by an "
                      "older coldsession and may not match this tool")
-    elif fmt.split(".")[0] != VERSION.split(".")[0]:
-        errs.append(f"E11 phase file is format {fmt}, tool is {VERSION}; "
+    elif fmt.split(".")[0] != FORMAT_VERSION.split(".")[0]:
+        errs.append(f"E11 phase file is format {fmt}, supported format is {FORMAT_VERSION}; "
                     "major versions differ and the shapes are not compatible")
 
     if phase["meta"].get("status") not in PSTATUSES + (None,):
@@ -388,8 +389,8 @@ def recommend(phase):
                 "this file until they are fixed")
 
     if status == "closed":
-        return ("/plan",
-                "this phase is closed; the next one has no file yet, and /plan "
+        return ("/cs-plan",
+                "this phase is closed; the next one has no file yet, and /cs-plan "
                 "writes it and moves `current:` onto it")
 
     started = [x for x in phase["order"]
@@ -400,11 +401,11 @@ def recommend(phase):
         pending = [x for x in phase["order"] if phase["tasks"][x]["status"] == "pending"]
         blocked = [x for x in phase["order"] if phase["tasks"][x]["status"] == "blocked"]
         if nxt:
-            return (f"/build {nxt[0]}",
+            return (f"/cs-build {nxt[0]}",
                     f"{len(started)} of {len(phase['order'])} tasks done; "
                     f"{nxt[0]} is runnable")
         if blocked and not pending:
-            return ("/review",
+            return ("/cs-review",
                     f"{', '.join(blocked)} blocked and nothing else is pending; "
                     "re-enter the loop at review")
         if pending:
@@ -414,32 +415,32 @@ def recommend(phase):
                          if phase["tasks"].get(d, {}).get("status") != "done"]
                 waiting.append(f"{tid} waits on {', '.join(unmet) or 'nothing runnable'}")
             return ("(nothing runnable)", "; ".join(waiting))
-        return ("/close", "every task is done")
+        return ("/cs-close", "every task is done")
 
     if intof(meta.get("rev"), 1) >= 3 and open_findings(phase, ("Critical",)):
-        return ("/plan",
+        return ("/cs-plan",
                 f"rev {rev} still has an open Critical "
                 f"({', '.join(open_findings(phase, ('Critical',)))}); split this phase "
                 "and re-plan rather than revising a fourth time")
 
     if not reviewed:
-        return ("/review", "this phase has had no review pass; start one in a NEW session")
+        return ("/cs-review", "this phase has had no review pass; start one in a NEW session")
 
     if opened:
         sev = ", ".join(sorted({phase["findings"][f]["severity"] for f in opened}))
-        return ("/revise", f"{len(opened)} open finding(s) ({sev}): {', '.join(opened)}")
+        return ("/cs-revise", f"{len(opened)} open finding(s) ({sev}): {', '.join(opened)}")
 
     if reviewed < rev:
-        return ("/recheck",
+        return ("/cs-recheck",
                 f"rev {rev} has not been checked since the last revision "
                 f"(last review pass was rev {reviewed}); run it in a NEW session")
 
     if status != "approved":
-        return ("/approve",
-                f"rev {rev} is reviewed with no open findings; /approve produces the "
+        return ("/cs-approve",
+                f"rev {rev} is reviewed with no open findings; /cs-approve produces the "
                 "evidence, then you set `status: approved` yourself")
 
-    return ("/build", "the phase is approved")
+    return ("/cs-build", "the phase is approved")
 
 
 # ---------------------------------------------------------------- writing
@@ -584,9 +585,9 @@ def cmd_next(phase, args):
     if not nxt:
         pending = [x for x in phase["order"] if phase["tasks"][x]["status"] == "pending"]
         if phase["meta"].get("status") == "closed":
-            print("this phase is closed: run /plan for the next one")
+            print("this phase is closed: run /cs-plan for the next one")
         elif not pending:
-            print("no pending tasks: the phase is complete, run /close")
+            print("no pending tasks: the phase is complete, run /cs-close")
         else:
             print("nothing runnable: every pending task is waiting on an unfinished dependency")
             for tid in pending:
@@ -676,7 +677,7 @@ def cmd_findings(phase, args):
             if not only_open or phase["findings"][f]["status"] == "open"]
     if not rows:
         print("no open findings" if only_open else
-              "no findings recorded; /review writes them into the phase file")
+              "no findings recorded; /cs-review writes them into the phase file")
         return 0
     for fid in rows:
         f = phase["findings"][fid]
@@ -750,7 +751,7 @@ def cmd_block(phase, args):
 
 
 def cmd_version(_phase, _args):
-    print(VERSION)
+    print(TOOL_VERSION)
     return 0
 
 

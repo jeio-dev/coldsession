@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coldsession Define"
+  short_description: "Turn a rough idea into an objective brief"
+  default_prompt: "Use $cs-define to turn my app idea into a scoped objective brief."

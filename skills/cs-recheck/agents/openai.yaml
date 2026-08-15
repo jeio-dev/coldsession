@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coldsession Recheck"
+  short_description: "Recheck revisions against the changelog"
+  default_prompt: "Use $cs-recheck to verify the latest plan revisions."

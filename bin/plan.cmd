@@ -8,12 +8,15 @@ rem This shim is what the commands call on Windows, and it works from
 rem PowerShell, cmd.exe, and Git Bash alike.
 setlocal
 set "PLAN_PY="
-where python3 >nul 2>nul && set "PLAN_PY=python3"
+python3 -c "import sys" >nul 2>nul
+if not errorlevel 1 set "PLAN_PY=python3"
 if not defined PLAN_PY (
-  where python >nul 2>nul && set "PLAN_PY=python"
+  python -c "import sys" >nul 2>nul
+  if not errorlevel 1 set "PLAN_PY=python"
 )
 if not defined PLAN_PY (
-  where py >nul 2>nul && set "PLAN_PY=py"
+  py -c "import sys" >nul 2>nul
+  if not errorlevel 1 set "PLAN_PY=py"
 )
 if not defined PLAN_PY (
   echo python3 is required, and is not on PATH 1>&2

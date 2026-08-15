@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coldsession Revise"
+  short_description: "Resolve recorded findings in the plan"
+  default_prompt: "Use $cs-revise to resolve the current phase findings."

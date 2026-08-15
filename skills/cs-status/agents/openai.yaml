@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coldsession Status"
+  short_description: "Report current phase state and next action"
+  default_prompt: "Use $cs-status to report where the current phase stands."

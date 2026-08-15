@@ -508,7 +508,7 @@
 
   <div class="titleblock">
     <div class="tb-row"><span>Title</span><span>Universal Planning Workflow</span></div>
-    <div class="tb-row"><span>Version</span><span>v1.2.0</span></div>
+    <div class="tb-row"><span>Version</span><span>v1.3.0</span></div>
     <div class="tb-row"><span>Scale</span><span>1 idea : 1 shippable plan</span></div>
     <div class="tb-row"><span>Sessions</span><span>plan · review · approve · 1 per task</span></div>
     <div class="tb-row"><span>State</span><span>PLAN.md + docs/plans/ + task graph</span></div>
@@ -571,6 +571,9 @@
   <section id="runtime">
     <div class="eyebrow"><span class="num">R</span>Runtime</div>
     <h2>Route the model to the step</h2>
+    <p class="fine">This section describes Claude Code's optional model
+      routing. Codex runs the same workflow with the model, effort, and
+      collaboration mode selected for the active Codex session.</p>
     <p>Planning is worth the expensive model. Executing an approved spec is
       not. Rather than remembering that at 4am, let the alias do it: in
       <code>opusplan</code>, plan mode runs Opus and execution runs Sonnet.</p>
@@ -641,27 +644,35 @@
 
     <h3>How a command file works</h3>
     <p>A command is a markdown file in <code>.claude/commands/</code>. The
-      filename becomes the slash name, so <code>build.md</code> gives you
-      <code>/build</code>. The frontmatter is metadata for the picker; the
+      filename becomes the slash name, so <code>cs-build.md</code> gives you
+      <code>/cs-build</code>. The frontmatter is metadata for the picker; the
       body below it is the prompt, sent verbatim.
       <code>$ARGUMENTS</code> is replaced by everything you typed after the
       command name, and <code>$1</code> by the first word of it. Put the files
       in <code>.claude/commands/</code> to commit them with the repo, or
       <code>~/.claude/commands/</code> to have them everywhere.</p>
 
+    <p>Codex uses repository-scoped skills instead. The installer adds ten
+      adapters under <code>.agents/skills/</code>; each one loads a
+      runtime-patched copy of the same canonical command from
+      <code>.agents/coldsession/commands/</code>. Invoke
+      <code>/cs-build T2</code> in Claude Code or <code>$cs-build T2</code> in
+      Codex. The product-specific sigil differs; the <code>cs-*</code> stem and
+      arguments are the same.</p>
+
     <div class="code-block">
       <div class="code-head"><span>every prompt below is one of these</span></div>
       <pre><code>.claude/commands/
-├── define.md      /define &lt;rough idea&gt;   step 0
-├── groundwork.md  /groundwork            step G, greenfield only
-├── plan.md        /plan                  step 1
-├── review.md      /review                step 2, round 1
-├── recheck.md     /recheck               step 2, round 2 and after
-├── revise.md      /revise                step 3
-├── approve.md     /approve               step 4
-├── build.md       /build T7              build, one task
-├── close.md       /close                 phase close
-└── status.md      /status                where am I
+├── cs-define.md      /cs-define &lt;rough idea&gt;   step 0
+├── cs-groundwork.md  /cs-groundwork            step G, greenfield only
+├── cs-plan.md        /cs-plan                  step 1
+├── cs-review.md      /cs-review                step 2, round 1
+├── cs-recheck.md     /cs-recheck               step 2, round 2 and after
+├── cs-revise.md      /cs-revise                step 3
+├── cs-approve.md     /cs-approve               step 4
+├── cs-build.md       /cs-build T7              build, one task
+├── cs-close.md       /cs-close                 phase close
+└── cs-status.md      /cs-status                where am I
 
 .claude/bin/plan   the task graph tool every command above calls
 </code></pre>
@@ -675,7 +686,7 @@
     <h3>What a command does not carry</h3>
     <p>This is the part that bites. A command supplies the prompt text and
       nothing else. It does not start a new session, it does not enter plan
-      mode, and it does not pick a model. Typing <code>/review</code> in the
+      mode, and it does not pick a model. Typing <code>/cs-review</code> in the
       session that just wrote the plan gives you a compromised review with
       correct wording, which is worse than no review because it looks like
       one.</p>
@@ -705,9 +716,9 @@
     <div class="code-block">
       <div class="code-head"><span>bash</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>cd ~/my-project
-git clone --depth 1 --branch v1.2.0 https://github.com/&lt;you&gt;/coldsession .coldsession
-.coldsession/install.sh
-git add .claude templates &amp;&amp; git commit -m "chore: coldsession"</code></pre>
+git clone --depth 1 --branch v2.0.0 https://github.com/&lt;you&gt;/coldsession .coldsession
+.coldsession/install.sh --agent both
+git add .claude .agents templates &amp;&amp; git commit -m "chore: coldsession"</code></pre>
     </div>
 
     <p class="fine">The clone goes inside the project and the installer deletes
@@ -717,7 +728,7 @@ git add .claude templates &amp;&amp; git commit -m "chore: coldsession"</code></
     <p class="fine">Installing per project rather than globally is
       deliberate: the workflow version is pinned with the code, so a phase
       planned six months ago still reads the way it was planned. Record it: add
-      <code>workflow-rev: 1.2.0</code> to PLAN.md's frontmatter, so a phase
+      <code>workflow-rev: 1.3.0</code> to PLAN.md's frontmatter, so a phase
       planned under an older loop is readable as an older plan rather than a
       wrong-looking one.</p>
   </section>
@@ -731,7 +742,7 @@ git add .claude templates &amp;&amp; git commit -m "chore: coldsession"</code></
       app idea into a scoped brief.</p>
 
     <div class="code-block">
-      <div class="code-head"><span>.claude/commands/define.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <div class="code-head"><span>.claude/commands/cs-define.md</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>---
 description: Turn a rough idea into a scoped objective brief
 argument-hint: [rough app idea]
@@ -762,7 +773,7 @@ Do not break this into tasks or phases. Do not write code.</code></pre>
     <div class="note">
       <span class="tick">&gt;</span>
       <p>Answer the open questions in your reply. The finished brief is what
-        <code>/plan</code> picks up from this session — skim it yourself
+        <code>/cs-plan</code> picks up from this session — skim it yourself
         before running Step 1, because nothing downstream re-derives it.</p>
     </div>
   </section>
@@ -782,7 +793,7 @@ Do not break this into tasks or phases. Do not write code.</code></pre>
       above puts it well below the cost of a review cycle.</p>
 
     <div class="code-block">
-      <div class="code-head"><span>.claude/commands/groundwork.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <div class="code-head"><span>.claude/commands/cs-groundwork.md</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>---
 description: Phase 0 scaffold and ground rules for a greenfield repo
 ---
@@ -877,7 +888,7 @@ docs/plans/02-offline-sync.md # current phase, task level detail
     </div>
 
     <div class="code-block">
-      <div class="code-head"><span>.claude/commands/plan.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <div class="code-head"><span>.claude/commands/cs-plan.md</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>---
 description: Turn the objective brief into a phased plan on disk
 argument-hint: [objective, or blank to use the brief from this session]
@@ -896,8 +907,8 @@ order:
    names a closed one. Read its line in PLAN.md, the closed phase file and
    its `.log.md` for what carries forward, AGENTS.md, and
    docs/architecture.md if it exists. Nothing else. The product scope is
-   settled; do not re-derive it, and do not run /define.
-3. Neither: stop and tell me to run /define first.
+   settled; do not re-derive it, and do not run /cs-define.
+3. Neither: stop and tell me to run /cs-define first.
 
 Coming in at a boundary you will have real questions — a one-line phase name
 is an intention, not a specification. Ask them, per `## Also include` below,
@@ -913,7 +924,7 @@ dependency order, one line each, linking to their phase files. Create it from
 templates/PLAN.md if absent; otherwise add or correct phases and set
 `current:` to this one. Never copy task detail into PLAN.md.
 
-Setting `current:` is yours alone. /close leaves it on the phase it closed,
+Setting `current:` is yours alone. /cs-close leaves it on the phase it closed,
 so at a boundary it still names the previous phase until you move it. Move it
 in the same edit that writes the new phase file, never before.
 
@@ -960,7 +971,7 @@ in a state I can run.
 - Out of scope items
 
 Leave the `## Findings` and `## Changelog` sections in place and empty.
-/review writes the first, /revise writes the second, and they are how those
+/cs-review writes the first, /cs-revise writes the second, and they are how those
 sessions hand work to each other. Do not add a `reviewed:` field — the phase
 has not been reviewed, and the tooling reads its absence.
 
@@ -969,8 +980,8 @@ Ask me the open questions directly rather than guessing. Do not write code.
 ## Finishing
 
 1. `.claude/bin/plan lint` — fix anything it reports.
-2. `.claude/bin/plan recommend` and print it. It will send you to /review.
-3. Stop, and tell me to run /review in a NEW session. /review typed here
+2. `.claude/bin/plan recommend` and print it. It will send you to /cs-review.
+3. Stop, and tell me to run /cs-review in a NEW session. /cs-review typed here
    reviews its own work and will agree with itself.</code></pre>
     </div>
 
@@ -985,7 +996,7 @@ Ask me the open questions directly rather than guessing. Do not write code.
 phase: 02-offline-sync
 rev: 3
 status: approved
-workflow-rev: 1.2.0
+workflow-rev: 1.3.0
 tasks:
   T1: {deps: [], status: done, files: [src/db/schema.ts]}
   T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts]}
@@ -1045,7 +1056,7 @@ Verify: `npm test -- queue` exits 0</code></pre>
       Start a fresh session and hand it the file.</p>
 
     <div class="code-block">
-      <div class="code-head"><span>.claude/commands/review.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <div class="code-head"><span>.claude/commands/cs-review.md</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>---
 description: Independent review of the current phase, round 1
 ---
@@ -1106,7 +1117,7 @@ Do not rewrite the plan.</code></pre>
       ignorance.</p>
 
     <div class="code-block">
-      <div class="code-head"><span>.claude/commands/recheck.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <div class="code-head"><span>.claude/commands/cs-recheck.md</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>---
 description: Scoped re-review against the changelog, round 2 and after
 ---
@@ -1149,7 +1160,7 @@ End with one line: what this pass did NOT look at.</code></pre>
       session.</p>
 
     <div class="code-block">
-      <div class="code-head"><span>.claude/commands/revise.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <div class="code-head"><span>.claude/commands/cs-revise.md</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>---
 description: Resolve findings in place and write the changelog
 ---
@@ -1189,7 +1200,7 @@ each one, the task ID or plan line that now carries the fix.</code></pre>
       is cheap; it doesn't need the codebase.</p>
 
     <div class="code-block">
-      <div class="code-head"><span>.claude/commands/approve.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <div class="code-head"><span>.claude/commands/cs-approve.md</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>---
 description: Readiness checklist with evidence, no verdict
 ---
@@ -1334,7 +1345,7 @@ Do not set `status: approved`. I do that.</code></pre>
     </div>
 
     <div class="code-block">
-      <div class="code-head"><span>.claude/commands/build.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <div class="code-head"><span>.claude/commands/cs-build.md</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>---
 description: Implement one approved task, verify it, commit, stop
 argument-hint: [task-id]
@@ -1386,7 +1397,7 @@ If you hit a blocker:
 - Stop. Do not work around it.
 - `.claude/bin/plan block $1 "one line reason"`.
 - Write it into the phase file as finding F(n) and tell me to re-enter at
-  /review.</code></pre>
+  /cs-review.</code></pre>
     </div>
 
     <h3>The context envelope</h3>
@@ -1469,7 +1480,7 @@ handoff docs/plans/02-offline-sync.log.md  (read the last entry only)</code></pr
       boundary instead, where you can see the whole phase.</p>
 
     <div class="code-block">
-      <div class="code-head"><span>.claude/commands/close.md</span><button class="copy-btn" type="button">Copy</button></div>
+      <div class="code-head"><span>.claude/commands/cs-close.md</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>---
 description: Harvest repeated corrections, then close the phase
 ---
@@ -1495,21 +1506,21 @@ Then audit the delivered phase against its acceptance criteria and report
 gaps, dead code, and anything left unwired.
 
 Finally: tick this phase in PLAN.md, and set `status: closed` in the phase
-file's frontmatter. Leave `current:` pointing at this phase. /plan moves it
+file's frontmatter. Leave `current:` pointing at this phase. /cs-plan moves it
 when it writes the next phase file, so the pointer never names a file that
 does not exist yet.
 
 ## Next
 
-- A next phase exists in PLAN.md: tell me to run `/plan` for it in a NEW
+- A next phase exists in PLAN.md: tell me to run `/cs-plan` for it in a NEW
   session. Name the phase and quote its PLAN.md line, so I can paste it if I
-  want to. /plan reads this closed phase and its log for what carries
+  want to. /cs-plan reads this closed phase and its log for what carries
   forward, and asks its open questions before it writes. Do not send me to
-  /define; the product scope was settled before Phase 01.
+  /cs-define; the product scope was settled before Phase 01.
 - No phase left: say the plan is complete, and do not invent one.
 
 The new phase file starts unreviewed, so `plan recommend` picks the loop up
-from /review on its own once /plan has written it.</code></pre>
+from /cs-review on its own once /cs-plan has written it.</code></pre>
     </div>
 
     <div class="note">
@@ -1519,18 +1530,18 @@ from /review on its own once /plan has written it.</code></pre>
         session confidently opens the wrong plan.</p>
     </div>
 
-    <p>What /close does <em>not</em> do is move <code>current:</code> to the
-      next phase. That file does not exist until /plan writes it, and a
+    <p>What /cs-close does <em>not</em> do is move <code>current:</code> to the
+      next phase. That file does not exist until /cs-plan writes it, and a
       pointer at a file that isn't there is one no <code>plan</code> subcommand
       will read — leaving the boundary as the single place where the tool
-      can't tell you what to run next. /plan moves the pointer in the same
+      can't tell you what to run next. /cs-plan moves the pointer in the same
       edit that creates what it points at.</p>
 
-    <p>Nor does the boundary go back through /define. /define is the front
+    <p>Nor does the boundary go back through /cs-define. /cs-define is the front
       door: it runs once, on a rough idea, and produces a product brief that
       lives in the session rather than on disk. By Phase 02 the product scope
       is settled and the useful context is on disk — the phase's line in
-      PLAN.md, the phase you just closed, its log, AGENTS.md. /plan opened
+      PLAN.md, the phase you just closed, its log, AGENTS.md. /cs-plan opened
       cold reads exactly that, then asks what a one-line phase name can't
       say.</p>
   </section>
@@ -1587,7 +1598,7 @@ from /review on its own once /plan has written it.</code></pre>
   </section>
 
   <footer>
-    PROMPTS FOR USE WITH ANY PLAN-THEN-ACT AGENT — CLAUDE CODE, CLINE, OPENCODE, OR EQUIVALENT.
+    PROMPTS FOR CLAUDE CODE AND CODEX, ADAPTABLE TO ANY PLAN-THEN-ACT AGENT.
   </footer>
 
 </main>

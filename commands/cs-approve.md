@@ -26,10 +26,10 @@ Do not set `status: approved`. I do that.
 
 ## Next
 
-If any line FAILs, tell me to run /revise for the specific gaps and stop.
+If any line FAILs, tell me to run /cs-revise for the specific gaps and stop.
 
 If every line PASSes, tell me to set `status: approved` in the phase file
 frontmatter myself, and that the build starts with the first id from
 `.claude/bin/plan next` — run it and name that id, so I can go straight to
-`/build T(n)` in a new session. `plan recommend` will keep saying /approve
+`/cs-build T(n)` in a new session. `plan recommend` will keep saying /cs-approve
 until I set that field; that is not a loop, it is waiting on me.

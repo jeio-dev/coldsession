@@ -1,8 +1,48 @@
 # Changelog
 
-Format version and release version are the same number. A phase file records
-the version it was planned under as `workflow-rev`, and `plan lint` refuses a
-file whose major version differs from the tool's.
+The tool release and phase-file format are versioned separately. A phase file
+records the format it was planned under as `workflow-rev`; `plan lint` checks
+that against the supported format rather than the product release.
+
+## [v2.0.0]
+
+### One installer for install, update, and agent selection
+
+- `install.sh` and `install.ps1` now handle fresh installs, idempotent updates,
+  v1 migrations, and switching between Claude Code, Codex, or both.
+- Interactive runs prompt for an agent selection; automation uses
+  `--agent claude|codex|both` or `-Agent claude|codex|both`.
+- The selected set is authoritative. Only recognized coldsession-managed
+  artifacts are removed, while templates, phase files, unrelated commands and
+  skills, and modified Claude settings are preserved.
+- Removed `update.sh` and `update.ps1`; re-running the installer is the update
+  path.
+
+### Consistent `cs-*` entry points
+
+- Renamed Claude commands to `/cs-define`, `/cs-build T2`, and the other
+  `cs-*` names. The old unprefixed names are removed during migration.
+- Renamed Codex skills to `$cs-define`, `$cs-build T2`, and matching `cs-*`
+  names. Codex uses its native skill syntax, so only the sigil differs.
+- Kept `commands/cs-*.md` canonical. Claude receives direct copies; Codex
+  receives runtime-patched copies under `.agents/coldsession/commands/` and
+  thin adapters under `.agents/skills/cs-*`.
+
+### Codex support
+
+- Added ten repository-scoped Codex skills under `.agents/skills/`, matching
+  the existing Claude Code commands one-for-one.
+- Each agent surface has its own runtime, so a Codex-only install has no
+  dependency on `.claude/` and a Claude-only install has no Codex artifacts.
+- Fixed Windows runtime detection so a non-functional Microsoft Store
+  `python3.exe` shim no longer masks a working `python` command.
+
+### Release and format compatibility
+
+- `TOOL_VERSION` is now `2.0.0`; the unchanged phase format remains `1.3.0`.
+- `plan version` reports the release version, while `plan lint` compares
+  `workflow-rev` with the separate supported format version. Existing 1.x
+  phase files therefore continue to lint after updating to v2.
 
 ## [v1.2.0]
 

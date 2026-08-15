@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coldsession Approve"
+  short_description: "Produce an evidence-based readiness check"
+  default_prompt: "Use $cs-approve to check whether the current phase is ready."

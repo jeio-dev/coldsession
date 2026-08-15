@@ -33,6 +33,6 @@ it. It answers from AGENTS.md alone, without reading source.
 
 ## Next
 
-Commit the scaffold, then tell me to run `/plan` for Phase 1 with the
+Commit the scaffold, then tell me to run `/cs-plan` for Phase 1 with the
 objective brief. If PLAN.md now exists, run `.claude/bin/plan recommend` and
 print it instead — from here the phase file decides, not the command.

@@ -23,18 +23,18 @@ Then audit the delivered phase against its acceptance criteria and report
 gaps, dead code, and anything left unwired.
 
 Finally: tick this phase in PLAN.md, and set `status: closed` in the phase
-file's frontmatter. Leave `current:` pointing at this phase. /plan moves it
+file's frontmatter. Leave `current:` pointing at this phase. /cs-plan moves it
 when it writes the next phase file, so the pointer never names a file that
 does not exist yet.
 
 ## Next
 
-- A next phase exists in PLAN.md: tell me to run `/plan` for it in a NEW
+- A next phase exists in PLAN.md: tell me to run `/cs-plan` for it in a NEW
   session. Name the phase and quote its PLAN.md line, so I can paste it if I
-  want to. /plan reads this closed phase and its log for what carries
+  want to. /cs-plan reads this closed phase and its log for what carries
   forward, and asks its open questions before it writes. Do not send me to
-  /define; the product scope was settled before Phase 01.
+  /cs-define; the product scope was settled before Phase 01.
 - No phase left: say the plan is complete, and do not invent one.
 
 The new phase file starts unreviewed, so `plan recommend` picks the loop up
-from /review on its own once /plan has written it.
+from /cs-review on its own once /cs-plan has written it.

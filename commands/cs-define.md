@@ -29,9 +29,9 @@ Do not break this into tasks or phases. Do not write code.
 Once I have answered the open questions, end with one line telling me what to
 run next. Nothing is on disk yet, so decide it from the repo:
 
-- An empty or near-empty repo, or no AGENTS.md: `/groundwork` — the ground
+- An empty or near-empty repo, or no AGENTS.md: `/cs-groundwork` — the ground
   rules have to exist before there is anything to plan against.
-- An existing codebase: `/plan`, in this session, since it uses this brief.
+- An existing codebase: `/cs-plan`, in this session, since it uses this brief.
 
-From /plan onward, `.claude/bin/plan recommend` computes the next step from
+From /cs-plan onward, `.claude/bin/plan recommend` computes the next step from
 the phase file. Say so, so I stop needing to remember the order.

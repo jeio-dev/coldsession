@@ -35,7 +35,7 @@ say so and give the two things most likely to break anyway.
 
 ## Record them
 
-Findings only in this session's transcript are findings /revise and /recheck
+Findings only in this session's transcript are findings /cs-revise and /cs-recheck
 cannot read. Reason in plan mode, then exit plan mode and write them into the
 phase file's `## Findings` section, one line per finding, seven fields:
 
@@ -48,11 +48,11 @@ them, and `plan lint` will reject the line. If the phase file has no
 
 That section and `plan reviewed` are the only writes you make. Do not rewrite
 the plan, do not resolve your own findings, and do not touch the task graph —
-/revise does that.
+/cs-revise does that.
 
 Then:
 1. `.claude/bin/plan reviewed` — records that this rev has had a review pass.
 2. `.claude/bin/plan lint` — confirm the findings you wrote parse.
-3. `.claude/bin/plan recommend` and print it. It will send you to /revise if
-   you found anything, and to /approve if you did not.
-4. Stop. /revise runs next, and it can run in this session.
+3. `.claude/bin/plan recommend` and print it. It will send you to /cs-revise if
+   you found anything, and to /cs-approve if you did not.
+4. Stop. /cs-revise runs next, and it can run in this session.

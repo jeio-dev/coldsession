@@ -48,9 +48,9 @@ When the Verify output is clean:
    file whose actual contents differ from what the plan assumed. If there is
    nothing, write "nothing to carry". Never summarize the diff; git has it.
 4. Run `.claude/bin/plan recommend` and print it. It names the next task to
-   build, or /close when this was the last one, or the dependency holding
+   build, or /cs-close when this was the last one, or the dependency holding
    everything up.
-5. Stop. Exit the session rather than compacting. The next `/build` starts
+5. Stop. Exit the session rather than compacting. The next `/cs-build` starts
    cold, which is what keeps its reads bounded.
 
 If you hit a blocker:
@@ -60,5 +60,5 @@ If you hit a blocker:
   `open`, in the seven-field shape the other findings use:
   `F(n) | High | Risk | $1 | open | what stopped the task | what would unblock it`
 - Print `.claude/bin/plan recommend` and stop. An open finding sends the loop
-  back to /revise, which is where a plan that does not survive contact with
+  back to /cs-revise, which is where a plan that does not survive contact with
   the code gets fixed.

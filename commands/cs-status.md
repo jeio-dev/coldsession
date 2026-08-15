@@ -1,5 +1,5 @@
 ---
-description: Where the current phase stands
+description: Where the current coldsession phase stands
 ---
 
 Run `.claude/bin/plan status` and `.claude/bin/plan next --parallel`.

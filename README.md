@@ -2,34 +2,36 @@
 
 Every step that judges the previous one runs cold.
 
-A six-step planning loop for coding agents, packaged as ten slash commands
-and one dependency-free script. The session that reviews a plan never held
-the pen that wrote it, the phase file carries a linted task graph, and a
-build session reads a computed list of files rather than a codebase.
+A six-step planning loop for Claude Code and Codex, packaged as ten Claude
+slash commands, ten matching Codex skills, and one dependency-free script.
+The session that reviews a plan never held the pen that wrote it, the phase
+file carries a linted task graph, and a build session reads a computed list
+of files rather than a codebase.
 
-    /define → /plan → /review → /revise → /approve → /build → /close → /plan …
+    /cs-define → /cs-plan → /cs-review → /cs-revise → /cs-approve → /cs-build → /cs-close → /cs-plan …
 
 ## Install
 
-Clone into the project, run it, and it deletes itself.
+Clone into the project, run the installer, choose Claude Code, Codex, or both,
+and the temporary clone deletes itself.
 
 ```bash
 cd ~/my-project
-git clone --depth 1 --branch v1.2.0 https://github.com/jeio-dev/coldsession.git .coldsession
-.coldsession/install.sh
-git add .claude templates && git commit -m "chore: coldsession"
+git clone --depth 1 --branch v2.0.0 https://github.com/jeio-dev/coldsession.git .coldsession
+.coldsession/install.sh --agent both
+git add .claude .agents templates && git commit -m "chore: coldsession"
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
 cd $HOME\my-project
-git clone --depth 1 --branch v1.2.0 https://github.com/jeio-dev/coldsession.git .coldsession
-.\.coldsession\install.ps1
-git add .claude templates; git commit -m "chore: coldsession"
+git clone --depth 1 --branch v2.0.0 https://github.com/jeio-dev/coldsession.git .coldsession
+.\.coldsession\install.ps1 -Agent both
+git add .claude .agents templates; git commit -m "chore: coldsession"
 ```
 
-`--branch v1.2.0` pins the clone to a tagged release rather than whatever's
+`--branch v2.0.0` pins the clone to a tagged release rather than whatever's
 on `main`, so following this README always gets a tested version; bump it to
 the latest tag from the [releases page](https://github.com/jeio-dev/coldsession/tags)
 if this copy of the README is older than the repo. The clone never outlives
@@ -41,95 +43,118 @@ checkout you keep somewhere else, is left alone and merely mentioned. Both
 installers take the target directory as their first argument, defaulting to
 the current one.
 
-`install.ps1` mirrors `install.sh`: it copies the commands, the `plan` tool,
-and the templates, and writes `.claude/settings.json` only if one doesn't
-already exist. It needs `python3` (or `python`, or `py`) on `PATH`. The script
-is BOM-less UTF-8 and ASCII-only, so it parses cleanly under Windows
-PowerShell 5.1 as well as PowerShell 7+.
+Omit the agent option for an interactive `Claude Code / Codex / Both` prompt.
+Automation must pass it explicitly:
+
+```text
+./install.sh [target-dir] [--agent claude|codex|both] [--keep]
+.\install.ps1 [[-Target] <dir>] [-Agent claude|codex|both] [-Keep]
+```
+
+The selection is authoritative. Re-running with `codex` removes only known
+coldsession-managed Claude commands and runtime files; `claude` does the
+inverse; `both` installs both surfaces. Other commands, skills, phase files,
+and modified settings are left alone.
+
+`install.ps1` mirrors `install.sh`. It needs Python on `PATH` and checks
+`python3`, `python`, then `py`. The script is BOM-less UTF-8 and ASCII-only,
+so it parses cleanly under Windows PowerShell 5.1 as well as PowerShell 7+.
 
 ## Update
 
-An install pins the tool's version into the project, so a fix to `plan` or
-the commands doesn't reach an already-installed project on its own.
-`update.sh` (`update.ps1` on Windows) re-copies just `.claude/commands/`,
-`.claude/bin/plan`, and `.claude/bin/plan.cmd` from a fresh clone; it refuses
-to run against a project with no existing install, and never touches
-`templates/` or `.claude/settings.json` — those are yours once installed.
+An install pins the tool's version into the project. To update, clone the new
+release and run `install.sh` or `install.ps1` again with the intended agent
+selection. The installer detects an existing coldsession runtime, reports the
+old and new versions, migrates managed 1.x names, and preserves templates and
+phase files.
 
 ```bash
 cd ~/my-project
-git clone --depth 1 --branch v1.2.0 https://github.com/jeio-dev/coldsession.git .coldsession
-.coldsession/update.sh
-git add .claude && git commit -m "chore: update coldsession"
+git clone --depth 1 --branch v2.0.0 https://github.com/jeio-dev/coldsession.git .coldsession
+.coldsession/install.sh --agent both
+git add .claude .agents && git commit -m "chore: update coldsession"
 ```
 
-Same `--keep`/`-Keep` and self-deleting clone as install. Prints the version
-before and after, so `git diff .claude` isn't the only way to tell what
-changed — `plan version` on its own does too.
-
 ```
-.claude/commands/*.md    the ten commands
-.claude/bin/plan         the graph and context tool
-.claude/bin/plan.cmd     the same tool, entered from Windows
-.claude/settings.json    opusplan routing + permission for the tool
-templates/               PLAN.md, phase.md
-docs/plans/              phase files land here
+.claude/commands/cs-*.md             Claude Code commands
+.claude/bin/plan{,.cmd}              Claude runtime (when selected)
+.claude/settings.json                Claude routing + permissions
+.agents/skills/cs-*                  Codex skill adapters
+.agents/coldsession/commands/cs-*.md Codex command copies
+.agents/coldsession/bin/plan{,.cmd}  Codex runtime (when selected)
+templates/                            PLAN.md, phase.md
+docs/plans/                           phase files land here
 ```
 
 `plan` is an extension-less Python file with a shebang. POSIX shells and Git
 Bash run it directly; PowerShell cannot run an extension-less file at all, and
 does not apply `PATHEXT` to an explicit path, so a `.cmd` sitting next to it
-isn't found either. `install.ps1` therefore points the commands it installs at
-`.claude/bin/plan.cmd`, which works from PowerShell, cmd.exe, and Git Bash
-alike. Both installers ship both files, so a repo installed on one platform
-still runs on the other; a teammate on the other OS re-runs their own
-installer, which repoints the commands and touches nothing else.
+isn't found either. `install.ps1` therefore points each selected surface at
+its adjacent `plan.cmd`, which works from PowerShell, cmd.exe, and Git Bash.
+Both installers ship both runtime files, so a teammate on another OS can
+re-run the installer with the same agent selection.
 
 Installs per project, not globally, so the workflow version pins with the
 code and a phase planned six months ago still reads the way it was planned.
-Commit `.claude/` with the repo.
+Commit the selected `.claude/` and/or `.agents/` surface with the repo.
 
-Needs `python3` and an agent that reads `.claude/commands/`.
+Needs `python3` and either Claude Code or Codex.
+Launch either agent from the repository root; the installed command paths and
+`PLAN.md` are root-relative. Codex skills discovered from a nested working
+directory resolve those paths back to the repository root before running.
+
+### Agent syntax
+
+Claude Code invokes `/cs-define` and `/cs-build T2`. Codex invokes the matching
+repository skills as `$cs-define` and `$cs-build T2`, or selects them through
+`/skills`. Codex does not expose repository skills as arbitrary slash commands,
+so the product-specific sigil differs while the `cs-*` stem and arguments are
+identical.
+
+The files in `commands/` are canonical. The installer copies them to Claude
+and/or `.agents/coldsession/commands`, patching only the runtime path. Codex
+skills remain small adapters for invocation arguments and next-step display.
 
 ## The loop
 
 | Command | Session | Mode | What it does |
 |---|---|---|---|
-| `/define <idea>` | 1 | plan · opus | Idea → objective brief. Asks, doesn't guess. |
-| `/groundwork` | 1 | normal · sonnet | Greenfield only. AGENTS.md, scaffold, commands that actually run. |
-| `/plan` | 1 | write · sonnet | Brief → `PLAN.md` + a phase file with a task graph. |
-| `/review` | 2, new | plan · opus | Independent skeptic. Severity-tagged findings. |
-| `/revise` | 2 | write · sonnet | Resolve findings, write the changelog. |
-| `/recheck` | 3, new | plan · opus | Rounds 2+. Reads the changelog, not the phase. |
-| `/approve` | new | normal · sonnet | Evidence checklist. Issues no verdict. |
-| `/build T2` | one per task | normal · sonnet · `--effort medium` | One task, verified, committed. |
-| `/close` | new | normal · sonnet | Harvest corrections, audit, close the phase. |
-| `/status` | anywhere | any | Four lines. Reads no source. |
+| `/cs-define <idea>` | 1 | plan · opus | Idea → objective brief. Asks, doesn't guess. |
+| `/cs-groundwork` | 1 | normal · sonnet | Greenfield only. AGENTS.md, scaffold, commands that actually run. |
+| `/cs-plan` | 1 | write · sonnet | Brief → `PLAN.md` + a phase file with a task graph. |
+| `/cs-review` | 2, new | plan · opus | Independent skeptic. Severity-tagged findings. |
+| `/cs-revise` | 2 | write · sonnet | Resolve findings, write the changelog. |
+| `/cs-recheck` | 3, new | plan · opus | Rounds 2+. Reads the changelog, not the phase. |
+| `/cs-approve` | new | normal · sonnet | Evidence checklist. Issues no verdict. |
+| `/cs-build T2` | one per task | normal · sonnet · `--effort medium` | One task, verified, committed. |
+| `/cs-close` | new | normal · sonnet | Harvest corrections, audit, close the phase. |
+| `/cs-status` | anywhere | any | Four lines. Reads no source. |
 
-A command supplies prompt text and nothing else. It does not start a session,
-enter plan mode, or pick a model. `/review` typed into the session that wrote
-the plan gives you a compromised review with correct wording, which is worse
-than skipping it — it looks like a review.
+A command or skill supplies prompt text and nothing else. It does not start a
+session, enter plan mode, or pick a model. `/cs-review` (or `$cs-review`)
+invoked in the session that wrote the plan gives you a
+compromised review with correct wording, which is worse than skipping it — it
+looks like a review.
 
-Every command from `/plan` onward ends by printing `plan recommend`, so the
+Every command from `/cs-plan` onward ends by printing `plan recommend`, so the
 next step comes from the phase file rather than from you remembering the
-order. `/define` and `/groundwork` recommend statically; nothing is on disk
+order. `/cs-define` and `/cs-groundwork` recommend statically; nothing is on disk
 yet to derive from.
 
-`/approve` deliberately cannot approve. You set `status: approved` in the
+`/cs-approve` deliberately cannot approve. You set `status: approved` in the
 phase file's frontmatter yourself. A model grading its own revision against
 criteria it just satisfied passes itself every time.
 
 **Stop condition.** If round three still produces a Critical, the phase is
 too large or the objective is wrong. Split it and re-plan. A loop with no exit
 is how a planning workflow becomes a way of avoiding the build. `plan lint`
-warns at that point (`W05`) and `plan recommend` sends you to `/plan` instead
-of `/revise`.
+warns at that point (`W05`) and `plan recommend` sends you to `/cs-plan`
+instead of `/cs-revise`.
 
 ## Findings
 
 A finding that only exists in the session that found it is gone, because that
-session is meant to end. `/review` writes its findings into the phase file's
+session is meant to end. `/cs-review` writes its findings into the phase file's
 `## Findings` block, one per line, seven fields:
 
 ```
@@ -139,7 +164,7 @@ F3 | Medium   | Unnecessary scope | T2 | accepted | types.ts duplicates the sche
 
 Same bargain as the task graph: a narrow shape the tool can parse, no pipes
 inside the prose, and a malformed line fails loudly as `E12` rather than
-disappearing. `/revise` closes each one with
+disappearing. `/cs-revise` closes each one with
 
 ```
 plan resolve F1 resolved "T3 now depends on T2"
@@ -148,13 +173,13 @@ plan resolve F1 resolved "T3 now depends on T2"
 which flips the status and appends `rev 2 | F1 | resolved | T3 now depends on
 T2` to the changelog in the same step, so the two can't disagree. `resolved`
 means the plan changed; `accepted` means it didn't and here's why. The note
-has to name a task ID or plan line — `/approve` fails a changelog entry that
-just says "fixed", and `/recheck` reads the changelog rather than the phase,
+has to name a task ID or plan line — `/cs-approve` fails a changelog entry that
+just says "fixed", and `/cs-recheck` reads the changelog rather than the phase,
 so an entry that names nothing gives it nothing to check.
 
 `reviewed:` in the frontmatter carries the rev of the last review pass.
-Against `rev:`, it is what tells `/recheck` there is something new to look at
-and what stops `/approve` from grading an unreviewed revision.
+Against `rev:`, it is what tells `/cs-recheck` there is something new to look
+at and what stops `/cs-approve` from grading an unreviewed revision.
 
 ## The task graph
 
@@ -167,7 +192,7 @@ phase: 02-offline-sync
 rev: 3
 status: approved
 reviewed: 3
-workflow-rev: 1.2.0
+workflow-rev: 1.3.0
 tasks:
   T1: {deps: [], status: done, files: [src/db/schema.ts]}
   T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts]}
@@ -184,11 +209,11 @@ Verify: `npm test -- queue` exits 0
 `files` carries the most weight and gets written the most carelessly. It is
 the contract a build session is bounded to: a missing entry stalls the build,
 an over-broad one spends context you don't get back. The linter can only
-check that it's non-empty, so `/review` checks it against the real codebase.
+check that it's non-empty, so `/cs-review` checks it against the real codebase.
 
 `Verify` is the other load-bearing field. Build cannot mark a task done
 without running that command and showing its output, so a task whose Verify
-line is "confirm it works" is a task Build can pass by asserting. `/review`
+line is "confirm it works" is a task Build can pass by asserting. `/cs-review`
 treats one as a High finding.
 
 ## plan
@@ -212,32 +237,34 @@ marked done ahead of their dependencies, empty `files` lists, missing
 `Verify:` lines, graph entries with no body section, body sections with no
 graph entry, malformed or duplicated findings, findings naming tasks that
 don't exist, findings closed without a changelog entry, and an approved or
-closed phase with an open Critical or High. `/review`, `/recheck`, and `/approve` all run
+closed phase with an open Critical or High. `/cs-review`, `/cs-recheck`, and
+`/cs-approve` all run
 it, so shape errors never consume a human review round.
 
 `recommend` derives the next command from the file: unreviewed sends you to
-`/review`, open findings to `/revise`, a revision newer than its last review
-pass to `/recheck`, a clean reviewed rev to `/approve`, an approved phase to
-`/build` with the first runnable id, a finished one to `/close`, and a closed
-one to `/plan` for the phase after it. It prints the state that produced the
+`/cs-review`, open findings to `/cs-revise`, a revision newer than its last
+review pass to `/cs-recheck`, a clean reviewed rev to `/cs-approve`, an
+approved phase to `/cs-build` with the first runnable id, a finished one to
+`/cs-close`, and a closed one to `/cs-plan` for the phase after it. It prints
+the state that produced the
 answer, so a recommendation you disagree with is one you can check rather than
 guess at.
 
 ## The phase boundary
 
-`/close` ticks the phase in PLAN.md and marks the phase file `status: closed`.
-It does not touch `current:`. Moving the pointer is `/plan`'s job, in the same
+`/cs-close` ticks the phase in PLAN.md and marks the phase file `status: closed`.
+It does not touch `current:`. Moving the pointer is `/cs-plan`'s job, in the same
 edit that writes the new phase file, because a `current:` naming a file that
 doesn't exist yet is a pointer every `plan` subcommand refuses to read — the
 one moment you'd most want to ask the tool what to do next.
 
-So the loop closes at `/plan`, not `/define`. `/define` is a whole-product
+So the loop closes at `/cs-plan`, not `/cs-define`. `/cs-define` is a whole-product
 brief: it runs once, before Phase 01, and produces something no file on disk
-holds. Phase 02 has no product scope left to settle — `/plan` opens in a new
+holds. Phase 02 has no product scope left to settle — `/cs-plan` opens in a new
 session with no brief, reads the PLAN.md line, the phase you just closed and
 its log, and AGENTS.md, then asks you what a one-line phase name can't say.
 
-    /plan → /review → /revise → /approve → /build → /close → /plan …
+    /cs-plan → /cs-review → /cs-revise → /cs-approve → /cs-build → /cs-close → /cs-plan …
 
 The frontmatter parser is regex-based on a deliberately narrow one-line-per-
 task shape rather than a real YAML parse, to stay stdlib-only. A malformed
@@ -283,10 +310,10 @@ reads the last entry, so nothing has to survive in a terminal you closed.
 
 1. Bounded reads. A build session opens a listed set, not a codebase.
 2. Fixed read order, so the cache prefix is reused instead of rebuilt.
-3. `/recheck` instead of a second full `/review`.
+3. `/cs-recheck` instead of a second full `/cs-review`.
 4. Eight tasks per phase, capped, because every session re-reads the file.
-5. `claude --effort medium` for build. A task that survived review doesn't
-   need `high`, which is the default.
+5. Moderate reasoning effort for build. In Claude Code that is
+   `claude --effort medium`; in Codex, use the equivalent session setting.
 6. Search subagents, results only.
 7. Exit sessions, never `/compact` — it reprocesses the whole conversation and
    then charges you to re-read the summary.
@@ -310,13 +337,17 @@ A model chosen with `/model` is saved into `~/.claude/settings.json` and
 quietly applies to every session after; `effortLevel` behaves the same way.
 Clear both so the project setting and the launch flag win.
 
+Those settings are Claude-specific. The installer does not overwrite Codex
+user or project model settings; Codex skills run with the model, reasoning
+effort, and collaboration mode of the active Codex session.
+
 ## When to skip this
 
 | Gear | When |
 |---|---|
 | Direct | Reversible, one or two files, obvious answer. Just ask. |
-| Short loop | `/plan` → `/review` → build, one session, nothing on disk. |
-| Greenfield | `/define` → `/groundwork` → full loop. |
+| Short loop | `/cs-plan` → `/cs-review` → build, one session, nothing on disk. |
+| Greenfield | `/cs-define` → `/cs-groundwork` → full loop. |
 | Full loop | New surface, schema, auth, payments — anything expensive to unwind. |
 
 The full loop costs four sessions before a line of code exists. That pays for
@@ -324,24 +355,27 @@ itself on a new surface area and is pure overhead on a copy change. Touching
 data ownership, auth, or money puts you in the full loop regardless of how
 small the diff looks.
 
-## What 1.x commits to
+## Compatibility
 
 Semver applies to four things. Everything else is free to change in a patch.
 
-1. **Command names.** `/build T2` keeps working.
+1. **Entry-point names.** In 2.x, Claude's `/cs-build T2` and Codex's
+   `$cs-build T2` keep working.
 2. **The `tasks:` frontmatter shape, and the `## Findings` line shape.** Phase
-   files planned under 1.x stay readable by 1.x tooling. A file written before
-   findings existed still lints and builds.
+   files using the 1.x format remain readable by the 2.x tool. A file written
+   before findings existed still lints and builds.
 3. **`plan` subcommands and exit codes.** `lint` exits 1 on error; scripts can
    rely on it. Subcommands get added in a minor release, never removed in one.
-4. **Install paths.** `.claude/commands/`, `.claude/bin/plan`, `templates/`.
+4. **Install paths.** `.claude/commands/cs-*`, `.claude/bin/plan`,
+   `.agents/skills/cs-*`, `.agents/coldsession/`, and `templates/`.
 
 Prompt wording inside a command is not part of the contract — it will change
 whenever the model's behavior makes it worth changing.
 
-Every project holds its own copy of the tool and its own phase files, so
-there is no central migration. `plan lint` refuses a phase file whose major
-`workflow-rev` differs from the tool's rather than mis-parsing it.
+The tool release and phase format are versioned separately: `plan version`
+prints the 2.x release, while new phase templates keep `workflow-rev: 1.3.0`.
+`plan lint` compares that field with the supported format version, so updating
+the installer does not invalidate an existing 1.x phase.
 
 ## Docs
 

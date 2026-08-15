@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coldsession Build"
+  short_description: "Implement one approved task and stop"
+  default_prompt: "Use $cs-build to implement task T1 from the approved phase."

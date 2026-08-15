@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coldsession Review"
+  short_description: "Independently review the current plan"
+  default_prompt: "Use $cs-review to independently review the current phase."
