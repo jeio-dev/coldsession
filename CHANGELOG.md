@@ -4,7 +4,7 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
-## [Unreleased]
+## [2.1.0]
 
 ### Durable objectives and guarded reruns
 
