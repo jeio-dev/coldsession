@@ -1,4 +1,4 @@
 interface:
   display_name: "Coldsession Groundwork"
   short_description: "Set up greenfield project ground rules"
-  default_prompt: "Use $cs-groundwork to scaffold the project ground rules from the objective brief."
+  default_prompt: "Use $cs-groundwork to scaffold guarded Phase 0 from OBJECTIVE.md."

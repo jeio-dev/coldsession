@@ -1,94 +1,82 @@
 ---
-description: Turn the objective brief into a phased plan on disk
-argument-hint: [objective, or blank to use the brief from this session]
+description: Create the initial or next detailed phase from durable state
+argument-hint: [phase guidance] [--resume]
 ---
 
-Create a complete implementation plan for the following objective:
+Create exactly one implementation phase. `$ARGUMENTS` is supplemental phase
+guidance, never a replacement for durable project state.
 
-$ARGUMENTS
+## Select the source without drifting scope
 
-If the line above is blank, work out what you are planning against, in this
-order:
+Check whether `PLAN.md` exists before opening `OBJECTIVE.md`.
 
-1. An objective brief produced earlier in this session: use it.
-2. No brief, but PLAN.md exists: this is a phase boundary, and the objective
-   is the phase `current:` names, or the first unticked phase if `current:`
-   names a closed one. Read its line in PLAN.md, the closed phase file and
-   its `.log.md` for what carries forward, AGENTS.md, and
-   docs/architecture.md if it exists. Nothing else. The product scope is
-   settled; do not re-derive it, and do not run /cs-define.
-3. Neither: stop and tell me to run /cs-define first.
+### No PLAN.md
 
-Coming in at a boundary you will have real questions — a one-line phase name
-is an intention, not a specification. Ask them, per `## Also include` below,
-before you write the file.
+Require root `OBJECTIVE.md` with `status: ready`; otherwise stop and tell me to
+run `/cs-define`. Read it once as the authoritative product scope. Additional
+arguments may clarify it but may not silently contradict it; a conflict must
+be resolved with `/cs-define --revise` before planning.
 
-Break the work into logical phases, and phases into numbered tasks
-(T1, T2, T3, ...).
+If `OBJECTIVE.md` says `active: plan`, require `--resume`; another active value
+stops. Otherwise set `active: plan` before substantive planning. Copy its
+`objective-rev:` into the new PLAN.md.
 
-## Files
+### PLAN.md exists
 
-PLAN.md is the index: a `current:` pointer and a checklist of phases in
-dependency order, one line each, linking to their phase files. Create it from
-templates/PLAN.md if absent; otherwise add or correct phases and set
-`current:` to this one. Never copy task detail into PLAN.md.
+Do not open, search, quote, or otherwise read `OBJECTIVE.md`, even on
+`--resume`. Product scope has already been reduced to the phase index.
 
-Setting `current:` is yours alone. /cs-close leaves it on the phase it closed,
-so at a boundary it still names the previous phase until you move it. Move it
-in the same edit that writes the new phase file, never before.
+- If the current phase is not closed, stop before source inspection, run
+  `.claude/bin/plan recommend`, and print it. Never rewrite an active phase.
+- If the current phase is closed and has `active: plan`, require `--resume`.
+- Otherwise set `active: plan` on that closed phase before substantive work.
+- Plan the first unticked phase, or the phase named by `current:` when no
+  later line exists. Read its PLAN.md line, the closed phase and only the last
+  log entry, AGENTS.md, and docs/architecture.md if present. Use targeted
+  repository search and read only files needed to make task paths exact.
 
-Write the current phase to docs/plans/(NN)-(slug).md using
-templates/phase.md. Detail only the current phase at task level. Phases
-beyond it are provisional: reorder, split, merge, or drop them freely at each
-boundary.
+A one-line phase is an intention, not a specification. Ask all material
+questions before writing.
 
-## Task graph
+## Plan quality
 
-The phase file's frontmatter carries a machine-readable graph. One line per
-task, exactly this shape, or the tooling cannot read it:
+Break the work into dependency-ordered phases and detail only the current one.
+Every phase must end in a runnable state. Later phase lines stay provisional.
+
+Use `templates/PLAN.md` and `templates/phase.md`. PLAN.md remains only the
+`current:` pointer and one-line phase checklist. The phase file is
+`docs/plans/(NN)-(slug).md`.
+
+The task graph uses exactly:
 
   T2: {deps: [T1], status: pending, files: [src/sync/queue.ts]}
 
-- `deps` are task IDs in this phase only. Acyclic, and prefer depending
-  backwards so IDs read in execution order.
-- `files` is the complete set this task may open or write. A build session is
-  bounded to this list plus its dependencies' files, so a missing entry stalls
-  the build and an over-broad one wastes context. This is the single most
-  important field you write.
-- `status` starts as pending.
+- At most eight tasks; split the phase rather than add a ninth.
+- Dependencies are real prerequisites in this phase and form an acyclic graph.
+- `files` is the complete, minimal set the task may read or write, including
+  tests, configuration, generated definitions, and new files. Missing paths
+  stall Build; broad paths waste context.
+- Keep concurrently runnable tasks from sharing files where practical.
 
-## Task body
+Each matching `## T(n)` contains Goal, concrete Deliverables, observable
+Acceptance Criteria, and `Verify:` with an exact runnable command and exact
+passing output or exit status. For a genuinely visual-only result, name the
+screen, action, and visible result. Never use "manually confirm it works".
 
-One `## T(n)` section per task, matching the graph exactly:
-- Goal
-- Deliverables
-- Acceptance Criteria
-- Verify: the exact command I run and the exact output that means it passed.
-  If the only check is visual, name the screen and what I should see. Never
-  write "manually confirm it works".
+Resolve blocking questions before writing. Record confirmed non-blocking
+assumptions, `## Open questions` as `None.`, and explicit out-of-scope items.
+Leave Findings and Changelog empty and omit `reviewed:`, `ready:`, and active
+stage metadata from a new phase.
 
-## Size
+## Atomic handoff
 
-Cap a phase at eight tasks. A ninth is a signal the phase should split: every
-later session pays to read this file, so it stays small. Each phase must end
-in a state I can run.
+Write and lint the new phase before moving `current:`. At a boundary, remove
+`active: plan` from the closed phase in the same final edit that creates the
+new phase and moves the pointer. On initial planning, remove `active: plan`
+from OBJECTIVE.md only after both PLAN.md and the phase file exist.
 
-## Also include
+Then:
 
-- Assumptions you are proceeding on without confirming
-- Open questions that need my input before this plan is final
-- Out of scope items
-
-Leave the `## Findings` and `## Changelog` sections in place and empty.
-/cs-review writes the first, /cs-revise writes the second, and they are how those
-sessions hand work to each other. Do not add a `reviewed:` field — the phase
-has not been reviewed, and the tooling reads its absence.
-
-Ask me the open questions directly rather than guessing. Do not write code.
-
-## Finishing
-
-1. `.claude/bin/plan lint` — fix anything it reports.
-2. `.claude/bin/plan recommend` and print it. It will send you to /cs-review.
-3. Stop, and tell me to run /cs-review in a NEW session. /cs-review typed here
-   reviews its own work and will agree with itself.
+1. `.claude/bin/plan lint` — fix every error and warning attributable to the plan.
+2. `.claude/bin/plan recommend` — print it.
+3. Stop and tell me to run `/cs-review` in a new session.

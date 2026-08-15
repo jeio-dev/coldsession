@@ -1,40 +1,27 @@
 ---
-description: Harvest repeated corrections, then close the phase
+description: Guarded phase audit and close
+argument-hint: [--resume]
 ---
 
-Run `.claude/bin/plan status`. If any task is not done, stop, say which, and
-print `.claude/bin/plan recommend` — it names what to run instead.
+First run `.claude/bin/plan begin close $ARGUMENTS` and inspect only its output.
+If it refuses, print that output and stop. Close begins only for an approved
+phase whose tasks are all done; an interrupted close requires `--resume`.
 
-Read this phase's commits, its log file, and the phase file including every
-finding.
+Read the phase's commits, its log, and the complete phase including findings.
+List only corrections that happened more than once or failures caused by
+missing repository guidance. Tie each to a commit, log entry, or finding and
+propose exactly one durable home: AGENTS.md globally, a directory rule, or a
+skill for a repeated procedure.
 
-List the things I had to correct more than once across the phase, or that a
-session got wrong because the repo never told it otherwise. Ignore one-off
-mistakes.
+Audit the delivered phase against every acceptance criterion and report gaps,
+dead code, and unwired work. If the audit finds a material gap, add a
+deduplicated open finding, run `.claude/bin/plan finish close --fail`, print
+`plan recommend`, and stop without closing.
 
-For each, propose exactly one of:
-- a line for AGENTS.md, if it applies everywhere
-- a rule in .claude/rules/, if it only applies to one directory
-- a skill, if it's a procedure we ran at least twice
+If clean, run `.claude/bin/plan finish close --pass`. It atomically ticks this
+phase in PLAN.md, sets `status: closed`, clears the marker, and leaves
+`current:` on the closed phase.
 
-Propose nothing you can't tie to a specific commit, log entry, or finding.
-
-Then audit the delivered phase against its acceptance criteria and report
-gaps, dead code, and anything left unwired.
-
-Finally: tick this phase in PLAN.md, and set `status: closed` in the phase
-file's frontmatter. Leave `current:` pointing at this phase. /cs-plan moves it
-when it writes the next phase file, so the pointer never names a file that
-does not exist yet.
-
-## Next
-
-- A next phase exists in PLAN.md: tell me to run `/cs-plan` for it in a NEW
-  session. Name the phase and quote its PLAN.md line, so I can paste it if I
-  want to. /cs-plan reads this closed phase and its log for what carries
-  forward, and asks its open questions before it writes. Do not send me to
-  /cs-define; the product scope was settled before Phase 01.
-- No phase left: say the plan is complete, and do not invent one.
-
-The new phase file starts unreviewed, so `plan recommend` picks the loop up
-from /cs-review on its own once /cs-plan has written it.
+If PLAN.md has another unchecked phase, name and quote it and tell me to run
+`/cs-plan` in a new session. Plan reads the closed phase and log, never
+OBJECTIVE.md. If none remains, say the plan is complete.

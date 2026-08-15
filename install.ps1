@@ -244,7 +244,7 @@ if ($Agent -eq "claude") {
 }
 
 New-Item -ItemType Directory -Force -Path "$DestinationRoot\docs\plans", "$DestinationRoot\templates" | Out-Null
-foreach ($template in @("PLAN.md", "phase.md")) {
+foreach ($template in @("OBJECTIVE.md", "PLAN.md", "phase.md")) {
     $targetPath = "$DestinationRoot\templates\$template"
     if (-not (Test-Path -LiteralPath $targetPath)) {
         Copy-Item -LiteralPath "$SourceRoot\templates\$template" -Destination $targetPath

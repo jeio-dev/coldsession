@@ -1,6 +1,6 @@
 ---
 name: cs-close
-description: Audit delivered work, harvest repeated corrections, and close a completed coldsession phase. Use in a fresh chat when the user invokes $cs-close or asks to close a phase whose tasks are all done.
+description: Guard, audit, and close a completed coldsession phase while persisting material gaps. Use in a fresh chat for $cs-close or explicit --resume recovery.
 ---
 
 # Coldsession Close
@@ -8,6 +8,8 @@ description: Audit delivered work, harvest repeated corrections, and close a com
 Read `.agents/coldsession/commands/cs-close.md` completely and follow its workflow.
 Resolve it from the repository root and perform the workflow with that root
 as the working directory.
+
+Treat accompanying flags as `$ARGUMENTS` and preserve `--resume` exactly.
 
 This repository supports both agents. When proposing persistent guidance,
 use the shared root `AGENTS.md` for repository-wide guidance. For

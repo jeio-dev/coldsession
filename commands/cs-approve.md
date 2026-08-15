@@ -1,36 +1,48 @@
 ---
-description: Readiness checklist with evidence, no verdict
+description: Guarded readiness checklist with persisted gaps, no verdict
+argument-hint: [--resume]
 ---
 
-Run `.claude/bin/plan lint`, `.claude/bin/plan status`, and
-`.claude/bin/plan findings`, then read the phase file and its changelog. You
-did not write any of them. Do not approve or reject. Produce the readiness
-checklist only.
+First run `.claude/bin/plan begin approve $ARGUMENTS` and inspect only its
+output. If it refuses, print that output and stop without reading the plan.
 
-For each line, give PASS or FAIL plus the evidence — quote the finding ID,
-task ID, linter output, or plan line that proves it. "Looks fine" is a FAIL.
+Run `.claude/bin/plan lint`, `.claude/bin/plan status`, and
+`.claude/bin/plan findings`, then read the phase and Changelog. You did not
+write them. Do not approve, reject, or revise task content.
+
+For each line give PASS or FAIL with a finding ID, task ID, linter output, or
+quoted plan line as evidence. "Looks fine" is a FAIL.
 
 - The linter exits clean.
 - `plan findings --open` prints nothing.
-- Every Critical and High finding has a changelog entry, and the plan line it
-  points at actually contains the fix.
-- Every task has acceptance criteria and a Verify line I could run today.
-- Every task's `files` list is complete enough that a session bounded to it
-  could finish the task.
-- Every remaining Medium/Low finding is explicitly accepted or justified.
-- The phase ends in a state I can run.
+- Every Critical and High has a changelog entry and the named plan line carries
+  the fix.
+- Every task has acceptance criteria and a runnable Verify line.
+- Every task's `files` list can bound a complete Build session.
+- Every remaining Medium or Low is explicitly accepted with a real reason.
+- The phase ends in a runnable state.
 
-Then list, in one line each, the riskiest thing still in the plan.
+For the single highest residual risk, report one line containing all four:
 
-Do not set `status: approved`. I do that.
+  Risk — impact — mitigation with task/line evidence — exact remaining action
 
-## Next
+If the mitigation is sufficient, say `remaining action: none` and cite it. If
+it is not, this checklist FAILs.
 
-If any line FAILs, tell me to run /cs-revise for the specific gaps, followed
-by /cs-review in a new session, and stop.
+## Persist every actionable failure
 
-If every line PASSes, tell me to set `status: approved` in the phase file
-frontmatter myself, and that the build starts with the first id from
-`.claude/bin/plan next` — run it and name that id, so I can go straight to
-`/cs-build T(n)` in a new session. `plan recommend` will keep saying /cs-approve
-until I set that field; that is not a loop, it is waiting on me.
+For each FAIL or unmitigated material risk not already represented, append one
+deduplicated open finding to Findings:
+
+  F(n) | <severity> | <category> | <tasks-or-> | open | gap and impact | exact plan edit that resolves it
+
+Do not leave a gap only in this transcript: `/cs-revise` reads on-disk open
+findings, not pasted feedback. Then run `.claude/bin/plan lint` and
+`.claude/bin/plan finish approve --fail`, print `plan recommend`, and tell me
+to run Revise followed by Review in a new session.
+
+If every line passes, run `.claude/bin/plan finish approve --pass`. This writes
+`ready: <rev>` and clears the marker; it does not approve. Tell me to set
+`status: approved` myself. Run `.claude/bin/plan next`, name the first ID, and
+tell me to use `/cs-build T(n)` in a new session. A repeated Approve stops at
+the ready marker while waiting for the human edit.

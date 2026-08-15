@@ -1,64 +1,42 @@
 ---
 description: Implement one approved task, verify it, commit, stop
-argument-hint: [task-id]
+argument-hint: [task-id] [--resume]
 ---
 
-Run `.claude/bin/plan brief $1`.
+Parse `$ARGUMENTS` as one task ID plus optional `--resume`. If the ID is blank,
+run `.claude/bin/plan recommend` and stop.
 
-If $1 is blank, run `.claude/bin/plan recommend` and stop: it names the task
-to build, or the command to run instead if the phase is not ready.
+Run `.claude/bin/plan start <task-id> [--resume]` first and inspect only its
+output. If it refuses, print that output and stop before reading files. A task
+already `in_progress` continues only with explicit `--resume`; done, blocked,
+unapproved, and dependency-blocked tasks cannot start.
 
-Stop before reading anything if the brief prints either header line:
-- `NOT APPROVED` — the phase is still in the planning loop. Print
-  `.claude/bin/plan recommend` and tell me to run that first.
-- `BLOCKED` — this task's dependencies are unfinished. Name them.
+Then run `.claude/bin/plan brief <task-id>`.
 
 ## Reading
 
-Read exactly the files the brief lists, in the order it lists them, starting
-with AGENTS.md. Nothing else. That order is fixed so the cached prefix is
-reused across build sessions; do not read anything before it or reorder it.
-
-If you need a file the brief does not list, stop and say which one and why.
-That is a bug in the plan's `files` list, not something to work around.
-
-If you need to locate something rather than read something, dispatch a search
-subagent and take back the file:line answer only. Do not fill this session
-with search output.
+Read exactly the files the brief lists, in order, beginning with AGENTS.md.
+Nothing else. If a required file is absent, stop and name it; that is a plan
+finding, not permission to expand context. Locate symbols with search and keep
+only file:line results.
 
 ## Doing
 
-Implement task $1 only. Do not change the architecture or the plan. Do not
-start the next task. Restate the acceptance criteria and the Verify line
-before you begin.
+Restate the acceptance criteria and Verify line, then implement only this task.
+Do not change architecture, the plan, or another task.
 
-A task is done only when you have run its Verify command and shown me the
-output. Not "the tests should pass" — the run, and what it printed. If there
-is no runnable check, say so explicitly and tell me the single manual step I
-have to take.
+A task is done only after running its Verify command and showing the output.
+For a named visual check, perform the exact action and report the visible result.
 
-## Finishing
+On success:
 
-When the Verify output is clean:
-1. `.claude/bin/plan done $1` — do not hand-edit the frontmatter.
-2. Commit, with the task ID in the message.
-3. Append to docs/plans/(NN)-(slug).log.md, ten lines maximum:
-   `## $1` then only what the next session cannot work out from the repo —
-   a decision you made that the plan did not specify, a gotcha you hit, a
-   file whose actual contents differ from what the plan assumed. If there is
-   nothing, write "nothing to carry". Never summarize the diff; git has it.
-4. Run `.claude/bin/plan recommend` and print it. It names the next task to
-   build, or /cs-close when this was the last one, or the dependency holding
-   everything up.
-5. Stop. Exit the session rather than compacting. The next `/cs-build` starts
-   cold, which is what keeps its reads bounded.
+1. Append at most ten lines to the phase log: `## T(n)` and only decisions,
+   gotchas, or mismatches the next session cannot derive. Otherwise write
+   `nothing to carry`.
+2. `.claude/bin/plan done <task-id>` — it accepts only `in_progress` tasks.
+3. Commit task changes, phase state, and log together with the task ID in the
+   message.
+4. Print `.claude/bin/plan recommend` and stop.
 
-If you hit a blocker:
-- Stop. Do not work around it.
-- `.claude/bin/plan block $1 "one line reason"`.
-- Append it to the phase file's `## Findings` as the next free F-id, status
-  `open`, in the seven-field shape the other findings use:
-  `F(n) | High | Risk | $1 | open | what stopped the task | what would unblock it`
-- Print `.claude/bin/plan recommend` and stop. An open finding sends the loop
-  back to /cs-revise, which is where a plan that does not survive contact with
-  the code gets fixed.
+On a blocker, run `plan block <task-id> "reason"`, add the next open High Risk
+finding with its concrete unblock action, print `plan recommend`, and stop.

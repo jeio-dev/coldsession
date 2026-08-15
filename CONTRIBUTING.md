@@ -10,6 +10,7 @@ Before opening a PR:
 
 ```bash
 python3 -c "import ast; ast.parse(open('bin/plan').read())"
+python3 -m unittest discover -s tests -v
 rm -rf /tmp/coldsession-check && mkdir -p /tmp/coldsession-check
 ./install.sh /tmp/coldsession-check --agent both
 cd /tmp/coldsession-check \
@@ -23,10 +24,11 @@ cd /tmp/coldsession-check \
 Also validate every Codex skill with the `quick_validate.py` shipped by
 Codex's `skill-creator` skill, and confirm an install contains nine canonical
 `cs-*` skills and commands plus the explicit-only `cs-recheck` compatibility
-alias on both surfaces.
+alias on both surfaces. Confirm the shared templates include `OBJECTIVE.md`,
+`PLAN.md`, and `phase.md`.
 
-The shipped templates must pass their own linter. That is the whole test
-suite; keep it that way or add a real one.
+The shipped phase template must pass its own linter. Runtime state transitions
+belong in the standard-library unittest suite; keep it dependency-free.
 
 Changing the shape of the `tasks:` frontmatter is a phase-format change. Bump
 `FORMAT_VERSION`, teach the linter exactly which older majors remain readable,

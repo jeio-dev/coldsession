@@ -1,6 +1,6 @@
 ---
 name: cs-revise
-description: Resolve recorded coldsession plan findings in place and update the revision changelog. Use when the user invokes $cs-revise or asks to revise a reviewed phase that has open findings.
+description: Resolve recorded coldsession findings in one guarded, idempotent revision and update its changelog. Use for $cs-revise, open reviewed findings, or explicit --resume recovery.
 ---
 
 # Coldsession Revise
@@ -8,6 +8,8 @@ description: Resolve recorded coldsession plan findings in place and update the 
 Read `.agents/coldsession/commands/cs-revise.md` completely and follow its workflow.
 Resolve it from the repository root and perform the workflow with that root
 as the working directory.
+
+Treat accompanying flags as `$ARGUMENTS` and preserve `--resume` exactly.
 
 Translate suggested next steps for Codex users:
 

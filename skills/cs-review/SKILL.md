@@ -1,6 +1,6 @@
 ---
 name: cs-review
-description: Independently review the current coldsession phase and record severity-tagged findings without revising the plan. Use in a fresh chat when the user invokes $cs-review, asks for the first review pass, or wants to verify a revised phase against its changelog.
+description: Independently review one guarded coldsession phase revision and persist findings without revising the plan. Use in a fresh chat for $cs-review, changelog-scoped revision review, or explicit --resume recovery.
 ---
 
 # Coldsession Review
@@ -8,6 +8,8 @@ description: Independently review the current coldsession phase and record sever
 Read `.agents/coldsession/commands/cs-review.md` completely and follow its workflow.
 Resolve it from the repository root and perform the workflow with that root
 as the working directory.
+
+Treat accompanying flags as `$ARGUMENTS` and preserve `--resume` exactly.
 
 Claude model names and mode changes are not instructions to change Codex's
 model or collaboration mode. Perform the specified independent reasoning and

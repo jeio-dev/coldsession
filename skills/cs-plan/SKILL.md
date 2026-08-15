@@ -1,6 +1,6 @@
 ---
 name: cs-plan
-description: Turn an objective brief or the next PLAN.md phase into a detailed, linted implementation phase on disk. Use when the user invokes $cs-plan or asks coldsession to plan the current or next phase without implementing it.
+description: Create the initial phase from OBJECTIVE.md or the next phase from PLAN.md without rereading the objective. Use when the user invokes $cs-plan, resumes with --resume, or asks coldsession to plan one phase without implementing it.
 ---
 
 # Coldsession Plan
@@ -9,8 +9,8 @@ Read `.agents/coldsession/commands/cs-plan.md` completely and follow its workflo
 Resolve it from the repository root and perform the workflow with that root
 as the working directory.
 
-Treat text accompanying the skill invocation as `$ARGUMENTS`. When none was
-supplied, use the command's on-disk fallback order.
+Treat text and flags accompanying the skill invocation as `$ARGUMENTS`.
+Preserve `--resume` exactly and follow the command's on-disk source selection.
 
 Claude model names and mode changes in supporting documentation are not
 instructions to change Codex's model or collaboration mode. Preserve the

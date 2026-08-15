@@ -9,7 +9,7 @@ The session that reviews a plan never held the pen that wrote it, the phase
 file carries a linted task graph, and a build session reads a computed list
 of files rather than a codebase.
 
-    /cs-define → /cs-plan → /cs-review → /cs-revise → /cs-approve → /cs-build → /cs-close → /cs-plan …
+    /cs-define → /cs-groundwork? → /cs-plan → /cs-review → /cs-revise → /cs-approve → /cs-build → /cs-close → /cs-plan …
 
 ## Install
 
@@ -83,7 +83,8 @@ git add .claude .agents && git commit -m "chore: update coldsession"
 .agents/skills/cs-*                  Codex skill adapters
 .agents/coldsession/commands/cs-*.md Codex command copies
 .agents/coldsession/bin/plan{,.cmd}  Codex runtime (when selected)
-templates/                            PLAN.md, phase.md
+templates/                            OBJECTIVE.md, PLAN.md, phase.md
+OBJECTIVE.md                          durable whole-product brief after Define
 docs/plans/                           phase files land here
 ```
 
@@ -120,14 +121,14 @@ skills remain small adapters for invocation arguments and next-step display.
 
 | Command | Session | Mode | What it does |
 |---|---|---|---|
-| `/cs-define <idea>` | 1 | plan · opus | Idea → objective brief. Asks, doesn't guess. |
-| `/cs-groundwork` | 1 | normal · sonnet | Greenfield only. AGENTS.md, scaffold, commands that actually run. |
-| `/cs-plan` | 1 | write · sonnet | Brief → `PLAN.md` + a phase file with a task graph. |
-| `/cs-review` | 2+, new | plan · opus | Full first pass; changelog-scoped after revision. |
-| `/cs-revise` | 2 | write · sonnet | Resolve findings, write the changelog. |
-| `/cs-approve` | new | normal · sonnet | Evidence checklist. Issues no verdict. |
-| `/cs-build T2` | one per task | normal · sonnet · `--effort medium` | One task, verified, committed. |
-| `/cs-close` | new | normal · sonnet | Harvest corrections, audit, close the phase. |
+| `/cs-define <idea>` | 1 | plan · opus | Idea → durable `OBJECTIVE.md`. Asks, doesn't guess. |
+| `/cs-groundwork` | 1 | normal · sonnet | Greenfield only. Reads the objective and closes Phase 00. |
+| `/cs-plan` | 1 | write · sonnet | Initial objective or closed boundary → one detailed phase. |
+| `/cs-review [--resume]` | 2+, new | plan · opus | Guarded full first pass; changelog-scoped after revision. |
+| `/cs-revise [--resume]` | 2 | write · sonnet | One guarded revision with an idempotent bump. |
+| `/cs-approve [--resume]` | new | normal · sonnet | Evidence checklist; persists gaps, issues no verdict. |
+| `/cs-build T2 [--resume]` | one per task | normal · sonnet · `--effort medium` | One claimed task, verified and committed. |
+| `/cs-close [--resume]` | new | normal · sonnet | Guarded audit and phase close. |
 | `/cs-status` | anywhere | any | Four lines. Reads no source. |
 
 `/cs-recheck` and `$cs-recheck` remain as deprecated 2.x compatibility aliases.
@@ -140,14 +141,21 @@ invoked in the session that wrote the plan gives you a
 compromised review with correct wording, which is worse than skipping it — it
 looks like a review.
 
-Every command from `/cs-plan` onward ends by printing `plan recommend`, so the
-next step comes from the phase file rather than from you remembering the
-order. `/cs-define` and `/cs-groundwork` recommend statically; nothing is on disk
-yet to derive from.
+`/cs-define` writes `OBJECTIVE.md`; Groundwork or the first Plan can therefore
+start cold. Once `PLAN.md` exists, Plan never reads the objective again: phase
+state, the closed-phase handoff, and repository guidance are the bounded input.
+Every command from `/cs-plan` onward prints `plan recommend`, so the next step
+comes from disk rather than session memory.
 
-`/cs-approve` deliberately cannot approve. You set `status: approved` in the
-phase file's frontmatter yourself. A model grading its own revision against
-criteria it just satisfied passes itself every time.
+Stateful commands claim their work before substantive reads or writes. A plain
+duplicate stops; an interrupted matching stage continues only with explicit
+`--resume`. Review, Revise, Approve, and Close use phase-level `active:` and
+`active-rev:` markers. Build uses each task's `in_progress` status, preserving
+parallel work on disjoint tasks.
+
+`/cs-approve` deliberately cannot approve. A clean pass writes `ready: <rev>`;
+you then set `status: approved` yourself. A failed check persists every
+actionable gap as an open finding so Revise never depends on transcript text.
 
 **Stop condition.** If round three still produces a Critical, the phase is
 too large or the objective is wrong. Split it and re-plan. A loop with no exit
@@ -196,7 +204,8 @@ phase: 02-offline-sync
 rev: 3
 status: approved
 reviewed: 3
-workflow-rev: 1.3.0
+ready: 3
+workflow-rev: 1.4.0
 tasks:
   T1: {deps: [], status: done, files: [src/db/schema.ts]}
   T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts]}
@@ -232,6 +241,9 @@ plan done T2             mark done, refusing if a dependency isn't
 plan block T2 "reason"   mark blocked and append to the phase log
 plan findings [--open]   the finding list
 plan resolve F1 STATE    close or reopen a finding, logging it to the changelog
+plan begin STAGE         claim review, revise, approve, or close; --resume recovers
+plan finish STAGE        complete a claim; approve/close take --pass or --fail
+plan start T2            claim a pending approved task; --resume recovers
 plan bump                bump the phase rev, at the start of a revise pass
 plan reviewed            record that this rev has had a review pass
 ```
@@ -244,11 +256,12 @@ don't exist, findings closed without a changelog entry, and an approved or
 closed phase with an open Critical or High. `/cs-review` and `/cs-approve` both run
 it, so shape errors never consume a human review round.
 
-`recommend` derives the next command from the file: unreviewed sends you to
-`/cs-review`, open findings to `/cs-revise`, a revision newer than its last
-review pass back to `/cs-review`, a clean reviewed rev to `/cs-approve`, an
-approved phase to `/cs-build` with the first runnable id, a finished one to
-`/cs-close`, and a closed one to `/cs-plan` for the phase after it. It prints
+`recommend` first surfaces interrupted stages and in-progress tasks with their
+exact `--resume` command. Otherwise, unreviewed sends you to `/cs-review`; a
+newer revision returns to Review before any remaining finding can trigger
+another Revise; open findings go to `/cs-revise`; a clean reviewed rev goes to
+`/cs-approve`; a ready rev waits for the human approval edit; and approved,
+finished, and closed phases route to Build, Close, and the next Plan. It prints
 the state that produced the
 answer, so a recommendation you disagree with is one you can check rather than
 guess at.
@@ -261,11 +274,11 @@ edit that writes the new phase file, because a `current:` naming a file that
 doesn't exist yet is a pointer every `plan` subcommand refuses to read — the
 one moment you'd most want to ask the tool what to do next.
 
-So the loop closes at `/cs-plan`, not `/cs-define`. `/cs-define` is a whole-product
-brief: it runs once, before Phase 01, and produces something no file on disk
-holds. Phase 02 has no product scope left to settle — `/cs-plan` opens in a new
-session with no brief, reads the PLAN.md line, the phase you just closed and
-its log, and AGENTS.md, then asks you what a one-line phase name can't say.
+So the loop closes at `/cs-plan`, not `/cs-define`. Define is the one-time
+whole-product step and `OBJECTIVE.md` is its durable output. The first Plan
+reads it only when PLAN.md is absent. Later phases have no product scope left
+to re-derive: Plan reads the index line, closed phase and last log entry, and
+repository guidance, then asks what the one-line phase name cannot say.
 
     /cs-plan → /cs-review → /cs-revise → /cs-approve → /cs-build → /cs-close → /cs-plan …
 
@@ -282,7 +295,7 @@ not just direct deps — a file that only reaches T2 through T1→T3→T2 still
 belongs in the brief.
 
 ```
-task    T2   status pending
+task    T2   status in_progress
 read    AGENTS.md
         docs/plans/02-offline-sync.md
         src/db/schema.ts
@@ -313,12 +326,13 @@ reads the last entry, so nothing has to survive in a terminal you closed.
 
 1. Bounded reads. A build session opens a listed set, not a codebase.
 2. Fixed read order, so the cache prefix is reused instead of rebuilt.
-3. Changelog-scoped later rounds inside `/cs-review`, instead of another full read.
-4. Eight tasks per phase, capped, because every session re-reads the file.
-5. Moderate reasoning effort for build. In Claude Code that is
+3. Persisted objective and stage markers, so cold starts do not reconstruct intent.
+4. Changelog-scoped later rounds inside `/cs-review`, instead of another full read.
+5. Eight tasks per phase, capped, because every session re-reads the file.
+6. Moderate reasoning effort for build. In Claude Code that is
    `claude --effort medium`; in Codex, use the equivalent session setting.
-6. Search subagents, results only.
-7. Exit sessions, never `/compact` — it reprocesses the whole conversation and
+7. Search subagents, results only.
+8. Exit sessions, never `/compact` — it reprocesses the whole conversation and
    then charges you to re-read the summary.
 
 ## Parallel builds
@@ -349,7 +363,7 @@ effort, and collaboration mode of the active Codex session.
 | Gear | When |
 |---|---|
 | Direct | Reversible, one or two files, obvious answer. Just ask. |
-| Short loop | `/cs-plan` → `/cs-review` → build, one session, nothing on disk. |
+| Short loop | `/cs-plan` → `/cs-review` → build, one session, minimal persisted state. |
 | Greenfield | `/cs-define` → `/cs-groundwork` → full loop. |
 | Full loop | New surface, schema, auth, payments — anything expensive to unwind. |
 
@@ -366,8 +380,8 @@ Semver applies to four things. Everything else is free to change in a patch.
    `$cs-build T2` keep working. The deprecated `cs-recheck` name remains an
    explicit alias for `cs-review`.
 2. **The `tasks:` frontmatter shape, and the `## Findings` line shape.** Phase
-   files using the 1.x format remain readable by the 2.x tool. A file written
-   before findings existed still lints and builds.
+   files using the 1.3 format remain readable. Format 1.4 adds optional
+   `active:`, `active-rev:`, and `ready:` metadata without changing those shapes.
 3. **`plan` subcommands and exit codes.** `lint` exits 1 on error; scripts can
    rely on it. Subcommands get added in a minor release, never removed in one.
 4. **Install paths.** `.claude/commands/cs-*`, `.claude/bin/plan`,
@@ -377,7 +391,7 @@ Prompt wording inside a command is not part of the contract — it will change
 whenever the model's behavior makes it worth changing.
 
 The tool release and phase format are versioned separately: `plan version`
-prints the 2.x release, while new phase templates keep `workflow-rev: 1.3.0`.
+prints the 2.x release, while new phase templates use `workflow-rev: 1.4.0`.
 `plan lint` compares that field with the supported format version, so updating
 the installer does not invalidate an existing 1.x phase.
 

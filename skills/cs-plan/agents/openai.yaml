@@ -1,4 +1,4 @@
 interface:
   display_name: "Coldsession Plan"
   short_description: "Write the current phased implementation plan"
-  default_prompt: "Use $cs-plan to create the next implementation phase."
+  default_prompt: "Use $cs-plan to create one detailed phase from durable project state."

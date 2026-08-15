@@ -1,98 +1,67 @@
 ---
 description: State-aware independent review of the current phase
+argument-hint: [--resume]
 ---
 
-Run `.claude/bin/plan lint`, `.claude/bin/plan status`, and
-`.claude/bin/plan findings` first. Read `rev:` and `reviewed:` from the phase
-frontmatter to choose exactly one review scope.
+First run `.claude/bin/plan begin review $ARGUMENTS` and inspect only its
+output. If it refuses, print that output and stop without reading anything
+else. A matching interrupted pass continues only with `--resume`.
 
-- If `reviewed:` is absent, this is the first pass. Run **First review**.
-- If `reviewed:` is lower than `rev:`, this is a revised plan. Run
-  **Revision review**.
-- If `reviewed:` equals or exceeds `rev:`, this revision has already been
-  reviewed. Run `.claude/bin/plan recommend`, print it, and stop without
-  reading or writing anything else.
+After entry succeeds, run `.claude/bin/plan lint`, `.claude/bin/plan status`,
+and `.claude/bin/plan findings`. Read `rev:` and `reviewed:` to choose one
+scope:
 
-You did not write the plan or the revisions you are reviewing.
+- `reviewed:` absent: **First review**.
+- `reviewed:` lower than `rev:`: **Revision review**.
+
+You did not write the plan or revision. Be skeptical. On `--resume`, inspect
+existing findings before recording more and do not duplicate the same issue.
 
 ## First review
 
-Read PLAN.md, the phase file it points at, AGENTS.md, and the codebase. Review
-the phase as an independent senior engineer inheriting someone else's work.
-Be skeptical.
+Read PLAN.md, the current phase, AGENTS.md, and the codebase using targeted
+search. Treat every linter E-code as Critical and W-code as at least Medium.
 
-Treat every E-code from the linter as a Critical finding and every W-code as
-at least Medium. For each issue found, provide:
-- Finding ID (F1, F2, ...)
-- Severity: Critical, High, Medium, or Low
-- Category: Missing work / Incorrect assumption / Risk / Task ordering /
-  Architectural issue / Missing acceptance criteria / Unnecessary scope /
-  Wrong file list
-- Affected task ID(s)
-- Description
-- Recommended fix
+For every issue record: ID, severity, category, affected task IDs, description,
+and concrete recommended fix. Check especially:
 
-Beyond the linter, which only checks shape:
-- Treat any unresolved open question from the plan as Critical.
-- Treat any task whose Verify line is not a runnable command or a named
-  screen as High.
-- Check every `files` list against the codebase. A task that will obviously
-  need a file it does not list is High: it will stall a bounded build session.
-- Check the dependency edges are true. The linter proves the graph is
-  acyclic, not that T4 actually needs T2.
-- Review the phase ordering in PLAN.md too, not just the tasks in this phase.
+- Unresolved open questions: Critical.
+- Verify lines that are neither runnable commands nor named visual checks: High.
+- Incomplete `files` lists against the real codebase: High.
+- False or missing dependency edges.
+- Phase ordering in PLAN.md, unnecessary scope, and missing runnable outcomes.
 
-Order findings by impact. Do not inflate severity to look thorough — a Medium
-labeled Critical is itself a review failure. If nothing rises above Medium,
-say so and give the two things most likely to break anyway.
+Do not inflate severity. If nothing exceeds Medium, say so and name the two
+most likely failure points.
 
 ## Revision review
 
-Read the phase file's `## Changelog` and frontmatter, and only the tasks the
-changelog names. Do not re-review the phase end to end: the first pass already
-did that, and the revision-stamped changelog defines what changed.
+Read the current revision's Changelog and only the tasks its entries name.
+For each `resolved` or `accepted` finding, decide whether it is actually,
+partially, or not resolved and quote the settling plan line. Reopen unsupported
+claims with `plan resolve F2 open "T4 line still omits worker.ts"`.
 
-For each finding the changelog claims `resolved` or `accepted`, decide:
-actually resolved, partially resolved, or not resolved. Quote the plan line
-that settles it. A note that does not name a task ID or plan line is not
-evidence; reopen that finding:
+Beyond those lines, check only whether a resolution created a dependency,
+ordering, or scope problem; changed touched files without changing `files`;
+or accepted a Medium without a real reason. Record new issues with the next
+free finding ID.
 
-  .claude/bin/plan resolve F2 open "worker.ts still missing from T4 files"
+## Record and finish
 
-Then check only three things beyond that:
-- Did any resolution create a new dependency, ordering, or scope problem?
-  Record it as a new finding with the next free F-id.
-- Did any resolution change what a task touches without updating its `files`
-  list?
-- Did any Medium marked `accepted` get a real reason, or a restatement of the
-  finding?
-
-## Record findings
-
-Findings only in this session's transcript are findings /cs-revise and the
-next review cannot read. Reason in plan mode, then exit plan mode and append
-new findings to the phase file's `## Findings` section, one line per finding,
-seven fields:
+Append each new finding once to Findings in the seven-field shape:
 
   F1 | Critical | Task ordering | T3 | open | description | recommended fix
 
-Continue the existing finding numbering. Every new finding starts `open`.
-Use `-` in the task field for a plan-level finding. No pipes inside the
-description or fix — the parser splits on them, and `plan lint` will reject
-the line. If the phase file has no `## Findings` section, add one.
+Use `-` for a plan-level finding and no pipes inside prose. Findings,
+changelog entries made by `plan resolve`, and runtime stage metadata are the
+only writes. Do not revise the plan or resolve your own new findings.
 
-The Findings section, changelog entries written by `plan resolve`, and
-`plan reviewed` are the only writes you make. Do not rewrite the plan, resolve
-your own new findings, or touch the task graph; /cs-revise does that.
+Then run:
 
-## Finishing
+1. `.claude/bin/plan finish review` — atomically records `reviewed:` and clears
+   the active marker.
+2. `.claude/bin/plan lint`.
+3. `.claude/bin/plan recommend` and print it.
 
-1. `.claude/bin/plan reviewed` — record that this rev had a review pass.
-2. `.claude/bin/plan lint` — confirm the findings and resolutions parse.
-3. `.claude/bin/plan recommend` and print it. Open findings send you to
-   /cs-revise; a clean pass sends you to /cs-approve. At rev 3 with a Critical
-   still open, follow the stop condition and split the phase instead.
-4. After a revision review, end with one line naming what this pass did not
-   inspect.
-5. Stop. /cs-revise can run in this session, but the review after it must run
-   in a new one.
+After a revision review, name what the scoped pass did not inspect. Stop. A
+recommended Revise may run here, but its following Review must use a new session.

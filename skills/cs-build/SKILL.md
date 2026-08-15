@@ -1,6 +1,6 @@
 ---
 name: cs-build
-description: Implement, verify, and commit exactly one approved coldsession task using its bounded read list. Use when the user invokes $cs-build with a task ID such as T2 or asks to build the next approved task.
+description: Start or explicitly resume, implement, verify, and commit one approved coldsession task using its bounded read list. Use for $cs-build with a task ID, including --resume recovery.
 ---
 
 # Coldsession Build
@@ -9,9 +9,8 @@ Read `.agents/coldsession/commands/cs-build.md` completely and follow its workfl
 Resolve it from the repository root and perform the workflow with that root
 as the working directory.
 
-Treat the task ID accompanying the skill invocation as `$1`. If none was
-supplied, follow the command's blank-argument path. Do not treat the literal
-text `$1` as the task ID.
+Treat the task ID and optional `--resume` accompanying the skill invocation as
+`$ARGUMENTS`. If no ID was supplied, follow the blank-argument path.
 
 If the command asks for a search subagent but subagents are unavailable or
 not authorized, use a bounded read-only search and retain only the required

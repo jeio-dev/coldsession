@@ -6,6 +6,22 @@ that against the supported format rather than the product release.
 
 ## [Unreleased]
 
+### Durable objectives and guarded reruns
+
+- `/cs-define` now writes a planning-ready root `OBJECTIVE.md`; Groundwork and
+  the initial Plan read it from disk, while every Plan after `PLAN.md` exists
+  is forbidden from reopening it.
+- Added guarded stage claims with explicit `--resume` recovery for Review,
+  Revise, Approve, Build, and Close. Revision bumps are idempotent within one
+  claimed pass, and recommendations send every new revision back through Review
+  before another Revise.
+- A clean Approve writes `ready: <rev>` while leaving human approval intact.
+  Readiness failures and residual risks are persisted as findings for Revise.
+- Phase format 1.4 adds optional active-stage and readiness metadata. Existing
+  1.3 phase files remain readable and do not require a ready marker.
+- Added standard-library transition tests and installed `templates/OBJECTIVE.md`
+  alongside the existing plan templates.
+
 ### One state-aware review command
 
 - Folded the changelog-scoped recheck pass into `/cs-review` and `$cs-review`.

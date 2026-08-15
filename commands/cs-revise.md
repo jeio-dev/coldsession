@@ -1,49 +1,38 @@
 ---
-description: Resolve findings in place and write the changelog
+description: Resolve findings in one guarded revision and write the changelog
+argument-hint: [--resume]
 ---
 
-Run `.claude/bin/plan findings --open`. Those are what you resolve — not a
-list you remember from earlier in the session, and not a list I paste in. If
-it prints nothing open, stop and tell me there is nothing to revise.
+First run `.claude/bin/plan begin revise $ARGUMENTS` and inspect only its
+output. If it refuses, print that output and stop. A matching interrupted pass
+continues only with `--resume`.
 
-Then `.claude/bin/plan bump`, once, before you edit anything. Every changelog
-line you write from here is stamped with the new rev.
+Run `.claude/bin/plan bump`. It increments once for a new Revise pass and is a
+safe no-op on resume; never hand-edit `rev:`. Then run `plan findings --open`.
 
-Revise the phase file in place. Do not create a second file. If a finding
-changes the phase ordering, update PLAN.md as well.
+Revise the current phase in place. Do not create a replacement file. Update
+PLAN.md only when a finding changes phase ordering.
 
-Resolve every Critical and High finding.
-For each Medium finding, either implement the recommendation or state why it
-was not adopted.
-Low findings may be addressed at your discretion.
+- Resolve every Critical and High.
+- Resolve each Medium or explicitly accept it with a concrete reason.
+- Low findings are discretionary.
+- Preserve task IDs where possible and keep graph entries and task sections in
+  sync when tasks change.
 
-Preserve task IDs where possible. If tasks are added, removed, or split,
-update the frontmatter graph in the same edit — the graph and the `## T(n)`
-sections must stay in sync, and `.claude/bin/plan lint` will fail if they
-drift.
-
-## Closing each finding
-
-After the edit that fixes it, close the finding with the tool rather than by
-hand-editing its line:
+After the edit, close each addressed finding through the runtime:
 
   .claude/bin/plan resolve F1 resolved "T3 now depends on T2"
-  .claude/bin/plan resolve F3 accepted "types.ts kept: T1 exports rows, not wire types"
+  .claude/bin/plan resolve F3 accepted "T2 exports rows; the types line stays"
 
-`resolved` means the plan changed. `accepted` means it did not and here is
-why. The note must name the task ID or plan line that now carries the fix —
-"done" or "fixed" tells the next /cs-review nothing, and /cs-approve will fail
-that line.
-`plan resolve` writes the changelog entry for you; do not also write one by
-hand.
+`resolved` means the plan changed. `accepted` means it did not. The note must
+name the task or plan line carrying the resolution; never write "done" or
+"fixed". Leave genuinely unresolved findings open and explain why.
 
-Leave a finding `open` if you could not resolve it, and say which and why.
+Finish with:
 
-## Finishing
-
-1. `.claude/bin/plan lint` — fix anything it reports.
-2. `.claude/bin/plan recommend` and print it. It will send you to /cs-review,
-   which detects the newer revision and checks only the changelog and affected
-   tasks.
-3. Stop, and exit the session. /cs-review must run in a new session; running it
-   here would grade its own work.
+1. `.claude/bin/plan lint` — fix errors introduced by the revision.
+2. `.claude/bin/plan finish revise` — clear the active marker only after the
+   revision and changelog are durable.
+3. `.claude/bin/plan recommend` and print it. An unreviewed revision always
+   returns to `/cs-review`, even when a finding remains open.
+4. Stop and exit. Review must run in a new session.

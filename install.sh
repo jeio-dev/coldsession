@@ -223,7 +223,7 @@ else
 fi
 
 mkdir -p "$DEST/docs/plans" "$DEST/templates"
-for template in PLAN.md phase.md; do
+for template in OBJECTIVE.md PLAN.md phase.md; do
   [ -f "$DEST/templates/$template" ] || cp "$SRC/templates/$template" "$DEST/templates/$template"
 done
 

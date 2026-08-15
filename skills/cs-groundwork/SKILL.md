@@ -1,6 +1,6 @@
 ---
 name: cs-groundwork
-description: Establish Phase 0 ground rules and scaffold a greenfield repository from an objective brief. Use when the user invokes $cs-groundwork or asks coldsession to prepare an empty or near-empty project before planning.
+description: Establish a guarded Phase 0 and scaffold a greenfield repository from OBJECTIVE.md. Use when the user invokes $cs-groundwork, resumes it with --resume, or asks coldsession to prepare an empty project before planning.
 ---
 
 # Coldsession Groundwork
@@ -8,6 +8,8 @@ description: Establish Phase 0 ground rules and scaffold a greenfield repository
 Read `.agents/coldsession/commands/cs-groundwork.md` completely and follow its workflow.
 Resolve it from the repository root and perform the workflow with that root
 as the working directory.
+
+Treat accompanying flags as `$ARGUMENTS` and preserve `--resume` exactly.
 
 This repository supports both agents. Create `AGENTS.md` as the shared source
 of project instructions and keep the requested `CLAUDE.md` bridge for Claude

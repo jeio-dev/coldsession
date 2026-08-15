@@ -15,6 +15,9 @@ Stdlib only, no install step.
   plan block T2 "reason"          mark a task blocked
   plan findings [--open]          the finding list
   plan resolve F1 STATE "note"    set a finding state, log it to the changelog
+  plan begin STAGE [--resume]      claim review/revise/approve/close
+  plan finish STAGE [--pass|--fail] complete a claimed stage
+  plan start T2 [--resume]         claim one approved build task
   plan bump                       bump the phase rev, at the start of a revise
   plan reviewed                   record that this rev has had a review pass
   plan version                    print the coldsession release version
@@ -25,7 +28,7 @@ import re
 import sys
 
 TOOL_VERSION = "2.0.0"
-FORMAT_VERSION = "1.3.0"
+FORMAT_VERSION = "1.4.0"
 
 ROOT = os.environ.get("PLAN_ROOT", ".")
 INDEX = os.path.join(ROOT, "PLAN.md")
@@ -41,7 +44,9 @@ STATUSES = ("pending", "in_progress", "done", "blocked")
 PSTATUSES = ("draft", "approved", "closed")
 FSTATUSES = ("open", "resolved", "accepted")
 SEVERITIES = ("Critical", "High", "Medium", "Low")
-META_KEYS = ("phase", "rev", "status", "reviewed", "workflow-rev")
+META_KEYS = ("phase", "rev", "status", "reviewed", "ready", "active",
+             "active-rev", "workflow-rev")
+STAGES = ("review", "revise", "approve", "close")
 
 
 def die(msg, code=1):
@@ -312,10 +317,20 @@ def lint_issues(phase):
     if phase["meta"].get("status") not in PSTATUSES + (None,):
         warns.append(f"W01 unexpected phase status {phase['meta'].get('status')!r}")
 
+    active = phase["meta"].get("active")
+    if active and active not in STAGES + ("plan",):
+        errs.append(f"E16 unknown active stage {active!r}")
+    if active and not phase["meta"].get("active-rev"):
+        errs.append(f"E17 active stage {active!r} has no active-rev")
+    if not active and phase["meta"].get("active-rev"):
+        errs.append("E18 active-rev exists without an active stage")
+
     for tid in phase["order"]:
         task = t[tid]
         if task["status"] not in STATUSES:
             errs.append(f"E03 {tid} has status {task['status']!r}")
+        if task["status"] == "in_progress" and phase["meta"].get("status") != "approved":
+            errs.append(f"E19 {tid} is in_progress but the phase is not approved")
         if not task["files"]:
             errs.append(f"E04 {tid} has an empty files list; build cannot bound its reads")
         for dep in task["deps"]:
@@ -360,6 +375,16 @@ def lint_issues(phase):
             errs.append(f"E15 phase is {phase['meta']['status']} with open "
                         f"Critical/High findings: {', '.join(stuck)}")
 
+    fmt_minor = intof((fmt or "1.0").split(".")[1] if "." in (fmt or "") else 0)
+    rev = intof(phase["meta"].get("rev"), 1)
+    ready = intof(phase["meta"].get("ready"), 0)
+    if ready > rev:
+        errs.append(f"E20 ready revision {ready} is newer than rev {rev}")
+    if ready == rev and open_findings(phase):
+        errs.append("E21 current revision is marked ready but still has open findings")
+    if fmt_minor >= 4 and phase["meta"].get("status") == "approved" and ready != rev:
+        errs.append(f"E22 phase is approved but rev {rev} has no matching ready marker")
+
     if intof(phase["meta"].get("rev"), 1) >= 3 and open_findings(phase, ("Critical",)):
         warns.append("W05 round 3 still has an open Critical; the phase is too large "
                      "or the objective is wrong. Split it and re-plan rather than "
@@ -382,27 +407,66 @@ def recommend(phase):
     status = meta.get("status", "draft")
     opened = open_findings(phase)
 
-    errs, _ = lint_issues(phase)
-    if errs:
-        return ("(fix the linter first)",
-                f"plan lint reports {len(errs)} error(s); nothing downstream can trust "
-                "this file until they are fixed")
+    active = meta.get("active")
+    if active:
+        return (f"/cs-{active} --resume",
+                f"{active} is already active for rev {meta.get('active-rev', rev)}; "
+                "a plain rerun is refused")
+
+    in_progress = [x for x in phase["order"]
+                   if phase["tasks"][x]["status"] == "in_progress"]
+    if in_progress:
+        return (f"/cs-build {in_progress[0]} --resume",
+                f"{', '.join(in_progress)} already in progress; resume explicitly")
 
     if status == "closed":
         return ("/cs-plan",
                 "this phase is closed; the next one has no file yet, and /cs-plan "
                 "writes it and moves `current:` onto it")
 
-    started = [x for x in phase["order"]
-               if phase["tasks"][x]["status"] in ("done", "in_progress")]
+    errs, _ = lint_issues(phase)
 
-    if status == "approved" or started:
+    if status == "draft":
+        if rev >= 3 and open_findings(phase, ("Critical",)):
+            return ("/cs-plan",
+                    f"rev {rev} still has an open Critical "
+                    f"({', '.join(open_findings(phase, ('Critical',)))}); split this phase "
+                    "and re-plan rather than revising a fourth time")
+        if not reviewed:
+            return ("/cs-review",
+                    "this phase has had no review pass; start one in a NEW session")
+        if reviewed < rev:
+            return ("/cs-review",
+                    f"rev {rev} has not been checked since the last revision "
+                    f"(last review pass was rev {reviewed}); run it in a NEW session")
+        if opened:
+            sev = ", ".join(sorted({phase["findings"][f]["severity"] for f in opened}))
+            return ("/cs-revise",
+                    f"{len(opened)} open finding(s) ({sev}): {', '.join(opened)}")
+        if errs:
+            return ("(fix the linter first)",
+                    f"plan lint reports {len(errs)} error(s); nothing downstream can trust "
+                    "this file until they are fixed")
+        if intof(meta.get("ready"), 0) == rev:
+            return ("(set status: approved)",
+                    f"rev {rev} passed /cs-approve; the human approval edit is pending")
+        return ("/cs-approve",
+                f"rev {rev} is reviewed with no open findings; /cs-approve produces the "
+                "evidence, then you set `status: approved` yourself")
+
+    if errs:
+        return ("(fix the linter first)",
+                f"plan lint reports {len(errs)} error(s); nothing downstream can trust "
+                "this file until they are fixed")
+
+    if status == "approved":
+        done = [x for x in phase["order"] if phase["tasks"][x]["status"] == "done"]
         nxt = runnable(phase)
         pending = [x for x in phase["order"] if phase["tasks"][x]["status"] == "pending"]
         blocked = [x for x in phase["order"] if phase["tasks"][x]["status"] == "blocked"]
         if nxt:
             return (f"/cs-build {nxt[0]}",
-                    f"{len(started)} of {len(phase['order'])} tasks done; "
+                    f"{len(done)} of {len(phase['order'])} tasks done; "
                     f"{nxt[0]} is runnable")
         if blocked and not pending:
             return ("/cs-review",
@@ -417,30 +481,7 @@ def recommend(phase):
             return ("(nothing runnable)", "; ".join(waiting))
         return ("/cs-close", "every task is done")
 
-    if intof(meta.get("rev"), 1) >= 3 and open_findings(phase, ("Critical",)):
-        return ("/cs-plan",
-                f"rev {rev} still has an open Critical "
-                f"({', '.join(open_findings(phase, ('Critical',)))}); split this phase "
-                "and re-plan rather than revising a fourth time")
-
-    if not reviewed:
-        return ("/cs-review", "this phase has had no review pass; start one in a NEW session")
-
-    if opened:
-        sev = ", ".join(sorted({phase["findings"][f]["severity"] for f in opened}))
-        return ("/cs-revise", f"{len(opened)} open finding(s) ({sev}): {', '.join(opened)}")
-
-    if reviewed < rev:
-        return ("/cs-review",
-                f"rev {rev} has not been checked since the last revision "
-                f"(last review pass was rev {reviewed}); run it in a NEW session")
-
-    if status != "approved":
-        return ("/cs-approve",
-                f"rev {rev} is reviewed with no open findings; /cs-approve produces the "
-                "evidence, then you set `status: approved` yourself")
-
-    return ("/cs-build", "the phase is approved")
+    return ("(fix phase status)", f"unsupported phase status {status!r}")
 
 
 # ---------------------------------------------------------------- writing
@@ -477,6 +518,20 @@ def set_meta(text, key, value):
         else:
             fm = fm.rstrip("\n") + f"\n{key}: {value}\n"
     return join_frontmatter(fm, body)
+
+
+def del_meta(text, *keys):
+    """Remove optional frontmatter fields without disturbing body text."""
+    fm, body = split_frontmatter(text)
+    for key in keys:
+        fm = re.sub(r"^%s:\s*.*\n?" % re.escape(key), "", fm, flags=re.M)
+    return join_frontmatter(fm.rstrip("\n") + "\n", body)
+
+
+def set_metas(text, values=None, remove=()):
+    for key, value in (values or {}).items():
+        text = set_meta(text, key, value)
+    return del_meta(text, *remove) if remove else text
 
 
 def append_to_block(text, name, line):
@@ -540,6 +595,8 @@ def cmd_status(phase, _args):
     print(f"phase    {m.get('phase', '?')}  rev {m.get('rev', '?')}  "
           f"status {m.get('status', '?')}  "
           f"reviewed {reviewed if reviewed else 'never'}  "
+          f"ready {m.get('ready', 'no')}  "
+          f"active {m.get('active', 'none')}  "
           f"workflow-rev {m.get('workflow-rev', '?')}")
     print(f"file     {phase['path']}")
     print("tasks    " + "  ".join(f"{k} {v}" for k, v in counts.items() if v))
@@ -659,6 +716,8 @@ def cmd_brief(phase, args):
     if status != "approved":
         cmd, _ = recommend(phase)
         print(f"NOT APPROVED this phase is {status}, not approved - run {cmd} first")
+    if task["status"] != "in_progress":
+        print(f"NOT STARTED {tid} is {task['status']}; run plan start {tid} first")
     if unmet:
         print(f"BLOCKED unmet dependencies: {', '.join(unmet)} - do not start this task")
     print("read    " + "\n        ".join(ordered))
@@ -668,7 +727,7 @@ def cmd_brief(phase, args):
     log = phase["path"].replace(".md", ".log.md")
     if os.path.exists(log):
         print(f"handoff {log}  (read the last entry only)")
-    return 1 if unmet else 0
+    return 1 if unmet or status != "approved" or task["status"] != "in_progress" else 0
 
 
 def cmd_findings(phase, args):
@@ -703,6 +762,14 @@ def cmd_resolve(phase, args):
         die(f"{fid} -> {state} needs a note naming the task or plan line that "
             "carries the fix")
 
+    active = phase["meta"].get("active")
+    fmt = phase["meta"].get("workflow-rev", "1.0.0")
+    modern = intof(fmt.split(".")[1] if "." in fmt else 0) >= 4
+    expected = "review" if state == "open" else "revise"
+    if modern and active != expected:
+        die(f"{fid} -> {state} is only valid during an active {expected} pass; "
+            f"run /cs-{expected} first")
+
     pat = re.compile(r"^(\s*[-*]?\s*%s\s*\|[^|]*\|[^|]*\|[^|]*\|\s*)([A-Za-z_-]+)" % fid, re.M)
     text, hit = sub_outside_comments(pat, lambda m: m.group(1) + state, phase["text"])
     if not hit:
@@ -716,17 +783,194 @@ def cmd_resolve(phase, args):
     return 0
 
 
+def _stage_refusal(phase, message):
+    cmd, why = recommend(phase)
+    die(f"{message}\nnext: {cmd}\nwhy: {why}")
+
+
+def cmd_begin(phase, args):
+    if not args:
+        die(f"usage: plan begin <{'|'.join(STAGES)}> [--resume]")
+    stage = args[0].lower()
+    resume = "--resume" in args[1:]
+    if stage not in STAGES:
+        die(f"stage must be one of {', '.join(STAGES)}")
+
+    meta = phase["meta"]
+    active = meta.get("active")
+    rev = intof(meta.get("rev"), 1)
+    reviewed = intof(meta.get("reviewed"), 0)
+    status = meta.get("status", "draft")
+
+    if active:
+        if active == stage and resume:
+            print(f"resume {stage} at rev {meta.get('active-rev', rev)}")
+            return 0
+        if active == stage:
+            _stage_refusal(phase, f"{stage} is already active; rerun with --resume")
+        _stage_refusal(phase, f"cannot begin {stage}; {active} is active")
+    if resume:
+        _stage_refusal(phase, f"cannot resume {stage}; no {stage} pass is active")
+
+    opened = open_findings(phase)
+    if stage == "review":
+        if status != "draft" or reviewed >= rev:
+            _stage_refusal(phase, f"rev {rev} is not waiting for review")
+    elif stage == "revise":
+        if status != "draft" or reviewed != rev or not opened:
+            _stage_refusal(phase, "this phase is not waiting for revision")
+        if rev >= 3 and open_findings(phase, ("Critical",)):
+            _stage_refusal(phase, "round 3 still has an open Critical; re-plan the phase")
+    elif stage == "approve":
+        if (status != "draft" or reviewed != rev or opened or
+                intof(meta.get("ready"), 0) == rev):
+            _stage_refusal(phase, "this revision is not waiting for readiness checking")
+    elif stage == "close":
+        unfinished = [tid for tid in phase["order"]
+                      if phase["tasks"][tid]["status"] != "done"]
+        if status != "approved" or unfinished or opened:
+            _stage_refusal(phase, "this phase is not ready to close")
+
+    text = set_metas(phase["text"], {"active": stage, "active-rev": rev})
+    write_phase(phase, text)
+    print(f"begin {stage} at rev {rev}")
+    return 0
+
+
+def _require_active(phase, stage):
+    active = phase["meta"].get("active")
+    if active != stage:
+        _stage_refusal(phase, f"cannot finish {stage}; active stage is {active or 'none'}")
+
+
+def _tick_current_phase(phase):
+    rel = os.path.relpath(phase["path"], ROOT).replace(os.sep, "/")
+    index_text = read_text(INDEX)
+    lines = index_text.splitlines()
+    hit = False
+    for i, line in enumerate(lines):
+        if rel in line and re.match(r"^\s*-\s*\[[ xX]\]", line):
+            lines[i] = re.sub(r"^(\s*-\s*)\[[ xX]\]", r"\1[x]", line, count=1)
+            hit = True
+            break
+    if not hit:
+        die(f"PLAN.md has no phase checklist line for {rel}")
+    return "\n".join(lines) + ("\n" if index_text.endswith("\n") else "")
+
+
+def cmd_finish(phase, args):
+    if not args:
+        die(f"usage: plan finish <{'|'.join(STAGES)}> [--pass|--fail]")
+    stage = args[0].lower()
+    if stage not in STAGES:
+        die(f"stage must be one of {', '.join(STAGES)}")
+    _require_active(phase, stage)
+
+    rev = intof(phase["meta"].get("rev"), 1)
+    active_rev = intof(phase["meta"].get("active-rev"), rev)
+    text = phase["text"]
+
+    if stage == "review":
+        if rev != active_rev:
+            die(f"review claimed rev {active_rev}, but phase is now rev {rev}")
+        text = set_meta(text, "reviewed", rev)
+    elif stage == "revise":
+        if rev != active_rev + 1:
+            die("finish revise requires exactly one successful plan bump")
+    elif stage in ("approve", "close"):
+        passed = "--pass" in args[1:]
+        failed = "--fail" in args[1:]
+        if passed == failed:
+            die(f"finish {stage} requires exactly one of --pass or --fail")
+        errs, _ = lint_issues(phase)
+        if passed and (errs or open_findings(phase)):
+            die(f"cannot pass {stage}; lint errors or open findings remain")
+        if failed and not (errs or open_findings(phase)):
+            die(f"cannot fail {stage} without a persisted open finding or lint error")
+        if stage == "approve" and passed:
+            if intof(phase["meta"].get("reviewed"), 0) != rev:
+                die(f"cannot mark rev {rev} ready; it has not been reviewed")
+            text = set_meta(text, "ready", rev)
+        if stage == "close" and passed:
+            if phase["meta"].get("status") != "approved":
+                die("only an approved phase can close")
+            if any(t["status"] != "done" for t in phase["tasks"].values()):
+                die("cannot close while tasks remain unfinished")
+            index_text = _tick_current_phase(phase)
+            text = set_meta(text, "status", "closed")
+            text = del_meta(text, "active", "active-rev")
+            open(INDEX, "w", encoding="utf-8").write(index_text)
+            write_phase(phase, text)
+            print(f"finish close --pass; {phase['meta'].get('phase', '?')} -> closed")
+            return 0
+        if stage == "close" and failed:
+            text = set_meta(text, "status", "draft")
+            text = del_meta(text, "ready")
+
+    text = del_meta(text, "active", "active-rev")
+    write_phase(phase, text)
+    outcome = " --pass" if "--pass" in args else " --fail" if "--fail" in args else ""
+    print(f"finish {stage}{outcome} at rev {rev}")
+    return 0
+
+
+def cmd_start(phase, args):
+    if not args:
+        die("usage: plan start T2 [--resume]")
+    tid = args[0].upper()
+    resume = "--resume" in args[1:]
+    if phase["meta"].get("active"):
+        _stage_refusal(phase, f"cannot start {tid}; {phase['meta']['active']} is active")
+    if tid not in phase["tasks"]:
+        die(f"{tid} is not in this phase")
+    task = phase["tasks"][tid]
+    if phase["meta"].get("status") != "approved":
+        _stage_refusal(phase, f"cannot start {tid}; phase is not approved")
+    if task["status"] == "in_progress":
+        if not resume:
+            die(f"{tid} is already in_progress; rerun /cs-build {tid} --resume")
+        print(f"resume {tid}")
+        return 0
+    if resume:
+        die(f"cannot resume {tid}; its status is {task['status']}")
+    if task["status"] != "pending":
+        die(f"cannot start {tid}; its status is {task['status']}")
+    unmet = [d for d in task["deps"]
+             if phase["tasks"].get(d, {}).get("status") != "done"]
+    if unmet:
+        die(f"cannot start {tid}; unmet dependencies: {', '.join(unmet)}")
+    _set_status(phase, tid, "in_progress")
+    return 0
+
+
 def cmd_bump(phase, _args):
-    rev = intof(phase["meta"].get("rev"), 1) + 1
-    write_phase(phase, set_meta(phase["text"], "rev", rev))
-    print(f"rev -> {rev}")
+    if phase["meta"].get("active") != "revise":
+        die("plan bump is only valid during an active revise pass")
+    rev = intof(phase["meta"].get("rev"), 1)
+    base = intof(phase["meta"].get("active-rev"), rev)
+    if rev == base:
+        rev += 1
+        write_phase(phase, set_meta(phase["text"], "rev", rev))
+        print(f"rev -> {rev}")
+    elif rev == base + 1:
+        print(f"rev already {rev}; resume did not bump again")
+    else:
+        die(f"active revise began at rev {base}, but current rev is {rev}")
     return 0
 
 
 def cmd_reviewed(phase, _args):
+    if phase["meta"].get("active") == "review":
+        return cmd_finish(phase, ["review"])
+    fmt = phase["meta"].get("workflow-rev", "1.0.0")
+    modern = intof(fmt.split(".")[1] if "." in fmt else 0) >= 4
+    if modern:
+        die("plan reviewed requires an active review; run plan begin review first")
     rev = intof(phase["meta"].get("rev"), 1)
+    if intof(phase["meta"].get("reviewed"), 0) >= rev:
+        die(f"rev {rev} has already been reviewed")
     write_phase(phase, set_meta(phase["text"], "reviewed", rev))
-    print(f"reviewed -> {rev}")
+    print(f"reviewed -> {rev} (legacy phase)")
     return 0
 
 
@@ -736,6 +980,8 @@ def cmd_done(phase, args):
     tid = args[0].upper()
     task = phase["tasks"].get(tid)
     if task:
+        if task["status"] != "in_progress":
+            die(f"{tid} must be in_progress before it can be marked done")
         unmet = [d for d in task["deps"] if phase["tasks"].get(d, {}).get("status") != "done"]
         if unmet:
             die(f"{tid} depends on {', '.join(unmet)}, which are not done")
@@ -746,7 +992,18 @@ def cmd_done(phase, args):
 def cmd_block(phase, args):
     if not args:
         die('usage: plan block T2 "reason"')
-    _set_status(phase, args[0].upper(), "blocked", " ".join(args[1:]) or "no reason given")
+    tid = args[0].upper()
+    task = phase["tasks"].get(tid)
+    if not task:
+        die(f"{tid} is not in this phase")
+    if task["status"] != "in_progress":
+        die(f"{tid} must be in_progress before it can be blocked")
+    _set_status(phase, tid, "blocked", " ".join(args[1:]) or "no reason given")
+    text = read_text(phase["path"])
+    text = set_meta(text, "status", "draft")
+    text = del_meta(text, "ready")
+    write_phase(phase, text)
+    print("phase -> draft; readiness cleared")
     return 0
 
 
@@ -756,7 +1013,9 @@ def cmd_version(_phase, _args):
 
 
 COMMANDS = {"version": cmd_version, "status": cmd_status, "lint": cmd_lint,
-            "next": cmd_next, "brief": cmd_brief, "done": cmd_done, "block": cmd_block,
+            "next": cmd_next, "brief": cmd_brief, "start": cmd_start,
+            "done": cmd_done, "block": cmd_block, "begin": cmd_begin,
+            "finish": cmd_finish,
             "findings": cmd_findings, "resolve": cmd_resolve, "bump": cmd_bump,
             "reviewed": cmd_reviewed, "recommend": cmd_recommend}
 

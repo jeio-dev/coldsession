@@ -1,6 +1,6 @@
 ---
 name: cs-approve
-description: Produce the coldsession evidence checklist for plan readiness without issuing the approval verdict. Use in a fresh chat when the user invokes $cs-approve or asks whether a reviewed phase is ready to approve.
+description: Produce a guarded readiness checklist, persist actionable gaps, and mark a reviewed revision ready without approving it. Use in a fresh chat for $cs-approve or explicit --resume recovery.
 ---
 
 # Coldsession Approve
@@ -8,6 +8,8 @@ description: Produce the coldsession evidence checklist for plan readiness witho
 Read `.agents/coldsession/commands/cs-approve.md` completely and follow its workflow.
 Resolve it from the repository root and perform the workflow with that root
 as the working directory.
+
+Treat accompanying flags as `$ARGUMENTS` and preserve `--resume` exactly.
 
 Translate suggested next steps for Codex users:
 

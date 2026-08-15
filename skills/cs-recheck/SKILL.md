@@ -12,6 +12,9 @@ as the working directory.
 Treat this as `$cs-review`, not as a separate workflow stage. Show
 `$cs-review` as the canonical command in every next step.
 
+Treat accompanying flags as the review command's `$ARGUMENTS` and preserve
+`--resume` exactly.
+
 Translate suggested next steps for Codex users:
 
 - `/cs-review` -> `$cs-review`

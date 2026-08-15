@@ -508,7 +508,7 @@
 
   <div class="titleblock">
     <div class="tb-row"><span>Title</span><span>Universal Planning Workflow</span></div>
-    <div class="tb-row"><span>Version</span><span>v1.3.0</span></div>
+    <div class="tb-row"><span>Format</span><span>v1.4.0</span></div>
     <div class="tb-row"><span>Scale</span><span>1 idea : 1 shippable plan</span></div>
     <div class="tb-row"><span>Sessions</span><span>plan · review · approve · 1 per task</span></div>
     <div class="tb-row"><span>State</span><span>PLAN.md + docs/plans/ + task graph</span></div>
@@ -679,10 +679,9 @@
 </code></pre>
     </div>
 
-    <p>Each step below is printed as its finished command file — frontmatter
-      included, placeholders already replaced with arguments. Copy the block,
-      save it at the path in its header, and that step is a slash command.
-      Nothing else in this document changes.</p>
+    <p>Each step below shows the load-bearing part of its command contract.
+      The installed files in <code>commands/</code> are canonical; the excerpts
+      explain state and context boundaries without duplicating every line.</p>
 
     <h3>What a command does not carry</h3>
     <p>This is the part that bites. A command supplies the prompt text and
@@ -729,7 +728,7 @@ git add .claude .agents templates &amp;&amp; git commit -m "chore: coldsession"<
     <p class="fine">Installing per project rather than globally is
       deliberate: the workflow version is pinned with the code, so a phase
       planned six months ago still reads the way it was planned. Record it: add
-      <code>workflow-rev: 1.3.0</code> to PLAN.md's frontmatter, so a phase
+      <code>workflow-rev: 1.4.0</code> to PLAN.md's frontmatter, so a phase
       planned under an older loop is readable as an older plan rather than a
       wrong-looking one.</p>
   </section>
@@ -740,49 +739,35 @@ git add .claude .agents templates &amp;&amp; git commit -m "chore: coldsession"<
     <div class="session">Session 1</div><div class="mode">Plan mode · opus</div>
     <h2>Turn the idea into an objective</h2>
     <p>Run this once, before Step 1 has anything to plan. It converts a rough
-      app idea into a scoped brief.</p>
+      idea into a scoped, planning-ready file that survives a cold session.</p>
 
     <div class="code-block">
       <div class="code-head"><span>.claude/commands/cs-define.md</span><button class="copy-btn" type="button">Copy</button></div>
-      <pre><code>---
-description: Turn a rough idea into a scoped objective brief
-argument-hint: [rough app idea]
----
+      <pre><code>Entry guard:
+- PLAN.md exists: stop without opening OBJECTIVE.md.
+- OBJECTIVE.md exists: stop unless --revise was explicit.
+- An interrupted revision continues only with --revise --resume.
 
-Help me turn this idea into a well-defined objective I can hand off for
-detailed planning:
+Ask every blocking scope, user, constraint, and success question. Then write
+OBJECTIVE.md once from templates/OBJECTIVE.md with objective-rev, status:
+ready, one smallest end-to-end journey, measurable success criteria, explicit
+exclusions and assumptions, and `Open questions: None.`
 
-$ARGUMENTS
-
-If the line above is blank, ask me for the idea and stop.
-
-Produce an Objective Brief containing:
-- Problem statement: what problem this solves, and for whom
-- Core value proposition, in one or two sentences
-- Primary users and their main use case
-- MVP feature list: the smallest version that delivers the value proposition
-- Explicitly out of scope for v1
-- Constraints: platform, tech stack preferences, budget, timeline,
-  integrations, hosting
-- Success criteria: how we'll know the MVP works
-- Open questions you need me to answer before planning can start
-
-Ask me the open questions directly. Do not guess at answers.
-Do not break this into tasks or phases. Do not write code.</code></pre>
+Do not write tasks, phases, placeholders, TODOs, or unanswered alternatives.</code></pre>
     </div>
 
     <div class="note">
       <span class="tick">&gt;</span>
-      <p>Answer the open questions in your reply. The finished brief is what
-        <code>/cs-plan</code> picks up from this session — skim it yourself
-        before running Step 1, because nothing downstream re-derives it.</p>
+      <p>Answer the open questions, inspect <code>OBJECTIVE.md</code>, then end
+        the session. Groundwork or the first Plan reads that file cold; no
+        conversational handoff is required.</p>
     </div>
   </section>
 
   <!-- G. GROUNDWORK -->
   <section id="ground">
     <div class="eyebrow"><span class="num">G</span>Groundwork</div>
-    <div class="session same">Same session as Define</div><div class="mode exec">Normal · sonnet</div>
+    <div class="session">New session</div><div class="mode exec">Normal · sonnet</div>
     <h2>Make the repo readable before you plan against it</h2>
     <p>Every later step opens AGENTS.md and the codebase. On an empty repo
       both are missing, so Review has nothing to review against and a fresh
@@ -795,38 +780,15 @@ Do not break this into tasks or phases. Do not write code.</code></pre>
 
     <div class="code-block">
       <div class="code-head"><span>.claude/commands/cs-groundwork.md</span><button class="copy-btn" type="button">Copy</button></div>
-      <pre><code>---
-description: Phase 0 scaffold and ground rules for a greenfield repo
----
+      <pre><code>Require ready OBJECTIVE.md and no PLAN.md. Claim `active: groundwork`; a
+duplicate stops and an interrupted run requires --resume.
 
-This is a greenfield repo. Set up the ground rules before any feature work.
+Create the verified scaffold, concise AGENTS.md, architecture decisions,
+optional data model, runnable quality commands, and secret check. Only after
+they pass, write a valid closed Phase 00 and create PLAN.md last with Phase 00
+checked plus provisional product phases. Remove the active marker.
 
-From the objective brief, write:
-
-1. AGENTS.md, under 60 lines. One line on what this is, the stack, and the
-   constraints that must never be violated. Leave the Commands section empty
-   until the scaffold exists.
-2. CLAUDE.md, containing @AGENTS.md plus any Claude Code specific lines.
-3. docs/architecture.md: each decision from the brief with what was rejected
-   and why. Not a stack list; package.json is the stack list.
-4. docs/data-model.md: the schema, plus the ownership rules the schema does
-   not express. Skip if there is no datastore.
-5. PLAN.md from templates/PLAN.md, with this groundwork as Phase 0.
-
-Do not invent conventions you have no basis for. If the brief does not
-determine it, leave it out.
-
-Then enforce in code what markdown cannot:
-- .gitignore covering env files, build output, and local state
-- .env.example, committed, keys only, no values
-- lint, format, and typecheck installed and runnable
-- one pre-commit or CI check that fails on a committed secret
-
-Scaffold the project. Run every command you are about to put in AGENTS.md,
-fix the ones that fail, and only then write them down.
-
-Acceptance: I open a new session and ask what this project is and how to run
-it. It answers from AGENTS.md alone, without reading source.</code></pre>
+PLAN.md is the completion boundary. The next Plan will not read OBJECTIVE.md.</code></pre>
     </div>
 
     <div class="note">
@@ -867,7 +829,7 @@ it. It answers from AGENTS.md alone, without reading source.</code></pre>
   <!-- 1. PLAN -->
   <section id="plan">
     <div class="eyebrow"><span class="num">1</span>Create Plan</div>
-    <div class="session same">Same session as Define</div><div class="mode exec">Exit plan mode to write · sonnet</div>
+    <div class="session">New session</div><div class="mode exec">Exit plan mode to write · sonnet</div>
     <h2>Define the work</h2>
     <p>The objective becomes numbered tasks. Task IDs are what every later
       step points at instead of re-describing work in prose. Everything is
@@ -890,100 +852,20 @@ docs/plans/02-offline-sync.md # current phase, task level detail
 
     <div class="code-block">
       <div class="code-head"><span>.claude/commands/cs-plan.md</span><button class="copy-btn" type="button">Copy</button></div>
-      <pre><code>---
-description: Turn the objective brief into a phased plan on disk
-argument-hint: [objective, or blank to use the brief from this session]
----
+      <pre><code>Check whether PLAN.md exists before opening OBJECTIVE.md.
 
-Create a complete implementation plan for the following objective:
+No PLAN.md: require ready OBJECTIVE.md and read it once. Copy objective-rev
+into PLAN.md. Arguments may clarify but cannot silently override the file.
 
-$ARGUMENTS
+PLAN.md exists: never open or search OBJECTIVE.md. Plan only after a closed
+boundary, from its index line, closed phase, last log entry, AGENTS.md,
+architecture notes, and targeted repository inspection. An interrupted Plan
+requires --resume; an active phase is never rewritten.
 
-If the line above is blank, work out what you are planning against, in this
-order:
-
-1. An objective brief produced earlier in this session: use it.
-2. No brief, but PLAN.md exists: this is a phase boundary, and the objective
-   is the phase `current:` names, or the first unticked phase if `current:`
-   names a closed one. Read its line in PLAN.md, the closed phase file and
-   its `.log.md` for what carries forward, AGENTS.md, and
-   docs/architecture.md if it exists. Nothing else. The product scope is
-   settled; do not re-derive it, and do not run /cs-define.
-3. Neither: stop and tell me to run /cs-define first.
-
-Coming in at a boundary you will have real questions — a one-line phase name
-is an intention, not a specification. Ask them, per `## Also include` below,
-before you write the file.
-
-Break the work into logical phases, and phases into numbered tasks
-(T1, T2, T3, ...).
-
-## Files
-
-PLAN.md is the index: a `current:` pointer and a checklist of phases in
-dependency order, one line each, linking to their phase files. Create it from
-templates/PLAN.md if absent; otherwise add or correct phases and set
-`current:` to this one. Never copy task detail into PLAN.md.
-
-Setting `current:` is yours alone. /cs-close leaves it on the phase it closed,
-so at a boundary it still names the previous phase until you move it. Move it
-in the same edit that writes the new phase file, never before.
-
-Write the current phase to docs/plans/(NN)-(slug).md using
-templates/phase.md. Detail only the current phase at task level. Phases
-beyond it are provisional: reorder, split, merge, or drop them freely at each
-boundary.
-
-## Task graph
-
-The phase file's frontmatter carries a machine-readable graph. One line per
-task, exactly this shape, or the tooling cannot read it:
-
-  T2: {deps: [T1], status: pending, files: [src/sync/queue.ts]}
-
-- `deps` are task IDs in this phase only. Acyclic, and prefer depending
-  backwards so IDs read in execution order.
-- `files` is the complete set this task may open or write. A build session is
-  bounded to this list plus its dependencies' files, so a missing entry stalls
-  the build and an over-broad one wastes context. This is the single most
-  important field you write.
-- `status` starts as pending.
-
-## Task body
-
-One `## T(n)` section per task, matching the graph exactly:
-- Goal
-- Deliverables
-- Acceptance Criteria
-- Verify: the exact command I run and the exact output that means it passed.
-  If the only check is visual, name the screen and what I should see. Never
-  write "manually confirm it works".
-
-## Size
-
-Cap a phase at eight tasks. A ninth is a signal the phase should split: every
-later session pays to read this file, so it stays small. Each phase must end
-in a state I can run.
-
-## Also include
-
-- Assumptions you are proceeding on without confirming
-- Open questions that need my input before this plan is final
-- Out of scope items
-
-Leave the `## Findings` and `## Changelog` sections in place and empty.
-/cs-review writes the first, /cs-revise writes the second, and they are how those
-sessions hand work to each other. Do not add a `reviewed:` field — the phase
-has not been reviewed, and the tooling reads its absence.
-
-Ask me the open questions directly rather than guessing. Do not write code.
-
-## Finishing
-
-1. `.claude/bin/plan lint` — fix anything it reports.
-2. `.claude/bin/plan recommend` and print it. It will send you to /cs-review.
-3. Stop, and tell me to run /cs-review in a NEW session. /cs-review typed here
-   reviews its own work and will agree with itself.</code></pre>
+Write one phase of at most eight tasks. Each task has true dependencies, a
+complete minimal files list, observable acceptance criteria, and an exact
+Verify command. Resolve blocking questions first and record `Open questions:
+None.` Move current: only after the new phase exists and lints.</code></pre>
     </div>
 
     <h3>The task graph</h3>
@@ -997,7 +879,9 @@ Ask me the open questions directly rather than guessing. Do not write code.
 phase: 02-offline-sync
 rev: 3
 status: approved
-workflow-rev: 1.3.0
+reviewed: 3
+ready: 3
+workflow-rev: 1.4.0
 tasks:
   T1: {deps: [], status: done, files: [src/db/schema.ts]}
   T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts]}
@@ -1058,104 +942,16 @@ Verify: `npm test -- queue` exits 0</code></pre>
 
     <div class="code-block">
       <div class="code-head"><span>.claude/commands/cs-review.md</span><button class="copy-btn" type="button">Copy</button></div>
-      <pre><code>---
-description: State-aware independent review of the current phase
----
+      <pre><code>Run `plan begin review [--resume]` before any other read. A duplicate stops;
+only the matching interrupted pass may resume.
 
-Run `.claude/bin/plan lint`, `.claude/bin/plan status`, and
-`.claude/bin/plan findings` first. Read `rev:` and `reviewed:` from the phase
-frontmatter to choose exactly one review scope.
+With no reviewed: field, inspect the full plan and codebase independently.
+When reviewed is lower than rev, inspect only the current changelog entries
+and affected tasks. Record each issue once in the seven-field Findings shape.
 
-- If `reviewed:` is absent, this is the first pass. Run **First review**.
-- If `reviewed:` is lower than `rev:`, this is a revised plan. Run
-  **Revision review**.
-- If `reviewed:` equals or exceeds `rev:`, this revision has already been
-  reviewed. Run `.claude/bin/plan recommend`, print it, and stop without
-  reading or writing anything else.
-
-You did not write the plan or the revisions you are reviewing.
-
-## First review
-
-Read PLAN.md, the phase file it points at, AGENTS.md, and the codebase. Review
-the phase as an independent senior engineer inheriting someone else's work.
-Be skeptical.
-
-Treat every E-code from the linter as a Critical finding and every W-code as
-at least Medium. For each issue found, provide:
-- Finding ID (F1, F2, ...)
-- Severity: Critical, High, Medium, or Low
-- Category: Missing work / Incorrect assumption / Risk / Task ordering /
-  Architectural issue / Missing acceptance criteria / Unnecessary scope /
-  Wrong file list
-- Affected task ID(s)
-- Description
-- Recommended fix
-
-Beyond the linter, which only checks shape:
-- Treat any unresolved open question from the plan as Critical.
-- Treat any task whose Verify line is not a runnable command or a named
-  screen as High.
-- Check every `files` list against the codebase. A task that will obviously
-  need a file it does not list is High: it will stall a bounded build session.
-- Check the dependency edges are true. The linter proves the graph is
-  acyclic, not that T4 actually needs T2.
-- Review the phase ordering in PLAN.md too, not just the tasks in this phase.
-
-Order findings by impact. Do not inflate severity to look thorough — a Medium
-labeled Critical is itself a review failure. If nothing rises above Medium,
-say so and give the two things most likely to break anyway.
-
-## Revision review
-
-Read the phase file's `## Changelog` and frontmatter, and only the tasks the
-changelog names. Do not re-review the phase end to end: the first pass already
-did that, and the revision-stamped changelog defines what changed.
-
-For each finding the changelog claims `resolved` or `accepted`, decide:
-actually resolved, partially resolved, or not resolved. Quote the plan line
-that settles it. A note that does not name a task ID or plan line is not
-evidence; reopen that finding:
-
-  .claude/bin/plan resolve F2 open "worker.ts still missing from T4 files"
-
-Then check only three things beyond that:
-- Did any resolution create a new dependency, ordering, or scope problem?
-  Record it as a new finding with the next free F-id.
-- Did any resolution change what a task touches without updating its `files`
-  list?
-- Did any Medium marked `accepted` get a real reason, or a restatement of the
-  finding?
-
-## Record findings
-
-Findings only in this session's transcript are findings /cs-revise and the
-next review cannot read. Reason in plan mode, then exit plan mode and append
-new findings to the phase file's `## Findings` section, one line per finding,
-seven fields:
-
-  F1 | Critical | Task ordering | T3 | open | description | recommended fix
-
-Continue the existing finding numbering. Every new finding starts `open`.
-Use `-` in the task field for a plan-level finding. No pipes inside the
-description or fix — the parser splits on them, and `plan lint` will reject
-the line. If the phase file has no `## Findings` section, add one.
-
-The Findings section, changelog entries written by `plan resolve`, and
-`plan reviewed` are the only writes you make. Do not rewrite the plan, resolve
-your own new findings, or touch the task graph; /cs-revise does that.
-
-## Finishing
-
-1. `.claude/bin/plan reviewed` — record that this rev had a review pass.
-2. `.claude/bin/plan lint` — confirm the findings and resolutions parse.
-3. `.claude/bin/plan recommend` and print it. Open findings send you to
-   /cs-revise; a clean pass sends you to /cs-approve. At rev 3 with a Critical
-   still open, follow the stop condition and split the phase instead.
-4. After a revision review, end with one line naming what this pass did not
-   inspect.
-5. Stop. /cs-revise can run in this session, but the review after it must run
-   in a new one.</code></pre>
+Run `plan finish review` to set reviewed: and clear the marker atomically,
+then lint and print `plan recommend`. A completed revision review names what
+its intentionally narrow scope did not inspect.</code></pre>
     </div>
 
     <div class="legend">
@@ -1206,25 +1002,15 @@ your own new findings, or touch the task graph; /cs-revise does that.
 
     <div class="code-block">
       <div class="code-head"><span>.claude/commands/cs-revise.md</span><button class="copy-btn" type="button">Copy</button></div>
-      <pre><code>---
-description: Resolve findings in place and write the changelog
----
+      <pre><code>Run `plan begin revise [--resume]`, then `plan bump`. The bump occurs exactly
+once and becomes a no-op when an interrupted pass resumes.
 
-Revise the phase file in place. Bump `rev` in its frontmatter. Do not create a
-second file. If a finding changes the phase ordering, update PLAN.md as well.
+Resolve Critical and High findings, resolve or justify Medium findings, and
+keep task bodies and graph entries synchronized. Close each finding with
+`plan resolve`, naming the task or plan line carrying the result.
 
-Resolve every Critical and High finding.
-For each Medium finding, either implement the recommendation or state why it
-was not adopted.
-Low findings may be addressed at your discretion.
-
-Preserve task IDs where possible. If tasks are added, removed, or split,
-update the frontmatter graph in the same edit — the graph and the `## T(n)`
-sections must stay in sync, and `.claude/bin/plan lint` will fail if they
-drift. Run it when you are done.
-
-Include a changelog mapping each finding ID to the resolution taken, and for
-each one, the task ID or plan line that now carries the fix.</code></pre>
+After lint, `plan finish revise` clears the marker. `plan recommend` sends the
+new revision to Review before any remaining open finding can trigger Revise.</code></pre>
     </div>
 
     <p class="fine">The finding-ID → resolution → plan-line changelog is what
@@ -1246,36 +1032,21 @@ each one, the task ID or plan line that now carries the fix.</code></pre>
 
     <div class="code-block">
       <div class="code-head"><span>.claude/commands/cs-approve.md</span><button class="copy-btn" type="button">Copy</button></div>
-      <pre><code>---
-description: Readiness checklist with evidence, no verdict
----
+      <pre><code>Run `plan begin approve [--resume]` before reading the phase. Produce an
+evidence-backed PASS/FAIL checklist and one highest-residual-risk line:
 
-Run `.claude/bin/plan lint`, then read the phase file and its changelog. You
-did not write either. Do not approve or reject. Produce the readiness
-checklist only.
+  Risk — impact — mitigation with task/line evidence — exact remaining action
 
-For each line, give PASS or FAIL plus the evidence — quote the finding ID,
-task ID, linter output, or plan line that proves it. "Looks fine" is a FAIL.
-
-- The linter exits clean.
-- Every Critical and High finding has a changelog entry, and the plan line it
-  points at actually contains the fix.
-- Every task has acceptance criteria and a Verify line I could run today.
-- Every task's `files` list is complete enough that a session bounded to it
-  could finish the task.
-- Every remaining Medium/Low finding is explicitly accepted or justified.
-- The phase ends in a state I can run.
-
-Then list, in one line each, the riskiest thing still in the plan.
-
-Do not set `status: approved`. I do that.</code></pre>
+Every actionable FAIL or unmitigated risk becomes a deduplicated open finding
+with a concrete plan edit, then `plan finish approve --fail` routes to Revise.
+A clean `plan finish approve --pass` writes ready: &lt;rev&gt; and clears the marker.
+It never sets status: approved; the human still does that.</code></pre>
     </div>
 
-    <p class="fine">If the checklist is clean, set <code>status: approved</code>
-      in the phase file's frontmatter yourself and open Build. That
-      frontmatter line is the gate every later step reads; you are the only
-      thing that writes it. If the checklist isn't clean, start a new session
-      at Step 2 with the remaining finding IDs.</p>
+    <p class="fine">If the checklist is clean, the matching
+      <code>ready:</code> marker prevents an accidental second Approve while it
+      waits for you to set <code>status: approved</code>. If it is not clean,
+      Revise reads the persisted findings and the following Review runs cold.</p>
   </section>
 
   <!-- LOOP DIAGRAM -->
@@ -1393,13 +1164,12 @@ Do not set `status: approved`. I do that.</code></pre>
       <div class="code-head"><span>.claude/commands/cs-build.md</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>---
 description: Implement one approved task, verify it, commit, stop
-argument-hint: [task-id]
+argument-hint: [task-id] [--resume]
 ---
 
-Run `.claude/bin/plan brief $1`.
-
-If $1 is blank, run `.claude/bin/plan next` and stop: tell me the runnable
-task IDs and let me choose. If the brief prints BLOCKED, stop.
+Run `plan start T(n) [--resume]` before reading files. It refuses an
+unapproved, done, blocked, or dependency-blocked task. A task already
+in_progress requires explicit --resume. Then run `plan brief T(n)`.
 
 ## Reading
 
@@ -1416,7 +1186,7 @@ with search output.
 
 ## Doing
 
-Implement task $1 only. Do not change the architecture or the plan. Do not
+Implement that task only. Do not change the architecture or the plan. Do not
 start the next task. Restate the acceptance criteria and the Verify line
 before you begin.
 
@@ -1428,19 +1198,18 @@ have to take.
 ## Finishing
 
 When the Verify output is clean:
-1. `.claude/bin/plan done $1` — do not hand-edit the frontmatter.
-2. Commit, with the task ID in the message.
-3. Append to docs/plans/(NN)-(slug).log.md, ten lines maximum:
-   `## $1` then only what the next session cannot work out from the repo —
+1. Append to docs/plans/(NN)-(slug).log.md, ten lines maximum:
+   `## T(n)` then only what the next session cannot work out from the repo —
    a decision you made that the plan did not specify, a gotcha you hit, a
    file whose actual contents differ from what the plan assumed. If there is
    nothing, write "nothing to carry". Never summarize the diff; git has it.
-4. Run `.claude/bin/plan next` and print the result.
-5. Stop. Exit the session rather than compacting.
+2. `.claude/bin/plan done T(n)` — only in_progress tasks can finish.
+3. Commit task changes, phase state, and log together with the task ID.
+4. Run `.claude/bin/plan recommend` and stop.
 
 If you hit a blocker:
 - Stop. Do not work around it.
-- `.claude/bin/plan block $1 "one line reason"`.
+- `.claude/bin/plan block T(n) "one line reason"`.
 - Write it into the phase file as finding F(n) and tell me to re-enter at
   /cs-review.</code></pre>
     </div>
@@ -1452,7 +1221,7 @@ If you hit a blocker:
 
     <div class="code-block">
       <div class="code-head"><span>.claude/bin/plan brief T2</span></div>
-      <pre><code>task    T2   status pending
+      <pre><code>task    T2   status in_progress
 phase   docs/plans/02-offline-sync.md  (phase status approved)
 read    AGENTS.md
         docs/plans/02-offline-sync.md
@@ -1526,46 +1295,13 @@ handoff docs/plans/02-offline-sync.log.md  (read the last entry only)</code></pr
 
     <div class="code-block">
       <div class="code-head"><span>.claude/commands/cs-close.md</span><button class="copy-btn" type="button">Copy</button></div>
-      <pre><code>---
-description: Harvest repeated corrections, then close the phase
----
+      <pre><code>Run `plan begin close [--resume]`; only an approved phase with every task done
+can claim Close. Audit commits, logs, findings, and acceptance criteria.
 
-Run `.claude/bin/plan status`. If any task is not done, stop, say which, and
-print `.claude/bin/plan recommend` — it names what to run instead.
-
-Read this phase's commits, its log file, and the phase file including every
-finding.
-
-List the things I had to correct more than once across the phase, or that a
-session got wrong because the repo never told it otherwise. Ignore one-off
-mistakes.
-
-For each, propose exactly one of:
-- a line for AGENTS.md, if it applies everywhere
-- a rule in .claude/rules/, if it only applies to one directory
-- a skill, if it's a procedure we ran at least twice
-
-Propose nothing you can't tie to a specific commit, log entry, or finding.
-
-Then audit the delivered phase against its acceptance criteria and report
-gaps, dead code, and anything left unwired.
-
-Finally: tick this phase in PLAN.md, and set `status: closed` in the phase
-file's frontmatter. Leave `current:` pointing at this phase. /cs-plan moves it
-when it writes the next phase file, so the pointer never names a file that
-does not exist yet.
-
-## Next
-
-- A next phase exists in PLAN.md: tell me to run `/cs-plan` for it in a NEW
-  session. Name the phase and quote its PLAN.md line, so I can paste it if I
-  want to. /cs-plan reads this closed phase and its log for what carries
-  forward, and asks its open questions before it writes. Do not send me to
-  /cs-define; the product scope was settled before Phase 01.
-- No phase left: say the plan is complete, and do not invent one.
-
-The new phase file starts unreviewed, so `plan recommend` picks the loop up
-from /cs-review on its own once /cs-plan has written it.</code></pre>
+A material gap becomes an open finding and `plan finish close --fail` demotes
+the phase to draft for Revise. On a clean audit, `plan finish close --pass`
+ticks the PLAN.md line, marks the phase closed, clears the marker, and leaves
+current: on that file. The next Plan reads this handoff, never OBJECTIVE.md.</code></pre>
     </div>
 
     <div class="note">
@@ -1583,9 +1319,9 @@ from /cs-review on its own once /cs-plan has written it.</code></pre>
       edit that creates what it points at.</p>
 
     <p>Nor does the boundary go back through /cs-define. /cs-define is the front
-      door: it runs once, on a rough idea, and produces a product brief that
-      lives in the session rather than on disk. By Phase 02 the product scope
-      is settled and the useful context is on disk — the phase's line in
+      door: it runs once and persists the product brief in OBJECTIVE.md. The
+      first Plan consumes it; once PLAN.md exists the objective is never read
+      again. By Phase 02 the useful bounded context is the phase's line in
       PLAN.md, the phase you just closed, its log, AGENTS.md. /cs-plan opened
       cold reads exactly that, then asks what a one-line phase name can't
       say.</p>

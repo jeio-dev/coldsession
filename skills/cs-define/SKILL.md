@@ -1,6 +1,6 @@
 ---
 name: cs-define
-description: Turn a rough product or feature idea into a scoped objective brief without writing code. Use at the start of the coldsession workflow, before groundwork or planning, when the user invokes $cs-define or asks to define an idea with coldsession.
+description: Turn a rough product or feature idea into a durable, planning-ready OBJECTIVE.md without writing code. Use before groundwork or initial planning when the user invokes $cs-define, or intentionally revises a pre-plan objective with --revise.
 ---
 
 # Coldsession Define
@@ -11,6 +11,9 @@ workflow with that root as the working directory.
 
 Treat the text accompanying the skill invocation as `$ARGUMENTS`. If no idea
 was supplied, ask for it and stop as the command instructs.
+
+Preserve `--revise` and `--resume` flags exactly when passing arguments to the
+canonical workflow.
 
 Translate every suggested Claude command for Codex users:
 

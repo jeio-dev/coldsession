@@ -1,4 +1,4 @@
 interface:
   display_name: "Coldsession Close"
   short_description: "Audit delivery and close the current phase"
-  default_prompt: "Use $cs-close to audit and close the completed phase."
+  default_prompt: "Use $cs-close to guard, audit, and close the completed phase."
