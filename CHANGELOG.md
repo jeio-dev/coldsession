@@ -4,6 +4,75 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
+## [v2.3.0]
+
+### Deterministic gates behind the load-bearing rules
+
+- The four rules coldsession leaned on hardest were prompt text a model was
+  asked to honour. On the Claude surface a program now decides them: four
+  `.sh`/`.cmd` hook wrapper pairs installed to `.claude/hooks/` and registered
+  in the generated `.claude/settings.json`, all of them thin forwarders to a
+  new `plan guard`, which owns every decision and always fails open.
+- `UserPromptSubmit` refuses a judging command in the session that authored
+  the plan (`E25`) — the rule the product is named after, and the one nothing
+  enforced. `PreToolUse` refuses a read outside the in-progress brief (`E23`)
+  and an edit that introduces `status: approved` (`E24`). `PostToolUse`
+  surfaces a phase file's `E`-codes on the write that caused them.
+- Codex has no hook mechanism, so there the same rules stay advisory and the
+  bounded-read rule moved into `skills/cs-build/SKILL.md` in prose. Claude
+  enforces, Codex advises; the asymmetry is deliberate.
+
+### Policy as a host-owned convention
+
+- Stage 2 of the AI-Native SDLC Playbook had no counterpart here. A policy
+  skill is now a file the host project writes, named `policy-*`, in the
+  skills directory the agent already reads. `/cs-plan` lists them, opens only
+  the ones the phase can violate, and records the judgement under a new
+  `## Policy` section; `/cs-review` re-derives the list itself and files
+  misses under a new `Policy` finding category.
+- coldsession ships no `policy-*` skill and neither installer manages one, so
+  an install or uninstall cannot disturb the host's.
+
+### Bounded context and workflow metrics
+
+- `plan lint` warns (`W06`, never an error) when `AGENTS.md` grows past the
+  60-line budget `/cs-groundwork` writes it under, and `/cs-close` now earns a
+  line only on a correction's second occurrence, naming the line it replaces
+  rather than appending.
+- Added `plan metrics`: leading and lagging workflow indicators read from
+  every phase file under `docs/plans/`, for the Stage 6 loopback. Like guard,
+  it never requires `PLAN.md` to exist.
+- Added `evals/`, a prompt-eval harness that runs a real `cs-*` command
+  headlessly against a fixture repo and grades machine-readable state rather
+  than prose. Not wired into CI; `tests/test_evals.py` covers the grading
+  logic for free.
+
+### Fixed
+
+- Both installers generated the hook command path unquoted, so a project
+  directory containing a space made the shell split it and the hook exited
+  127. A `PreToolUse` hook that cannot launch blocks the tool, so the gates
+  failed *closed* on every file operation in such a project.
+- `plan guard stage` refused a judging command on session history alone,
+  without checking whether there was plan state to judge against. In a
+  directory with no `PLAN.md`, `/cs-plan` followed by `/cs-review` in one
+  session returned `E25` — breaking repositories that never adopted
+  coldsession.
+- The cold-session gate named the three canonical judging commands and not
+  `cs-recheck`, their documented compatibility alias, so `/cs-recheck` walked
+  through a gate `/cs-review` was stopped by. Aliases now resolve to the
+  canonical name before the gate checks or records anything.
+- Lint-on-write compared the written file against `PLAN.md`'s `current:`
+  pointer, so the next phase file — which `/cs-plan` writes *before* moving
+  the pointer — was the one file the gate could not see.
+- The two installers disagreed about which hook files were theirs to delete:
+  a project uninstalled from PowerShell lost a hook it kept when uninstalled
+  from `sh`. Both now use one pattern list for copying and removal.
+- `plan guard` printed usage to stderr on a bare invocation. Every guard
+  invocation is a hook invocation, and a hook's stderr reaches the model
+  mid-turn, so it is now silent. `plan metrics`, which a person types, still
+  reports what it found.
+
 ## [v2.2.0]
 
 ### Questioning rounds and task sizing

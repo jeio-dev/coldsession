@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -736,6 +737,51 @@ class WorkflowContractTest(unittest.TestCase):
         for installer in ("install.sh", "install.ps1"):
             self.assertNotIn(
                 "policy-", (ROOT / installer).read_text(encoding="utf-8"), installer)
+
+    def test_the_release_version_matches_the_changelog_and_every_install_pin(self):
+        """The tag, the tool, the changelog heading, and every documented
+        clone command are one fact written in four places.
+
+        v2.1.0 shipped with `plan version` reporting 2.0.0; the changelog
+        records the fix and nothing was left behind to catch the next drift,
+        so the install pins went stale again. A reader who copies the
+        documented `git clone --branch` line gets a tag that does not exist.
+        """
+        source = PLAN.read_text(encoding="utf-8")
+        version = re.search(r'^TOOL_VERSION = "([^"]+)"', source, re.M).group(1)
+
+        reported = subprocess.run([sys.executable, str(PLAN), "version"],
+                                  text=True, capture_output=True, check=False)
+        self.assertEqual(reported.stdout.strip(), version)
+
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        headings = re.findall(r"^## \[(v[^\]]+)\]", changelog, re.M)
+        self.assertTrue(headings, "CHANGELOG.md has no release headings")
+        self.assertEqual(headings[0], f"v{version}",
+                         "the newest CHANGELOG entry is not this release")
+
+        pinned = {
+            "README.md": (ROOT / "README.md").read_text(encoding="utf-8"),
+            "docs/universal-planning-workflow.html":
+                (ROOT / "docs" / "universal-planning-workflow.html")
+                .read_text(encoding="utf-8"),
+        }
+        for name, text in pinned.items():
+            pins = set(re.findall(r"--branch (v[0-9][0-9A-Za-z.-]*)", text))
+            self.assertTrue(pins, f"{name} documents no install pin")
+            self.assertEqual(pins, {f"v{version}"},
+                             f"{name} pins a release that is not this one")
+
+    def test_the_phase_format_version_matches_the_shipped_template(self):
+        """workflow-rev is the other version, and it moves on its own
+        schedule. A product release must not drag it along, and the template a
+        fresh phase is written from must declare the format the linter
+        enforces."""
+        source = PLAN.read_text(encoding="utf-8")
+        fmt = re.search(r'^FORMAT_VERSION = "([^"]+)"', source, re.M).group(1)
+        template = (ROOT / "templates" / "phase.md").read_text(encoding="utf-8")
+        declared = re.search(r"^workflow-rev:\s*(\S+)", template, re.M).group(1)
+        self.assertEqual(declared, fmt)
 
     def test_contributing_separates_guard_silence_from_metrics_output(self):
         """CONTRIBUTING said `plan guard` and `plan metrics` both "exit 0 in

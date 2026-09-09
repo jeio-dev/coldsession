@@ -18,7 +18,7 @@ and the temporary clone deletes itself.
 
 ```bash
 cd ~/my-project
-git clone --depth 1 --branch v2.2.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.3.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/install.sh --agent both
 git add .claude .agents templates && git commit -m "chore: coldsession"
 ```
@@ -27,12 +27,12 @@ git add .claude .agents templates && git commit -m "chore: coldsession"
 
 ```powershell
 cd $HOME\my-project
-git clone --depth 1 --branch v2.2.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.3.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .\.coldsession\install.ps1 -Agent both
 git add .claude .agents templates; git commit -m "chore: coldsession"
 ```
 
-`--branch v2.2.0` pins the clone to a tagged release rather than whatever's
+`--branch v2.3.0` pins the clone to a tagged release rather than whatever's
 on `main`, so following this README always gets a tested version; bump it to
 the latest tag from the [releases page](https://github.com/jeio-dev/coldsession/tags)
 if this copy of the README is older than the repo. The clone never outlives
@@ -71,7 +71,7 @@ phase files.
 
 ```bash
 cd ~/my-project
-git clone --depth 1 --branch v2.2.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.3.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/install.sh --agent both
 git add .claude .agents && git commit -m "chore: update coldsession"
 ```
