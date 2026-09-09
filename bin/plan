@@ -1530,8 +1530,11 @@ def cmd_guard(_phase, args):
     With no PATH or CMD the event is read as hook JSON on stdin.
     """
     if not args or args[0] not in GUARD_KINDS:
-        print("usage: plan guard <%s> [target]" % "|".join(GUARD_KINDS),
-              file=sys.stderr)
+        # Silently. Guard has no caller but a hook, and a hook's stderr is
+        # fed back to the model -- on UserPromptSubmit and PreToolUse it
+        # arrives mid-turn, in whatever the user was actually doing. Usage
+        # text belongs in `plan --help`, which lists the kinds, and not in
+        # someone else's conversation.
         return 0
     kind, rest = args[0], args[1:]
 

@@ -244,6 +244,26 @@ class PlanRuntimeTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0)
             self.assertEqual(result.stderr, "")
 
+    def test_metrics_still_reports_to_the_human_who_asked(self):
+        """Failing open is exiting 0, not falling silent.
+
+        `plan metrics` is typed by a person at the Stage 6 loopback, so a run
+        that printed nothing would read as a broken command rather than an
+        empty repository. Its silence is not guard's silence, and the two are
+        held to different rules on purpose -- this is the assertion that
+        stops the next reader from "fixing" one to match the other.
+        """
+        with tempfile.TemporaryDirectory() as empty_root:
+            env = os.environ.copy()
+            env["PLAN_ROOT"] = empty_root
+            result = subprocess.run(
+                [sys.executable, str(PLAN), "metrics"],
+                text=True, capture_output=True, env=env, check=False,
+            )
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stderr, "")
+            self.assertIn("nothing to report", result.stdout)
+
     def test_metrics_scans_every_phase_and_reports_indicators(self):
         findings = (
             "F1 | High | Risk | T1 | resolved | first gap | change T1 line\n"
@@ -285,6 +305,27 @@ class PlanRuntimeTest(unittest.TestCase):
 
 
     # ------------------------------------------------------------- guard
+
+    def test_guard_says_nothing_when_it_has_nothing_to_say(self):
+        """Guard has no human caller worth writing for.
+
+        Every invocation is a hook invocation, and a hook's stderr is fed
+        back to the model -- on UserPromptSubmit and PreToolUse it lands
+        mid-turn, in whatever the user was actually doing. A bare or
+        misspelled invocation printed usage text there, and a wrapper typo is
+        all it takes for that to fire on every prompt in the session. The
+        usage lives in `plan --help`, where a person can go looking for it.
+        """
+        for args in ([], ["bogus"], ["--help"], ["stage", "--session"]):
+            result = self.run_guard(*args)
+            self.assertEqual(result.returncode, 0, args)
+            self.assertEqual(result.stderr, "", f"{args} wrote to stderr")
+            self.assertEqual(result.stdout, "", f"{args} wrote to stdout")
+
+    def test_plan_help_still_documents_the_guard_kinds(self):
+        """Guard going quiet must not mean it goes undocumented."""
+        result = self.run_plan("--help")
+        self.assertIn("plan guard KIND", result.stdout)
 
     def test_guard_fails_open_with_no_plan_state(self):
         """The highest-risk regression in the hooks: guard runs on every
@@ -695,6 +736,20 @@ class WorkflowContractTest(unittest.TestCase):
         for installer in ("install.sh", "install.ps1"):
             self.assertNotIn(
                 "policy-", (ROOT / installer).read_text(encoding="utf-8"), installer)
+
+    def test_contributing_separates_guard_silence_from_metrics_output(self):
+        """CONTRIBUTING said `plan guard` and `plan metrics` both "exit 0 in
+        silence". Only one of them does, and an audit reading the docs filed
+        the difference as a bug in the code. Fail-open is the shared rule;
+        silence belongs to the hook-invoked half alone."""
+        text = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+        rule = text[text.index("`plan guard` and `plan metrics` must fail open"):
+                    text.index("Every hook ships as")]
+        self.assertIn("guard", rule)
+        self.assertIn("metrics", rule)
+        # Silence is claimed for guard, and explicitly not for metrics.
+        self.assertIn("hook-invoked", rule)
+        self.assertIn("human-invoked", rule)
 
     def test_installers_agree_on_the_hook_surface(self):
         posix = (ROOT / "install.sh").read_text(encoding="utf-8")

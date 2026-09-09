@@ -32,11 +32,21 @@ belong in the standard-library unittest suite; keep it dependency-free.
 
 `plan guard` and `plan metrics` must fail open. They run outside a
 coldsession project — guard on every prompt and file tool call — so absent,
-unreadable, or ambiguous plan state exits 0 in silence, and neither may go
-through `read_phase(read_index())` in `main()` the way every other
-subcommand does. If you touch either, re-run the fail-open tests and every
-hook wrapper in a directory with no `PLAN.md`. A false positive on the happy
-path is worse than a missing gate.
+unreadable, or ambiguous plan state exits 0, and neither may go through
+`read_phase(read_index())` in `main()` the way every other subcommand does.
+
+Failing open means exiting 0. It does not mean saying nothing, and the two
+commands part company there. `plan guard` is hook-invoked and has no other
+caller, so it is silent as well: its stderr is fed back to the model
+mid-turn, in whatever the user was actually doing, so a bare or misspelled
+invocation prints nothing at all and the usage lives in `plan --help`.
+`plan metrics` is human-invoked, so it reports what it found — a run that
+printed nothing would read as a broken command rather than an empty
+repository. Do not make either one match the other.
+
+If you touch either, re-run the fail-open tests and every hook wrapper in a
+directory with no `PLAN.md`. A false positive on the happy path is worse
+than a missing gate.
 
 Every hook ships as an `.sh`/`.cmd` pair, ASCII-only, LF for the `.sh` and
 CRLF for the `.cmd` per `.gitattributes`. A gate with only one half is a gate
