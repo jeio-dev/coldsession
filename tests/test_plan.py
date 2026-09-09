@@ -417,6 +417,18 @@ class PlanRuntimeTest(unittest.TestCase):
             self.run_guard("lint", str(self.root / "src" / "a.py")).returncode, 0)
 
 
+    def test_shipped_phase_template_lints_clean(self):
+        """CONTRIBUTING's rule, checked instead of remembered: the template a
+        phase is written from has to pass the linter that judges it, so a new
+        prose section can never quietly break a fresh plan."""
+        self.phase.write_text(
+            (ROOT / "templates" / "phase.md").read_text(encoding="utf-8"),
+            encoding="utf-8")
+        result = self.run_plan("lint")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ok", result.stdout)
+
+
 class WorkflowContractTest(unittest.TestCase):
     def test_objective_template_is_planning_ready(self):
         text = (ROOT / "templates" / "OBJECTIVE.md").read_text(encoding="utf-8")
@@ -463,6 +475,41 @@ class WorkflowContractTest(unittest.TestCase):
         skill = (ROOT / "skills" / "cs-build" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("Read exactly the files the brief lists", skill)
         self.assertIn("Nothing else.", skill)
+
+    def test_policy_skills_are_host_owned_and_surface_neutral(self):
+        """The policy layer is a convention, not shipped content, so the only
+        thing holding it together is prose in two command files. Those files
+        are copied to Codex with the runtime path patched and nothing else,
+        so naming only the Claude skills directory would silently mislead
+        every Codex install."""
+        plan_cmd = (ROOT / "commands" / "cs-plan.md").read_text(encoding="utf-8")
+        review_cmd = (ROOT / "commands" / "cs-review.md").read_text(encoding="utf-8")
+        for name, text in (("cs-plan", plan_cmd), ("cs-review", review_cmd)):
+            self.assertIn("`policy-*`", text, name)
+            self.assertIn(".claude/skills/", text, name)
+            self.assertIn(".agents/skills/", text, name)
+
+        # Plan applies them and records the judgement; absence is silence.
+        self.assertIn("## Apply project policy", plan_cmd)
+        self.assertIn("`None.` and invent", plan_cmd)
+        self.assertIn("`## Policy`", plan_cmd)
+
+        # Review re-derives the list rather than trusting what Plan wrote,
+        # and files misses in the new category.
+        self.assertIn("Do not take the phase's `## Policy` section as the list",
+                      review_cmd)
+        self.assertIn("`Policy`", review_cmd)
+        self.assertIn("absence is never a finding", review_cmd)
+
+        # The template carries the section a fresh phase writes into.
+        template = (ROOT / "templates" / "phase.md").read_text(encoding="utf-8")
+        self.assertIn("## Policy", template)
+        self.assertLess(template.index("## Policy"), template.index("## Findings"))
+
+        # No installer may manage a host-owned skill.
+        for installer in ("install.sh", "install.ps1"):
+            self.assertNotIn(
+                "policy-", (ROOT / installer).read_text(encoding="utf-8"), installer)
 
     def test_installers_agree_on_the_hook_surface(self):
         posix = (ROOT / "install.sh").read_text(encoding="utf-8")

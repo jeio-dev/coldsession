@@ -937,6 +937,9 @@ complete minimal files list, observable acceptance criteria, and an exact
 Verify command. Size each task at the lowest rung that holds: no task at all,
 a configuration change, an extension, a new file, a new abstraction.
 
+Apply the project's own policy-* skills: read each description, open only the
+ones this phase can violate, record what you considered under ## Policy.
+
 Resolve blocking questions first, as one round of numbered questions carrying
 recommended answers; two rounds at the outside. Record `Open questions: None.`
 Move current: only after the new phase exists and lints.</code></pre>
@@ -957,6 +960,62 @@ Move current: only after the new phase exists and lints.</code></pre>
       <code>files</code> is the envelope every Build session is bounded to — so
       the cost is paid again on every read of that task, by sessions that never
       saw the decision.</p>
+
+    <h3>Policy the project owns</h3>
+    <p>Brand, security, privacy, compliance, UX. Every organisation has rules
+      a plan can break without breaking a test, and none of them belong to a
+      planning workflow — they belong to the project. The enterprise shape for
+      this is a <code>spec.md</code> stage between intent and plan, reviewed by
+      whoever owns the policy. That is a fifth session, and this loop already
+      costs four before a line of code exists.</p>
+
+    <p>So policy lands as skills the project writes and owns, named
+      <code>policy-*</code>, in the skills directory the agent already reads:
+      <code>.claude/skills/</code> under Claude Code,
+      <code>.agents/skills/</code> under Codex. The <code>cs-*</code> skills
+      are this workflow's own invocation adapters and carry no policy; the
+      prefix is what keeps them apart, and it is why an install or uninstall,
+      which only touches <code>cs-*</code>, can never disturb the project's
+      own.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>docs/plans/02-offline-sync.md</span></div>
+      <pre><code>## Policy
+
+policy-a11y | T2, T4 | contrast and focus order on the new list view
+policy-billing | - | not applicable; this phase touches no pricing surface
+</code></pre>
+    </div>
+
+    <p>Plan lists them, reads only each skill's frontmatter description, and
+      opens in full just the ones this phase could actually violate. An
+      applicable one constrains the phase like any durable constraint: it can
+      add acceptance criteria, add a task, or put a file in
+      <code>files</code> that the goal alone would not have needed — and that
+      is the point of doing it here rather than at Build, where the read
+      envelope is already closed.</p>
+
+    <p>Step 2 lists the same skills itself instead of trusting the section
+      above, since that section is the judgement it is checking, and files
+      each miss as a <code>Policy</code> finding. From there nothing is new:
+      an open Critical or High blocks approval whatever its category, Approve
+      demands a changelog line that names what settled it, and
+      <code>plan metrics</code> counts it with the rest. A policy violation
+      inherits the whole machine because it is just a finding.</p>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>A project with no <code>policy-*</code> skill has no policy layer.
+        Plan writes <code>None.</code>, Review files nothing, and the absence
+        is never itself a finding — the same fail-open instinct the hooks
+        have.</p>
+    </div>
+
+    <p class="fine">This is the one skill you write before you have run the
+      procedure twice. The rule further up — encode a skill from what you
+      actually did, at a phase close — is about procedures you are learning.
+      A policy is a constraint you were handed, and it is worth nothing if it
+      arrives after the plan that violated it.</p>
 
     <h3>The task graph</h3>
     <p>The phase file's frontmatter is machine-readable and its body is prose.
@@ -1040,6 +1099,8 @@ When reviewed is lower than rev, inspect only the current changelog entries
 and affected tasks. Record each issue once in the seven-field Findings shape.
 For an over-built task, name the rung it should have stopped at and make that
 rung the fix: Medium normally, High when it widens files past the goal.
+List the project's policy-* skills yourself rather than trusting the phase's
+## Policy section, and file each miss under the category Policy.
 
 Run `plan finish review` to set reviewed: and clear the marker atomically,
 then lint and print `plan recommend`. A completed revision review names what
@@ -1059,6 +1120,12 @@ its intentionally narrow scope did not inspect.</code></pre>
         reviewer didn't read the codebase. Check that it actually opened the
         files before you accept the result.</p>
     </div>
+
+    <p class="fine">Categories are free text and the linter does not check
+      them, but three are named so a later pass can count like with like:
+      <code>Task ordering</code>, <code>Unnecessary scope</code>, and
+      <code>Policy</code>. Severity never follows the category — a privacy
+      policy breach is Critical, a copy deviation is Medium.</p>
 
     <h3>Round 2 and after: the same command narrows its scope</h3>
     <p>A second full review is a cold read of a plan that changed in three

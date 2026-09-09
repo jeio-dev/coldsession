@@ -47,6 +47,14 @@ whether an uninstall may delete the file: it has to keep recognising every
 earlier generated default so an upgrading user is never warned about a file
 they did not touch.
 
+Policy skills belong to the host project. coldsession ships no `policy-*`
+skill and neither installer may ever create, list, or remove one: the removal
+lists are `cs-*` and legacy `coldsession-*` only, and that is what makes the
+convention safe to adopt. `commands/cs-plan.md` and `commands/cs-review.md`
+are copied to Codex with only the runtime path patched, so anything they say
+about where policy skills live has to name both `.claude/skills/` and
+`.agents/skills/` rather than assume the Claude one.
+
 `tests/test_plan.py` only exercises `bin/plan`; it cannot tell you whether a
 reworded `commands/*.md` still does what it claims. If you change the prose
 in `commands/`, `skills/`, or `templates/`, run `python evals/run.py` (needs

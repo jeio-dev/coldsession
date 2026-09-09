@@ -35,6 +35,16 @@ and concrete recommended fix. Check especially:
   make that rung the recommended fix. Medium by default; High when the
   over-build widens `files` past what the goal needs, because that spends Build
   context directly.
+- Policy: list the project's own `policy-*` skills yourself — `.claude/skills/`
+  under Claude Code, `.agents/skills/` under Codex — and read the ones this
+  phase can violate. Do not take the phase's `## Policy` section as the list;
+  it is the judgement you are checking. File each miss under the category
+  `Policy`: a task that breaks an applicable policy, an applicable policy the
+  phase never addressed, or a `## Policy` line claiming coverage no task
+  carries. Severity is the policy's own stakes, not the category's — a
+  security, privacy, or compliance breach is Critical or High; a brand or copy
+  deviation is usually Medium. A project with no `policy-*` skill has no policy
+  layer, and its absence is never a finding.
 
 Do not inflate severity. If nothing exceeds Medium, say so and name the two
 most likely failure points.
@@ -47,15 +57,19 @@ partially, or not resolved and quote the settling plan line. Reopen unsupported
 claims with `plan resolve F2 open "T4 line still omits worker.ts"`.
 
 Beyond those lines, check only whether a resolution created a dependency,
-ordering, or scope problem; changed touched files without changing `files`;
-or accepted a Medium without a real reason. Record new issues with the next
-free finding ID.
+ordering, scope, or policy problem; changed touched files without changing
+`files`; or accepted a Medium without a real reason. Record new issues with
+the next free finding ID.
 
 ## Record and finish
 
 Append each new finding once to Findings in the seven-field shape:
 
   F1 | Critical | Task ordering | T3 | open | description | recommended fix
+
+The category is free text and the linter does not check it. `Task ordering`,
+`Unnecessary scope`, and `Policy` are the named ones; keep to them where one
+fits so a later pass can count like with like.
 
 Use `-` for a plan-level finding and no pipes inside prose. Findings,
 changelog entries made by `plan resolve`, and runtime stage metadata are the

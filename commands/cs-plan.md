@@ -44,6 +44,37 @@ Normally one round, at most two. Phase scope is not product scope and Plan is
 not a second Define. Needing a third round means the phase is too large; split
 it, exactly as a third review round does.
 
+## Apply project policy
+
+Policy is the project's, not this workflow's: brand, security, compliance, UX,
+data handling. It lives in skills the project owns, named `policy-*`, in the
+skills directory the agent already reads — `.claude/skills/` under Claude
+Code, `.agents/skills/` under Codex. The `cs-*` skills are this workflow's own
+invocation adapters and carry no project policy; the prefix is what keeps the
+two apart.
+
+List that directory and read only each `policy-*` skill's frontmatter
+`description`. Open in full just the ones this phase can actually violate —
+payment copy policy is not input to a migration phase. If the directory holds
+no `policy-*` skill there is no policy layer here: write `None.` and invent
+none.
+
+An applicable policy constrains the phase the way any durable constraint does.
+It may add acceptance criteria to a task, add a task, or put a file in a
+`files` list the goal alone would not have needed — and when it does, that
+file goes in `files` now rather than when Build discovers it missing. It never
+widens product scope. A policy that contradicts the phase is an open question,
+not a silent choice.
+
+Record every `policy-*` skill you considered in `## Policy`, one per line,
+three fields, no pipes inside the prose:
+
+  policy-a11y | T2, T4 | contrast and focus order on the new list view
+  policy-billing | - | not applicable; this phase touches no pricing surface
+
+Review lists the same skills itself. The section is there so it can check the
+judgement rather than repeat it.
+
 ## Plan quality
 
 Break the work into dependency-ordered phases and detail only the current one.
@@ -82,7 +113,8 @@ passing output or exit status. For a genuinely visual-only result, name the
 screen, action, and visible result. Never use "manually confirm it works".
 
 Resolve blocking questions before writing. Record confirmed non-blocking
-assumptions, `## Open questions` as `None.`, and explicit out-of-scope items.
+assumptions, `## Open questions` as `None.`, explicit out-of-scope items, and
+`## Policy` as above.
 Leave Findings and Changelog empty and omit `reviewed:`, `ready:`, and active
 stage metadata from a new phase.
 

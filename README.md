@@ -214,6 +214,43 @@ whole phase, so an entry that names nothing gives it nothing to check.
 Against `rev:`, it tells `/cs-review` to use the changelog-scoped branch and
 stops `/cs-approve` from grading an unreviewed revision.
 
+## Policy
+
+Brand, security, privacy, compliance, and UX policy belong to the project, not
+to this workflow. coldsession ships none and the installer manages none: a
+policy skill is a file the host project writes, named `policy-*`, in the
+skills directory the agent already reads — `.claude/skills/` on Claude Code,
+`.agents/skills/` on Codex. The `cs-*` skills are this workflow's own
+invocation adapters and carry no project policy; the prefix is what keeps the
+two apart, and it is why an install or uninstall — which only ever touches
+`cs-*` — cannot disturb them.
+
+`/cs-plan` lists them, reads the frontmatter `description` of each, opens in
+full only the ones the phase can actually violate, and records what it
+considered in the phase file's `## Policy` section — one line per skill, with
+the tasks that carry it or `-` for considered and not applicable.
+`/cs-review` lists the same skills itself rather than trusting that section,
+because the section is the judgement it is checking, and files each miss as a
+finding in a `Policy` category:
+
+```
+F4 | High | Policy | T3 | open | T3 logs the raw request body | redact per policy-pii before the write
+```
+
+From there it is the machine that already exists. An open Critical or High
+blocks approval through `plan lint` (`E15`) whatever its category,
+`/cs-approve` demands a changelog entry naming the line that settles it, and
+`plan metrics` counts it with the rest. Severity is the policy's own stakes,
+not the category's.
+
+This is Stage 2 of the [AI-Native SDLC
+Playbook](https://academy.claude.com/courses/ai-native-sdlc-playbook) without a
+fifth session or a `spec.md`. Policy applies where a phase is written and is
+checked where a phase is judged, which is where the loop already runs cold.
+
+A project with no `policy-*` skill has no policy layer: Plan writes `None.`
+and Review files nothing. Absence is silence, never a finding.
+
 ## The task graph
 
 The phase file's frontmatter is machine-readable; the body is prose. Neither
