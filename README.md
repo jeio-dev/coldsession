@@ -360,7 +360,7 @@ decided by one — installed to `.claude/hooks/` and registered in
 | Cold session | `UserPromptSubmit` | `/cs-review`, `/cs-approve`, or `/cs-close` in a session that already ran `/cs-plan` or `/cs-revise` (`E25`) |
 | Bounded reads | `PreToolUse` · `Read\|Edit\|Write` | a path outside the brief, while a task is `in_progress` (`E23`) |
 | Human approval | `PreToolUse` · `Edit\|Write` | an edit that introduces `status: approved` in a phase file (`E24`) |
-| Lint on write | `PostToolUse` · `Edit\|Write` | nothing; it surfaces the phase file's E-codes on the write that caused them |
+| Lint on write | `PostToolUse` · `Edit\|Write` | nothing; it surfaces the E-codes of the phase file that was written, whether or not `current:` points at it yet |
 
 The first one is the product's name. A review written in the session that
 wrote the plan has the right wording and none of the independence, which is

@@ -1382,17 +1382,45 @@ def _guard_write(phase, path, payload):
     return 0
 
 
-def _guard_lint(phase, path):
+def _guard_phase_at(path):
+    """The phase file just written, or None when it is not one of ours.
+
+    Deliberately not `current:`. The hook fires on every Edit|Write, and the
+    write that most needs linting is the next phase file -- /cs-plan writes
+    it and only then moves the pointer, so keying on the pointer left the
+    freshly authored file as the one file the gate could not see. The first
+    /cs-plan of a project writes a phase file before PLAN.md exists at all.
+
+    Widening past the pointer must not widen past coldsession, so the match
+    is positive and made on the file itself: a `.md` under docs/plans/, not a
+    `.log.md` handoff, that parses and declares a `phase:` in its
+    frontmatter. A repository keeping unrelated markdown there gets nothing.
+    """
+    target = _guard_norm(path)
+    plans = _guard_norm(os.path.join(ROOT, "docs", "plans"))
+    if target is None or plans is None:
+        return None
+    if not target.startswith(plans + os.sep):
+        return None
+    if not target.endswith(".md") or target.endswith(".log.md"):
+        return None
+    try:
+        phase = read_phase(target)
+    except Exception:
+        return None
+    return phase if phase["meta"].get("phase") else None
+
+
+def _guard_lint(path):
     """Surface a shape error on the write that caused it.
 
     Errors only -- `plan lint` exits non-zero on E-codes alone -- so a phase
     still being drafted does not fire on every intermediate save.
     """
+    phase = _guard_phase_at(path)
     if phase is None:
         return 0
-    target = _guard_norm(path)
-    if target is None or target != _guard_norm(phase["path"]):
-        return 0
+    target = phase["path"]
     try:
         errs, _ = lint_issues(phase)
     except Exception:
@@ -1533,12 +1561,14 @@ def cmd_guard(_phase, args):
         return 0
 
     try:
+        # lint decides from the written file alone, so it never pays for the
+        # index read -- and this hook fires on every Edit and Write.
+        if kind == "lint":
+            return _guard_lint(path)
         phase = _guard_phase()
         if kind == "read":
             return _guard_read(phase, path)
-        if kind == "write":
-            return _guard_write(phase, path, payload)
-        return _guard_lint(phase, path)
+        return _guard_write(phase, path, payload)
     except Exception:
         return 0
 

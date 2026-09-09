@@ -540,6 +540,68 @@ class PlanRuntimeTest(unittest.TestCase):
             self.run_guard("lint", str(self.root / "src" / "a.py")).returncode, 0)
 
 
+    def test_guard_lints_a_phase_file_the_current_pointer_has_not_reached(self):
+        """The write that most needs linting is the one `current:` has not
+        caught up with.
+
+        /cs-plan writes the next phase file and only then moves the pointer,
+        so linting whatever `current:` names meant the new file -- the one
+        just authored, by the stage most likely to get its shape wrong -- was
+        the single file the gate could not see. The hook fires on every
+        Edit|Write, so the target is what decides, not the pointer.
+        """
+        self.write_phase()
+        nxt = self.root / "docs" / "plans" / "02-next.md"
+        nxt.write_text(
+            phase_text().replace(
+                "  T2: {deps: [], status: pending, files: [src/b.py]}",
+                "  T2 deps [] status pending"),
+            encoding="utf-8")
+
+        fired = self.run_guard("lint", str(nxt))
+        self.assertEqual(fired.returncode, 2,
+                         "a malformed next-phase file linted clean")
+        self.assertIn("E01", fired.stderr)
+        self.assertIn("02-next.md", fired.stderr)
+
+        # And the pointer is genuinely irrelevant: the same file lints clean
+        # once it is well formed, still without `current:` naming it.
+        nxt.write_text(phase_text(), encoding="utf-8")
+        self.assertEqual(self.run_guard("lint", str(nxt)).returncode, 0)
+
+    def test_guard_lints_the_first_phase_before_any_index_exists(self):
+        """The very first /cs-plan writes a phase file into a project with no
+        PLAN.md at all. Requiring an index would put that write -- the one
+        with nothing to compare itself against -- back out of reach."""
+        fresh = self.root / "fresh"
+        (fresh / "docs" / "plans").mkdir(parents=True)
+        first = fresh / "docs" / "plans" / "01-first.md"
+        first.write_text(
+            phase_text().replace(
+                "  T2: {deps: [], status: pending, files: [src/b.py]}",
+                "  T2 deps [] status pending"),
+            encoding="utf-8")
+        fired = self.run_guard("lint", str(first), root=fresh)
+        self.assertEqual(fired.returncode, 2, fired.stderr)
+        self.assertIn("E01", fired.stderr)
+
+    def test_guard_lint_stays_silent_on_docs_plans_files_that_are_not_ours(self):
+        """Widening past the `current:` pointer must not widen past
+        coldsession. A repository that keeps unrelated markdown under
+        docs/plans/ gets nothing, because the gate matches on the phase
+        marker in the file rather than on its location."""
+        strangers = {
+            "notes.md": "# just some notes\n\nnothing structured here.\n",
+            "rfc.md": "---\ntitle: an rfc\nstatus: draft\n---\n\n# body\n",
+            "01-test.log.md": "# handoff log\n\n- something happened\n",
+        }
+        for name, text in strangers.items():
+            path = self.root / "docs" / "plans" / name
+            path.write_text(text, encoding="utf-8")
+            result = self.run_guard("lint", str(path))
+            self.assertEqual(result.returncode, 0, f"{name}: {result.stderr}")
+            self.assertEqual(result.stderr, "", name)
+
     def test_shipped_phase_template_lints_clean(self):
         """CONTRIBUTING's rule, checked instead of remembered: the template a
         phase is written from has to pass the linter that judges it, so a new
