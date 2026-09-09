@@ -29,7 +29,12 @@ and concrete recommended fix. Check especially:
 - Verify lines that are neither runnable commands nor named visual checks: High.
 - Incomplete `files` lists against the real codebase: High.
 - False or missing dependency edges.
-- Phase ordering in PLAN.md, unnecessary scope, and missing runnable outcomes.
+- Phase ordering in PLAN.md and missing runnable outcomes.
+- Unnecessary scope: name the rung the task should have stopped at (existing
+  capability, configuration change, extension, new file, new abstraction) and
+  make that rung the recommended fix. Medium by default; High when the
+  over-build widens `files` past what the goal needs, because that spends Build
+  context directly.
 
 Do not inflate severity. If nothing exceeds Medium, say so and name the two
 most likely failure points.

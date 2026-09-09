@@ -37,9 +37,31 @@ Discover facts before asking me for them. For an existing codebase, inspect
 only repository guidance, architecture notes, README, and dependency manifests
 needed to establish current constraints. Do not infer product intent from code.
 
-Ask direct questions for every missing decision that would materially change
+## Questioning
+
+Map every open decision as a tree. The frontier is each decision whose
+prerequisites are already settled: the questions answerable now, without
+guessing at answers you have not heard yet.
+
+Ask the whole frontier as one numbered round. Give each question a short title,
+the decision it settles, and your recommended answer, so I can accept a round
+without composing prose. Then stop and wait. A question whose answer depends on
+another still open in this round belongs to a later round, not this one.
+
+My answers reshape the tree: settled decisions push the frontier outward and
+unblock what depended on them. Recompute the frontier and ask the next round.
+
+Finding facts is your job, never mine. When a frontier question needs a fact
+from the repository or the environment, dispatch a search subagent and keep only
+the result. Do not block the round on it; a running search is an unsettled
+prerequisite for its own question alone, so ask the rest of the frontier now.
+
+The interview ends when the frontier is empty: every branch visited, nothing
+silently assumed. Cover every missing decision that would materially change
 scope, users, constraints, or success. Do not guess. Distinguish a confirmed
 decision from an assumption I explicitly accept.
+
+## Write the objective
 
 Write `OBJECTIVE.md` from `templates/OBJECTIVE.md` only after all blocking
 questions are answered. Write it once at the end, not incrementally. It must

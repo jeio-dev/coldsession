@@ -15,6 +15,10 @@ was supplied, ask for it and stop as the command instructs.
 Preserve `--revise` and `--resume` flags exactly when passing arguments to the
 canonical workflow.
 
+If the command asks for a search subagent but subagents are unavailable or
+not authorized, use a bounded read-only search and retain only the required
+`file:line` result in working context.
+
 Translate every suggested Claude command for Codex users:
 
 - `/cs-groundwork` -> `$cs-groundwork`
