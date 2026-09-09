@@ -1200,6 +1200,12 @@ def cmd_metrics(_phase, _args):
 GUARD_KINDS = ("read", "write", "lint", "stage")
 AUTHORING_COMMANDS = ("cs-plan", "cs-revise")
 JUDGING_COMMANDS = ("cs-review", "cs-approve", "cs-close")
+# A 2.x compatibility alias runs the stage it aliases, so it has to face the
+# same gate. Resolved to the canonical name before anything is checked or
+# recorded: a gate that named only the canonical commands was one rename away
+# from bypassable, and a session log that recorded both spellings would leave
+# the same hole for whatever consults it next.
+COMMAND_ALIASES = {"cs-recheck": "cs-review"}
 CS_COMMAND_RE = re.compile(r"^[/$]?(cs-[a-z-]+)\b")
 APPROVED_RE = re.compile(r"^status:\s*approved\s*$", re.M)
 
@@ -1462,7 +1468,7 @@ def _guard_stage(args, payload):
     m = CS_COMMAND_RE.match(prompt.strip())
     if not m:
         return 0
-    command = m.group(1)
+    command = COMMAND_ALIASES.get(m.group(1), m.group(1))
 
     if command in JUDGING_COMMANDS:
         authored = [c for c in _session_ran(session) if c in AUTHORING_COMMANDS]

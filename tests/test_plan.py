@@ -463,6 +463,60 @@ class PlanRuntimeTest(unittest.TestCase):
         self.assertIn("E25", blocked.stderr)
         self.assertIn("cs-plan", blocked.stderr)
 
+    def test_guard_stage_closes_the_cs_recheck_alias(self):
+        """/cs-recheck is a compatibility alias for /cs-review: it judges the
+        same work and has to run just as cold. Listing the canonical commands
+        and not the alias left the product's core claim one rename away from
+        bypassable -- /cs-review returned E25 while /cs-recheck exited 0."""
+        self.write_phase()
+        self.assertEqual(
+            self.run_guard("stage", "/cs-plan", "--session", "A").returncode, 0)
+
+        for spelling in ("/cs-recheck", "$cs-recheck", "cs-recheck",
+                         "/cs-recheck --resume"):
+            blocked = self.run_guard("stage", spelling, "--session", "A")
+            self.assertEqual(blocked.returncode, 2, spelling)
+            self.assertIn("E25", blocked.stderr, spelling)
+            # Named by what it is, not by what the user typed: cs-recheck.md
+            # already tells the model to report /cs-review as the next step.
+            self.assertIn("/cs-review", blocked.stderr, spelling)
+
+    def test_guard_stage_records_the_alias_under_its_canonical_name(self):
+        """Normalised going in as well as coming out, so one stage leaves one
+        name in the session log however the user spelled it."""
+        self.write_phase()
+        self.run_guard("stage", "/cs-recheck", "--session", "R")
+        log = (self.root / ".sessions" / "R.txt").read_text(encoding="utf-8").split()
+        self.assertEqual(log, ["cs-review"])
+
+    def test_the_gate_classifies_every_shipped_command(self):
+        """What F4 actually was: a command shipped, and nobody decided which
+        side of the gate it fell on.
+
+        The verdict for every `cs-*` command in commands/ is asserted here, so
+        adding one fails this test until somebody classifies it. Checking the
+        canonical three by name could never have caught an alias for one of
+        them; checking the whole shipped surface does.
+        """
+        expected = {
+            "cs-define": 0, "cs-groundwork": 0, "cs-plan": 0, "cs-build": 0,
+            "cs-revise": 0, "cs-status": 0,
+            "cs-review": 2, "cs-approve": 2, "cs-close": 2, "cs-recheck": 2,
+        }
+        shipped = sorted(path.stem for path in (ROOT / "commands").glob("cs-*.md"))
+        self.assertEqual(shipped, sorted(expected),
+                         "a shipped command is unclassified by the cold-session gate")
+
+        self.write_phase()
+        self.assertEqual(
+            self.run_guard("stage", "/cs-plan", "--session", "S").returncode, 0)
+        for name, code in sorted(expected.items()):
+            if name == "cs-plan":
+                continue  # the command that opened the session
+            actual = self.run_guard("stage", f"/{name}", "--session", "S")
+            self.assertEqual(actual.returncode, code,
+                             f"/{name} expected {code}, got {actual.returncode}")
+
     def test_guard_stage_ignores_prose_and_missing_session_ids(self):
         self.write_phase()
         self.run_guard("stage", "/cs-revise", "--session", "A")
