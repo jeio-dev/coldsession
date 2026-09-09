@@ -281,6 +281,21 @@ the state that produced the
 answer, so a recommendation you disagree with is one you can check rather than
 guess at.
 
+## Metrics
+
+`plan metrics` scans every file under `docs/plans/`, not just the phase
+`PLAN.md` currently points at, and reports the workflow's own health instead
+of a single phase's. Leading: revisions to approval, first-pass approve rate,
+tasks blocked per phase, review rounds per phase. Lagging: findings by
+severity, findings reopened after a phase closes, the share of findings
+resolved versus accepted, and phase cycle time from git history. Every number
+comes from what is already on disk — no model runs to produce it.
+
+Because it reads the whole repository rather than one phase, it does not
+require `PLAN.md` to exist or its `current:` pointer to resolve. No
+`docs/plans/`, no readable phase files, or a repo that has not adopted
+coldsession yet all print one line and exit 0, never a traceback.
+
 ## The phase boundary
 
 `/cs-close` ticks the phase in PLAN.md and marks the phase file `status: closed`.

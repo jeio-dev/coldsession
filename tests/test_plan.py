@@ -195,6 +195,56 @@ class PlanRuntimeTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("E22", result.stdout)
 
+    def test_metrics_fails_open_with_no_plan_state(self):
+        with tempfile.TemporaryDirectory() as empty_root:
+            env = os.environ.copy()
+            env["PLAN_ROOT"] = empty_root
+            result = subprocess.run(
+                [sys.executable, str(PLAN), "metrics"],
+                text=True, capture_output=True, env=env, check=False,
+            )
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stderr, "")
+
+    def test_metrics_scans_every_phase_and_reports_indicators(self):
+        findings = (
+            "F1 | High | Risk | T1 | resolved | first gap | change T1 line\n"
+            "F2 | Medium | Risk | T2 | accepted | second gap | acceptable risk"
+        )
+        tasks = {
+            "T1": ([], "done", ["src/a.py"]),
+            "T2": ([], "blocked", ["src/b.py"]),
+        }
+        self.write_phase(rev=2, reviewed=2, ready=2, status="closed",
+                          findings=findings, tasks=tasks)
+        second = self.root / "docs" / "plans" / "02-other.md"
+        second.write_text(phase_text(rev=1, reviewed=1, ready=1, status="approved"),
+                           encoding="utf-8")
+
+        out = self.run_plan("metrics").stdout
+        self.assertIn("phases   2 scanned (1 closed, 1 approved, 0 draft)", out)
+        self.assertIn("revisions to approval   avg 0.5 (2 phase(s))", out)
+        self.assertIn("first-pass approve rate 50% (1 of 2)", out)
+        self.assertIn("tasks blocked           1 total across 1 of 2 phase(s)", out)
+        self.assertIn("review rounds           avg 1.5 (2 phase(s))", out)
+        self.assertIn("findings by severity    High 1, Medium 1 (2 total)", out)
+        self.assertIn("findings reopened       0 (across 1 closed phase(s))", out)
+        self.assertIn("resolved vs accepted    1 resolved, 1 accepted (50% resolved)", out)
+        self.assertIn("phase cycle time        n/a", out)
+
+    def test_metrics_does_not_read_the_current_phase_index(self):
+        """metrics must not go through read_phase(read_index()) like every
+        other subcommand -- it fails open even when PLAN.md's `current:`
+        pointer is dangling, as long as docs/plans/ itself has phase files."""
+        (self.root / "PLAN.md").write_text(
+            "---\ncurrent: docs/plans/missing.md\nworkflow-rev: 1.4.0\n---\n\n"
+            "# Plan\n\n- [ ] Phase 01 -- test -- docs/plans/missing.md\n",
+            encoding="utf-8",
+        )
+        self.write_phase()
+        result = self.run_plan("metrics")
+        self.assertIn("phases   1 scanned", result.stdout)
+
 
 class WorkflowContractTest(unittest.TestCase):
     def test_objective_template_is_planning_ready(self):

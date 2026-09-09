@@ -20,12 +20,16 @@ Stdlib only, no install step.
   plan start T2 [--resume]         claim one approved build task
   plan bump                       bump the phase rev, at the start of a revise
   plan reviewed                   record that this rev has had a review pass
+  plan metrics                    deterministic workflow metrics across every phase
   plan version                    print the coldsession release version
 """
 
+import glob
 import os
 import re
+import subprocess
 import sys
+from datetime import datetime
 
 TOOL_VERSION = "2.2.0"
 FORMAT_VERSION = "1.4.0"
@@ -1012,12 +1016,155 @@ def cmd_version(_phase, _args):
     return 0
 
 
+# --------------------------------------------------------------- metrics
+
+def _phase_files():
+    """Every phase file on disk, `.log.md` handoffs excluded."""
+    plans_dir = os.path.join(ROOT, "docs", "plans")
+    try:
+        paths = glob.glob(os.path.join(plans_dir, "*.md"))
+    except OSError:
+        return []
+    return sorted(p for p in paths if not p.endswith(".log.md"))
+
+
+def _load_phases():
+    """Every phase file that parses, skipping any that don't.
+
+    Unlike every other subcommand, metrics has no single `current:` phase to
+    trust: it reads the whole `docs/plans/` directory, so one unreadable or
+    malformed file must not take the rest of the report down with it.
+    """
+    phases = []
+    for path in _phase_files():
+        try:
+            phases.append(read_phase(path))
+        except Exception:
+            continue
+    return phases
+
+
+def _git_cycle_days(path):
+    """Days between a phase file's first and most recent commit, or None.
+
+    None covers every way this can't be answered -- git missing, the path
+    outside a repo, the file never committed -- so metrics degrades to "n/a"
+    for that phase rather than failing the whole report.
+    """
+    rel = os.path.relpath(path, ROOT)
+    try:
+        result = subprocess.run(
+            ["git", "-C", ROOT, "log", "--follow", "--format=%aI", "--", rel],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    stamps = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if len(stamps) < 2:
+        return None
+    try:
+        parsed = sorted(datetime.fromisoformat(s) for s in stamps)
+    except ValueError:
+        return None
+    return (parsed[-1] - parsed[0]).total_seconds() / 86400.0
+
+
+def _fmt_avg(values, unit=""):
+    if not values:
+        return "n/a"
+    return f"avg {sum(values) / len(values):.1f}{unit} ({len(values)} phase(s))"
+
+
+def cmd_metrics(_phase, _args):
+    """Deterministic metrics over every phase file, for the Stage 6 loopback.
+
+    Scans docs/plans/*.md directly rather than the current phase, so -- like
+    guard -- it must fail open: no docs/plans directory, no PLAN.md, or a
+    repo that hasn't adopted coldsession yet all exit 0 with nothing to
+    report, never a traceback.
+    """
+    try:
+        phases = _load_phases()
+    except Exception:
+        return 0
+    if not phases:
+        print("no phase files under docs/plans/; nothing to report")
+        return 0
+
+    closed = [p for p in phases if p["meta"].get("status") == "closed"]
+    approved = [p for p in phases if p["meta"].get("status") == "approved"]
+    draft = len(phases) - len(closed) - len(approved)
+
+    print(f"phases   {len(phases)} scanned "
+          f"({len(closed)} closed, {len(approved)} approved, {draft} draft)")
+
+    print("\nleading indicators")
+
+    revisions = [intof(p["meta"].get("ready"), 0) - 1
+                 for p in phases if p["meta"].get("ready") is not None]
+    print(f"  revisions to approval   {_fmt_avg(revisions)}")
+
+    if revisions:
+        first_pass = sum(1 for r in revisions if r == 0)
+        rate = 100.0 * first_pass / len(revisions)
+        print(f"  first-pass approve rate {rate:.0f}% ({first_pass} of {len(revisions)})")
+    else:
+        print("  first-pass approve rate n/a (no phase has an approved revision yet)")
+
+    blocked_counts = [sum(1 for t in p["tasks"].values() if t["status"] == "blocked")
+                       for p in phases]
+    phases_with_blocked = sum(1 for c in blocked_counts if c)
+    print(f"  tasks blocked           {sum(blocked_counts)} total across "
+          f"{phases_with_blocked} of {len(phases)} phase(s)")
+
+    rounds = [intof(p["meta"].get("rev"), 1) for p in phases]
+    print(f"  review rounds           {_fmt_avg(rounds)}")
+
+    print("\nlagging indicators")
+
+    by_sev = {}
+    for p in phases:
+        for f in p["findings"].values():
+            by_sev[f["severity"]] = by_sev.get(f["severity"], 0) + 1
+    total_findings = sum(by_sev.values())
+    if total_findings:
+        sev_line = ", ".join(f"{sev} {by_sev[sev]}" for sev in SEVERITIES if sev in by_sev)
+        print(f"  findings by severity    {sev_line} ({total_findings} total)")
+    else:
+        print("  findings by severity    none recorded")
+
+    reopened = sum(1 for p in closed for c in p["changelog"] if c["state"] == "open")
+    print(f"  findings reopened       {reopened} (across {len(closed)} closed phase(s))")
+
+    resolved = sum(1 for p in phases for f in p["findings"].values()
+                   if f["status"] == "resolved")
+    accepted = sum(1 for p in phases for f in p["findings"].values()
+                   if f["status"] == "accepted")
+    if resolved + accepted:
+        share = 100.0 * resolved / (resolved + accepted)
+        print(f"  resolved vs accepted    {resolved} resolved, {accepted} accepted "
+              f"({share:.0f}% resolved)")
+    else:
+        print("  resolved vs accepted    n/a (no closed findings yet)")
+
+    cycle_days = [d for d in (_git_cycle_days(p["path"]) for p in closed) if d is not None]
+    if cycle_days:
+        print(f"  phase cycle time        {_fmt_avg(cycle_days, 'd')} (git-tracked, closed)")
+    else:
+        print("  phase cycle time        n/a (no closed phase is tracked in git history)")
+
+    return 0
+
+
 COMMANDS = {"version": cmd_version, "status": cmd_status, "lint": cmd_lint,
             "next": cmd_next, "brief": cmd_brief, "start": cmd_start,
             "done": cmd_done, "block": cmd_block, "begin": cmd_begin,
             "finish": cmd_finish,
             "findings": cmd_findings, "resolve": cmd_resolve, "bump": cmd_bump,
-            "reviewed": cmd_reviewed, "recommend": cmd_recommend}
+            "reviewed": cmd_reviewed, "recommend": cmd_recommend,
+            "metrics": cmd_metrics}
 
 
 def main():
@@ -1028,8 +1175,12 @@ def main():
     name = argv[0]
     if name not in COMMANDS:
         die(f"unknown command {name!r}. Try: {', '.join(COMMANDS)}")
-    if name == "version":
-        return cmd_version(None, argv[1:])
+    if name in ("version", "metrics"):
+        # Both answer without a `current:` phase: version needs no phase file
+        # at all, and metrics scans every phase file itself. Neither may go
+        # through read_phase(read_index()) -- that dies on a repo with no
+        # PLAN.md yet, which is exactly the case metrics must fail open on.
+        return COMMANDS[name](None, argv[1:])
     phase = read_phase(read_index())
     return COMMANDS[name](phase, argv[1:]) or 0
 
