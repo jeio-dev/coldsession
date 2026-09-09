@@ -39,6 +39,8 @@ FORMAT_VERSION = "1.4.0"
 
 ROOT = os.environ.get("PLAN_ROOT", ".")
 INDEX = os.path.join(ROOT, "PLAN.md")
+AGENTS_PATH = os.path.join(ROOT, "AGENTS.md")
+AGENTS_MD_BUDGET = 60
 
 TASK_RE = re.compile(r"^\s{2}(T\d+):\s*\{(.*)\}\s*$")
 HEAD_RE = re.compile(r"^##\s+(.+?)\s*$")
@@ -396,6 +398,16 @@ def lint_issues(phase):
         warns.append("W05 round 3 still has an open Critical; the phase is too large "
                      "or the objective is wrong. Split it and re-plan rather than "
                      "revising again")
+
+    if os.path.exists(AGENTS_PATH):
+        try:
+            agents_lines = len(read_text(AGENTS_PATH).splitlines())
+        except OSError:
+            agents_lines = 0
+        if agents_lines > AGENTS_MD_BUDGET:
+            warns.append(f"W06 AGENTS.md is {agents_lines} lines, over the "
+                         f"{AGENTS_MD_BUDGET}-line budget; a build session re-reads it "
+                         "every task, trim it before adding more")
 
     return errs, warns
 

@@ -1395,7 +1395,14 @@ handoff docs/plans/02-offline-sync.log.md  (read the last entry only)</code></pr
     <h3>At the phase close</h3>
     <p>Corrections are the raw material for AGENTS.md, but you can't count
       them inside a session that only lives for one task. Collect them at the
-      boundary instead, where you can see the whole phase.</p>
+      boundary instead, where you can see the whole phase — and only write one
+      down on its second occurrence. The first time is signal, not yet a
+      pattern, even when it was caused by missing repository guidance.
+      Once AGENTS.md hits its sixty-line budget (<code>plan lint</code> warns
+      <code>W06</code> past that, never blocking a build), the close audit
+      names the line a new one replaces instead of appending — the file's
+      growth stays bounded by the rule that fills it, not by a linter noticing
+      afterward.</p>
 
     <div class="code-block">
       <div class="code-head"><span>.claude/commands/cs-close.md</span><button class="copy-btn" type="button">Copy</button></div>

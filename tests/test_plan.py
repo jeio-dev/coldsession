@@ -210,6 +210,25 @@ class PlanRuntimeTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("E22", result.stdout)
 
+    def test_lint_warns_when_agents_md_is_over_budget(self):
+        self.write_phase()
+        (self.root / "AGENTS.md").write_text(
+            "\n".join(f"line {i}" for i in range(61)) + "\n", encoding="utf-8")
+        result = self.run_plan("lint")
+        self.assertIn("W06", result.stdout)
+
+    def test_lint_does_not_warn_when_agents_md_is_within_budget(self):
+        self.write_phase()
+        (self.root / "AGENTS.md").write_text(
+            "\n".join(f"line {i}" for i in range(60)) + "\n", encoding="utf-8")
+        result = self.run_plan("lint")
+        self.assertNotIn("W06", result.stdout)
+
+    def test_lint_does_not_warn_with_no_agents_md(self):
+        self.write_phase()
+        result = self.run_plan("lint")
+        self.assertNotIn("W06", result.stdout)
+
     def test_metrics_fails_open_with_no_plan_state(self):
         with tempfile.TemporaryDirectory() as empty_root:
             env = os.environ.copy()

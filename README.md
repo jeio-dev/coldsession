@@ -413,6 +413,13 @@ Searching is not reading. To locate something, a session dispatches a subagent
 and takes back the `file:line`, keeping grep output out of the context that
 has to hold the task.
 
+`AGENTS.md` carries the most weight in that prefix because it is the one file
+every task in every phase rereads unchanged. `/cs-groundwork` writes it under
+60 lines; `plan lint` warns (`W06`, never an error) once it grows past that.
+`/cs-close` keeps it bounded at the source rather than at the linter: a
+correction earns a line only on its second occurrence, and adding one to a
+full file names the line it replaces.
+
 ## Handoffs
 
 Each build task appends at most ten lines to `docs/plans/NN-slug.log.md`:
