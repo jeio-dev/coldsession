@@ -36,7 +36,13 @@ Do not open, search, quote, or otherwise read `OBJECTIVE.md`, even on
   repository search and read only files needed to make task paths exact.
 
 A one-line phase is an intention, not a specification. Ask all material
-questions before writing.
+questions before writing, as one numbered round: every question asked together,
+each with its recommended answer, then stop and wait. Find facts yourself with a
+search subagent rather than asking me for anything discoverable.
+
+Normally one round, at most two. Phase scope is not product scope and Plan is
+not a second Define. Needing a third round means the phase is too large; split
+it, exactly as a third review round does.
 
 ## Plan quality
 
@@ -57,6 +63,18 @@ The task graph uses exactly:
   tests, configuration, generated definitions, and new files. Missing paths
   stall Build; broad paths waste context.
 - Keep concurrently runnable tasks from sharing files where practical.
+
+Size every task at the lowest rung that holds, and stop there:
+
+1. No task at all, because an existing capability already covers it.
+2. A configuration or flag change.
+3. An extension of an existing file or function.
+4. A new file.
+5. A new abstraction or module.
+
+A task sized one rung too high inflates `files`, and `files` is the contract a
+Build session is bounded to. Over-scope here is not untidiness; it is context
+the phase spends and does not get back.
 
 Each matching `## T(n)` contains Goal, concrete Deliverables, observable
 Acceptance Criteria, and `Verify:` with an exact runnable command and exact

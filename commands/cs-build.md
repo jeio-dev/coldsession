@@ -25,6 +25,16 @@ only file:line results.
 Restate the acceptance criteria and Verify line, then implement only this task.
 Do not change architecture, the plan, or another task.
 
+The acceptance criteria is a ceiling, not a floor. Before writing, take the
+lowest rung that satisfies it: an existing capability, a configuration change,
+an extension of existing code, a new file, a new abstraction, in that order.
+Prefer a native or already-present primitive over a new component. Add no error
+handling, configuration surface, or abstraction the criteria did not ask for.
+
+If the task was specified a rung higher than it needs, implement the lower rung
+that meets the criteria and record the mismatch in the phase log. That is not a
+blocker.
+
 A task is done only after running its Verify command and showing the output.
 For a named visual check, perform the exact action and report the visible result.
 

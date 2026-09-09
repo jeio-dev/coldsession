@@ -4,7 +4,35 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
-## [2.1.0]
+## [v2.2.0]
+
+### Questioning rounds and task sizing
+
+- `/cs-define` and `/cs-plan` now ask in numbered rounds instead of one question
+  at a time. A round is every question whose prerequisites are already settled,
+  asked together, each carrying a recommended answer so the round can be
+  accepted whole. Define runs until nothing is left open; Plan takes one round,
+  at most two, and treats a third as a signal to split the phase.
+- Both commands now find facts with a search subagent rather than asking for
+  anything discoverable. Their Codex adapters carry the bounded read-only
+  fallback `cs-build` already shipped, for sessions without subagents.
+- `/cs-plan` and `/cs-build` size work at the lowest rung that holds: no task at
+  all, a configuration change, an extension of existing code, a new file, a new
+  abstraction. A task built a rung too high widens `files`, which is the
+  contract Build is bounded to.
+- `/cs-review` now names the rung an over-built task should have stopped at and
+  makes that rung the recommended fix, scoring `Unnecessary scope` as Medium by
+  default and High when it widens `files` past what the goal needs.
+- Prompt wording only. The phase format, `plan` subcommands and exit codes,
+  install paths, and entry-point names are unchanged.
+
+### Fixed
+
+- `plan version` reported `2.0.0` on the v2.1.0 release. `TOOL_VERSION` now
+  tracks the tag, and the install pins in README.md and the workflow document
+  point at the release they document.
+
+## [v2.1.0]
 
 ### Durable objectives and guarded reruns
 

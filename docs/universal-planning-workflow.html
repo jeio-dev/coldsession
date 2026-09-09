@@ -716,7 +716,7 @@
     <div class="code-block">
       <div class="code-head"><span>bash</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>cd ~/my-project
-git clone --depth 1 --branch v2.0.0 https://github.com/&lt;you&gt;/coldsession .coldsession
+git clone --depth 1 --branch v2.2.0 https://github.com/&lt;you&gt;/coldsession .coldsession
 .coldsession/install.sh --agent both
 git add .claude .agents templates &amp;&amp; git commit -m "chore: coldsession"</code></pre>
     </div>
@@ -748,13 +748,26 @@ git add .claude .agents templates &amp;&amp; git commit -m "chore: coldsession"<
 - OBJECTIVE.md exists: stop unless --revise was explicit.
 - An interrupted revision continues only with --revise --resume.
 
-Ask every blocking scope, user, constraint, and success question. Then write
+Ask every blocking scope, user, constraint, and success question, in rounds:
+one round is every question whose prerequisites are settled, asked together and
+numbered, each with a recommended answer. Find facts with a search subagent
+rather than asking. Stop when nothing is left open. Then write
 OBJECTIVE.md once from templates/OBJECTIVE.md with objective-rev, status:
 ready, one smallest end-to-end journey, measurable success criteria, explicit
 exclusions and assumptions, and `Open questions: None.`
 
 Do not write tasks, phases, placeholders, TODOs, or unanswered alternatives.</code></pre>
     </div>
+
+    <p>The questions arrive in rounds, not one at a time. A round is every
+      decision whose prerequisites are already settled, asked together and
+      numbered, each with the answer the session recommends — so you can accept
+      a whole round in a line instead of writing prose five times over. Your
+      answers settle those decisions and unblock the ones that depended on them,
+      and that is the next round. Anything the session could look up is never a
+      question: it dispatches a search subagent and keeps only the answer. The
+      interview ends when nothing is left open, and that emptiness is exactly
+      what triggers the single write of <code>OBJECTIVE.md</code>.</p>
 
     <div class="note">
       <span class="tick">&gt;</span>
@@ -864,9 +877,29 @@ requires --resume; an active phase is never rewritten.
 
 Write one phase of at most eight tasks. Each task has true dependencies, a
 complete minimal files list, observable acceptance criteria, and an exact
-Verify command. Resolve blocking questions first and record `Open questions:
-None.` Move current: only after the new phase exists and lints.</code></pre>
+Verify command. Size each task at the lowest rung that holds: no task at all,
+a configuration change, an extension, a new file, a new abstraction.
+
+Resolve blocking questions first, as one round of numbered questions carrying
+recommended answers; two rounds at the outside. Record `Open questions: None.`
+Move current: only after the new phase exists and lints.</code></pre>
     </div>
+
+    <p>Plan asks in the same rounds Define does, but capped: one, or two at the
+      outside. Phase scope is not product scope, and a phase that needs a third
+      round of questions is telling you it is really two phases. That is the
+      same signal the linter raises as <code>W05</code> when a third review
+      round still turns up a Critical.</p>
+
+    <p>The rung ladder is where over-building gets caught while it is still
+      free to fix. Ask what the smallest change satisfying the goal is and stop
+      at the first rung that holds: often no task at all, because something
+      already does it; failing that a flag, an extension of code that exists, a
+      new file, and only then a new abstraction. This is not tidiness. A task
+      sized one rung high widens its <code>files</code> list, and
+      <code>files</code> is the envelope every Build session is bounded to — so
+      the cost is paid again on every read of that task, by sessions that never
+      saw the decision.</p>
 
     <h3>The task graph</h3>
     <p>The phase file's frontmatter is machine-readable and its body is prose.
@@ -948,6 +981,8 @@ only the matching interrupted pass may resume.
 With no reviewed: field, inspect the full plan and codebase independently.
 When reviewed is lower than rev, inspect only the current changelog entries
 and affected tasks. Record each issue once in the seven-field Findings shape.
+For an over-built task, name the rung it should have stopped at and make that
+rung the fix: Medium normally, High when it widens files past the goal.
 
 Run `plan finish review` to set reviewed: and clear the marker atomically,
 then lint and print `plan recommend`. A completed revision review names what
@@ -1189,6 +1224,12 @@ with search output.
 Implement that task only. Do not change the architecture or the plan. Do not
 start the next task. Restate the acceptance criteria and the Verify line
 before you begin.
+
+The acceptance criteria is a ceiling, not a floor. Take the lowest rung that
+satisfies it, and prefer a native or already-present primitive over a new
+component. Add no error handling, configuration, or abstraction it did not ask
+for. If the task was specified a rung too high, build the lower one that meets
+the criteria and note the mismatch in the phase log.
 
 A task is done only when you have run its Verify command and shown me the
 output. Not "the tests should pass" — the run, and what it printed. If there

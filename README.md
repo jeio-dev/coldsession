@@ -18,7 +18,7 @@ and the temporary clone deletes itself.
 
 ```bash
 cd ~/my-project
-git clone --depth 1 --branch v2.0.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.2.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/install.sh --agent both
 git add .claude .agents templates && git commit -m "chore: coldsession"
 ```
@@ -27,12 +27,12 @@ git add .claude .agents templates && git commit -m "chore: coldsession"
 
 ```powershell
 cd $HOME\my-project
-git clone --depth 1 --branch v2.0.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.2.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .\.coldsession\install.ps1 -Agent both
 git add .claude .agents templates; git commit -m "chore: coldsession"
 ```
 
-`--branch v2.0.0` pins the clone to a tagged release rather than whatever's
+`--branch v2.2.0` pins the clone to a tagged release rather than whatever's
 on `main`, so following this README always gets a tested version; bump it to
 the latest tag from the [releases page](https://github.com/jeio-dev/coldsession/tags)
 if this copy of the README is older than the repo. The clone never outlives
@@ -71,7 +71,7 @@ phase files.
 
 ```bash
 cd ~/my-project
-git clone --depth 1 --branch v2.0.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.2.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/install.sh --agent both
 git add .claude .agents && git commit -m "chore: update coldsession"
 ```
@@ -121,7 +121,7 @@ skills remain small adapters for invocation arguments and next-step display.
 
 | Command | Session | Mode | What it does |
 |---|---|---|---|
-| `/cs-define <idea>` | 1 | plan · opus | Idea → durable `OBJECTIVE.md`. Asks, doesn't guess. |
+| `/cs-define <idea>` | 1 | plan · opus | Idea → durable `OBJECTIVE.md`. Asks in rounds, doesn't guess. |
 | `/cs-groundwork` | 1 | normal · sonnet | Greenfield only. Reads the objective and closes Phase 00. |
 | `/cs-plan` | 1 | write · sonnet | Initial objective or closed boundary → one detailed phase. |
 | `/cs-review [--resume]` | 2+, new | plan · opus | Guarded full first pass; changelog-scoped after revision. |
@@ -146,6 +146,15 @@ start cold. Once `PLAN.md` exists, Plan never reads the objective again: phase
 state, the closed-phase handoff, and repository guidance are the bounded input.
 Every command from `/cs-plan` onward prints `plan recommend`, so the next step
 comes from disk rather than session memory.
+
+Define and Plan ask in rounds rather than one question at a time. A round is
+every question whose prerequisites are already settled, asked together and
+numbered, each carrying a recommended answer so the round can be accepted
+whole. Answers push the frontier outward and the next round is whatever they
+unblocked. Facts are never a question: a session dispatches a search subagent
+for anything it could look up itself. Define runs as many rounds as the
+objective needs; Plan takes one, at most two, because a phase needing a third
+round is a phase to split.
 
 Stateful commands claim their work before substantive reads or writes. A plain
 duplicate stops; an interrupted matching stage continues only with explicit
@@ -223,6 +232,12 @@ Verify: `npm test -- queue` exits 0
 the contract a build session is bounded to: a missing entry stalls the build,
 an over-broad one spends context you don't get back. The linter can only
 check that it's non-empty, so `/cs-review` checks it against the real codebase.
+
+Task size feeds the same field. Plan sizes each task at the lowest rung that
+holds — no task at all, a configuration change, an extension of existing code,
+a new file, a new abstraction — because a task built one rung too high widens
+`files` before anyone has written a line. `/cs-review` names the rung a task
+should have stopped at and files the miss as `Unnecessary scope`.
 
 `Verify` is the other load-bearing field. Build cannot mark a task done
 without running that command and showing its output, so a task whose Verify
@@ -329,10 +344,12 @@ reads the last entry, so nothing has to survive in a terminal you closed.
 3. Persisted objective and stage markers, so cold starts do not reconstruct intent.
 4. Changelog-scoped later rounds inside `/cs-review`, instead of another full read.
 5. Eight tasks per phase, capped, because every session re-reads the file.
-6. Moderate reasoning effort for build. In Claude Code that is
+6. Task sizing at the lowest rung that holds, because an over-built task widens
+   `files` and every read after it pays.
+7. Moderate reasoning effort for build. In Claude Code that is
    `claude --effort medium`; in Codex, use the equivalent session setting.
-7. Search subagents, results only.
-8. Exit sessions, never `/compact` — it reprocesses the whole conversation and
+8. Search subagents, results only.
+9. Exit sessions, never `/compact` — it reprocesses the whole conversation and
    then charges you to re-read the summary.
 
 ## Parallel builds

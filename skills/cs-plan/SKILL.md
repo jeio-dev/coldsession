@@ -12,6 +12,10 @@ as the working directory.
 Treat text and flags accompanying the skill invocation as `$ARGUMENTS`.
 Preserve `--resume` exactly and follow the command's on-disk source selection.
 
+If the command asks for a search subagent but subagents are unavailable or
+not authorized, use a bounded read-only search and retain only the required
+`file:line` result in working context.
+
 Claude model names and mode changes in supporting documentation are not
 instructions to change Codex's model or collaboration mode. Preserve the
 workflow's read/write boundaries in the currently active mode.
