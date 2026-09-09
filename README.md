@@ -79,7 +79,8 @@ git add .claude .agents && git commit -m "chore: update coldsession"
 ```
 .claude/commands/cs-*.md             Claude Code commands
 .claude/bin/plan{,.cmd}              Claude runtime (when selected)
-.claude/settings.json                Claude routing + permissions
+.claude/hooks/cs-guard-*{.sh,.cmd}   Claude deterministic gates
+.claude/settings.json                Claude routing, permissions + hooks
 .agents/skills/cs-*                  Codex skill adapters
 .agents/coldsession/commands/cs-*.md Codex command copies
 .agents/coldsession/bin/plan{,.cmd}  Codex runtime (when selected)
@@ -117,6 +118,14 @@ The files in `commands/` are canonical. The installer copies them to Claude
 and/or `.agents/coldsession/commands`, patching only the runtime path. Codex
 skills remain small adapters for invocation arguments and next-step display.
 
+**The surfaces diverge in enforcement, not only in sigil.** Claude Code has
+hooks, so four of this workflow's rules are checked by a program before the
+tool call runs. Codex has no hook mechanism, so there the same four rules are
+prompt text a model is asked to honour. Everything else — the commands, the
+phase format, `plan`, the findings — is identical. Where a rule left a command
+file because a hook took it over, the Codex skill adapter keeps it in prose;
+that is what those adapters are for.
+
 ## The loop
 
 | Command | Session | Mode | What it does |
@@ -139,7 +148,8 @@ A command or skill supplies prompt text and nothing else. It does not start a
 session, enter plan mode, or pick a model. `/cs-review` (or `$cs-review`)
 invoked in the session that wrote the plan gives you a
 compromised review with correct wording, which is worse than skipping it — it
-looks like a review.
+looks like a review. On Claude Code a [hook](#hooks) refuses that invocation
+outright; on Codex it remains yours to honour.
 
 `/cs-define` writes `OBJECTIVE.md`; Groundwork or the first Plan can therefore
 start cold. Once `PLAN.md` exists, Plan never reads the objective again: phase
@@ -163,8 +173,10 @@ duplicate stops; an interrupted matching stage continues only with explicit
 parallel work on disjoint tasks.
 
 `/cs-approve` deliberately cannot approve. A clean pass writes `ready: <rev>`;
-you then set `status: approved` yourself. A failed check persists every
-actionable gap as an open finding so Revise never depends on transcript text.
+you then set `status: approved` yourself — on Claude Code an agent that tries
+to write that line is refused by a [hook](#hooks). A failed check persists
+every actionable gap as an open finding so Revise never depends on transcript
+text.
 
 **Stop condition.** If round three still produces a Critical, the phase is
 too large or the objective is wrong. Split it and re-plan. A loop with no exit
@@ -261,6 +273,8 @@ plan finish STAGE        complete a claim; approve/close take --pass or --fail
 plan start T2            claim a pending approved task; --resume recovers
 plan bump                bump the phase rev, at the start of a revise pass
 plan reviewed            record that this rev has had a review pass
+plan metrics             workflow health across every phase on disk
+plan guard KIND [target] the deterministic gate behind a hook; fails open
 ```
 
 `lint` catches unparseable task lines, unknown or cyclic dependencies, tasks
@@ -295,6 +309,60 @@ Because it reads the whole repository rather than one phase, it does not
 require `PLAN.md` to exist or its `current:` pointer to resolve. No
 `docs/plans/`, no readable phase files, or a repo that has not adopted
 coldsession yet all print one line and exit 0, never a traceback.
+
+## Hooks
+
+A command is an advisory control: it asks a model to do something. A hook is
+the deterministic layer behind it. This workflow's four most load-bearing
+rules are all decidable by a program, so on the Claude surface they are
+decided by one — installed to `.claude/hooks/` and registered in
+`.claude/settings.json`.
+
+| Gate | Fires on | Refuses |
+|---|---|---|
+| Cold session | `UserPromptSubmit` | `/cs-review`, `/cs-approve`, or `/cs-close` in a session that already ran `/cs-plan` or `/cs-revise` (`E25`) |
+| Bounded reads | `PreToolUse` · `Read\|Edit\|Write` | a path outside the brief, while a task is `in_progress` (`E23`) |
+| Human approval | `PreToolUse` · `Edit\|Write` | an edit that introduces `status: approved` in a phase file (`E24`) |
+| Lint on write | `PostToolUse` · `Edit\|Write` | nothing; it surfaces the phase file's E-codes on the write that caused them |
+
+The first one is the product's name. A review written in the session that
+wrote the plan has the right wording and none of the independence, which is
+worse than no review because it looks like one — and until now nothing
+stopped it.
+
+Each wrapper is four lines: it pipes the hook event to `plan guard`, which
+owns every decision and carries the tests. `E23`–`E25` are guard codes, in
+the same numbering as the linter's so a message is never ambiguous about
+which check produced it.
+
+```
+plan guard read  [PATH]                 is PATH in the in-progress brief?
+plan guard write [PATH]                 would this write approve a phase?
+plan guard lint  [PATH]                 the phase file's E-codes, if any
+plan guard stage [CMD] [--session ID]   is this session cold enough for CMD?
+```
+
+With no argument each reads the hook event as JSON on stdin; the argument
+forms exist for humans and tests. Exit 0 allows, exit 2 refuses with the
+reason on stderr, which is what Claude Code shows.
+
+**Guard fails open, always.** It runs on every prompt and every file tool call
+in whatever repository you happen to be in, so no `PLAN.md`, an unresolvable
+`current:` pointer, an unreadable phase, no task in progress, or no session id
+all exit 0 in silence. It denies only on a positive match. A gate that dies
+here would break repositories that have never heard of coldsession, which is a
+far worse failure than a gate that misses.
+
+Two limits worth naming. While `plan next --parallel` has two build terminals
+running, a hook cannot tell which session owns which task, so the read gate
+allows the *union* of every in-progress task's read set — still a large
+narrowing over the whole repository, and narrowing it to the owning task means
+having `plan start` stamp a session id, which is a later change. And the read
+gate polices paths inside the project only: a path outside it is not something
+a phase file can describe.
+
+Hooks ship as `.sh`/`.cmd` pairs. `install.sh` registers the `.sh`,
+`install.ps1` the `.cmd`, for the same reason each registers its own `plan`.
 
 ## The phase boundary
 
@@ -354,7 +422,11 @@ reads the last entry, so nothing has to survive in a terminal you closed.
 
 ## Token levers, largest first
 
-1. Bounded reads. A build session opens a listed set, not a codebase.
+1. Bounded reads. A build session opens a listed set, not a codebase. On the
+   Claude surface a hook enforces this rather than asking for it. That saves
+   no prompt text worth counting; what it saves is the session that would
+   otherwise have read a codebase instead of four files, which is orders of
+   magnitude larger than any wording. Prevented overrun, not prompt savings.
 2. Fixed read order, so the cache prefix is reused instead of rebuilt.
 3. Persisted objective and stage markers, so cold starts do not reconstruct intent.
 4. Changelog-scoped later rounds inside `/cs-review`, instead of another full read.
@@ -417,7 +489,8 @@ Semver applies to four things. Everything else is free to change in a patch.
 3. **`plan` subcommands and exit codes.** `lint` exits 1 on error; scripts can
    rely on it. Subcommands get added in a minor release, never removed in one.
 4. **Install paths.** `.claude/commands/cs-*`, `.claude/bin/plan`,
-   `.agents/skills/cs-*`, `.agents/coldsession/`, and `templates/`.
+   `.claude/hooks/cs-guard-*`, `.agents/skills/cs-*`, `.agents/coldsession/`,
+   and `templates/`.
 
 Prompt wording inside a command is not part of the contract — it will change
 whenever the model's behavior makes it worth changing.

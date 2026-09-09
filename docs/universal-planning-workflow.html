@@ -696,8 +696,9 @@
         <div class="gear-name">You do</div>
         <div class="gear-body">Start the session, enter or exit plan mode, set
           <code>--effort</code> at launch. The session and mode chips on each
-          step below are still the instruction — the command file can't
-          enforce them.</div>
+          step below are still the instruction — a command file cannot start a
+          session or pick a model for you. A hook can refuse a judging command
+          in the wrong one; see below.</div>
       </div>
       <div class="gear">
         <div class="gear-name">Settings do</div>
@@ -710,6 +711,62 @@
         <div class="gear-body">The prompt text, the argument substitution, and
           the fact that it's the same text in every repo and every run.</div>
       </div>
+    </div>
+
+    <h3>Where the prompt stops and a program starts</h3>
+    <p>Everything above is advisory. A command asks a model to do something,
+      and the model usually does it — but "usually" is the whole problem for
+      the rules this workflow rests on. Four of them are decidable by a
+      program, at no model cost, so on Claude Code a program decides them.
+      They install to <code>.claude/hooks/</code> and register in
+      <code>.claude/settings.json</code>.</p>
+
+    <div class="gears">
+      <div class="gear">
+        <div class="gear-name">Cold session</div>
+        <div class="gear-body">A judging command refused in the session that
+          authored the plan. This is the claim the whole workflow is named
+          for, and nothing enforced it until now.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Bounded reads</div>
+        <div class="gear-body">While a task is <code>in_progress</code>, a
+          read outside the brief is refused rather than requested. The
+          envelope below stops being a suggestion.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Human approval</div>
+        <div class="gear-body">An edit that writes
+          <code>status: approved</code> into a phase file is refused. The
+          agent that wrote the plan has no way to approve it.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Lint on write</div>
+        <div class="gear-body">A malformed phase file reports its E-codes on
+          the write that caused them, instead of a review round later.</div>
+      </div>
+    </div>
+
+    <p>Each hook is a four-line wrapper that pipes the event to
+      <code>plan guard</code>; every decision lives in the one tested Python
+      file, so the gate and the <code>brief</code> it enforces can never
+      disagree about what a session may open.</p>
+
+    <p>The important property is not what it refuses but what it does when
+      it cannot tell. <code>guard</code> runs on every prompt and every file
+      tool call in whatever repository you happen to be in — including one
+      that has never heard of coldsession. So it fails open: no PLAN.md, an
+      unresolvable pointer, an unreadable phase, or no task in progress all
+      exit 0 in silence, and it refuses only on a positive match. A gate that
+      threw here would break unrelated projects, which is a far worse failure
+      than a gate that occasionally misses.</p>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>Codex has no hook mechanism, so there all four rules stay prompt
+        text. The surfaces are identical in commands, phase format, and
+        tooling, and differ in <em>enforcement</em> — worth knowing before you
+        assume a rule holds because it held yesterday on the other one.</p>
     </div>
 
     <h3>Setting it up</h3>
@@ -1280,6 +1337,12 @@ handoff docs/plans/02-offline-sync.log.md  (read the last entry only)</code></pr
       the prefix is identical across every build session in the phase, so
       everything before the task's own files is a cache read rather than a
       fresh one.</p>
+
+    <p class="fine">On Claude Code this list is enforced, not requested: while
+      the task is <code>in_progress</code>, a read outside it is refused with
+      the task id. That is the largest token lever in the workflow, and not
+      because it deletes prompt lines — it deletes the session that would
+      otherwise have read a codebase instead of four files.</p>
 
     <p>Searching is not reading. When a session needs to locate something it
       dispatches a subagent and takes back the <code>file:line</code>, so grep

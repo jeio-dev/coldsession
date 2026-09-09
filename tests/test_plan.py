@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -84,6 +85,20 @@ class PlanRuntimeTest(unittest.TestCase):
         if ok and result.returncode != 0:
             self.fail(f"plan {' '.join(args)} failed:\n{result.stdout}{result.stderr}")
         return result
+
+    def run_guard(self, *args, payload=None, root=None, session_dir=None):
+        """A hook call: the event JSON on stdin, the decision in the exit code."""
+        env = os.environ.copy()
+        env["PLAN_ROOT"] = str(root or self.root)
+        env["PLAN_SESSION_DIR"] = str(session_dir or (self.root / ".sessions"))
+        return subprocess.run(
+            [sys.executable, str(PLAN), "guard", *args],
+            input="" if payload is None else json.dumps(payload),
+            text=True,
+            capture_output=True,
+            env=env,
+            check=False,
+        )
 
     def test_review_claim_requires_explicit_resume_and_cleans_up(self):
         self.write_phase()
@@ -246,6 +261,143 @@ class PlanRuntimeTest(unittest.TestCase):
         self.assertIn("phases   1 scanned", result.stdout)
 
 
+    # ------------------------------------------------------------- guard
+
+    def test_guard_fails_open_with_no_plan_state(self):
+        """The highest-risk regression in the hooks: guard runs on every
+        prompt and every file tool call, including in repositories that have
+        never heard of coldsession. All four gates must exit 0 in silence."""
+        with tempfile.TemporaryDirectory() as empty_root:
+            for args in (("read", "somefile"), ("write", "somefile"),
+                         ("lint", "somefile"),
+                         ("stage", "/cs-review", "--session", "s1")):
+                result = self.run_guard(*args, root=empty_root,
+                                        session_dir=Path(empty_root) / ".sessions")
+                self.assertEqual(result.returncode, 0, f"guard {args} denied")
+                self.assertEqual(result.stderr, "", f"guard {args} was not silent")
+
+    def test_guard_fails_open_on_a_dangling_current_pointer(self):
+        self.write_phase(tasks={"T1": ([], "in_progress", ["src/a.py"])})
+        (self.root / "PLAN.md").write_text(
+            "---\ncurrent: docs/plans/missing.md\nworkflow-rev: 1.4.0\n---\n",
+            encoding="utf-8")
+        self.assertEqual(self.run_guard("read", "src/anything.py").returncode, 0)
+
+    def test_guard_bounds_reads_to_the_in_progress_brief(self):
+        self.write_phase(status="approved", ready=1, reviewed=1, tasks={
+            "T1": ([], "done", ["src/schema.py"]),
+            "T2": (["T1"], "in_progress", ["src/queue.py"]),
+            "T3": ([], "pending", ["src/worker.py"]),
+        })
+        for allowed in ("AGENTS.md", "PLAN.md", "src/schema.py", "src/queue.py",
+                        "docs/plans/01-test.md", "docs/plans/01-test.log.md"):
+            self.assertEqual(self.run_guard("read", allowed).returncode, 0, allowed)
+
+        denied = self.run_guard("read", "src/worker.py")
+        self.assertEqual(denied.returncode, 2)
+        self.assertIn("E23", denied.stderr)
+        self.assertIn("T2", denied.stderr)
+
+    def test_guard_allows_the_union_of_every_in_progress_task(self):
+        """plan next --parallel runs two build terminals at once and a hook
+        cannot tell which session owns which task, so the union is the
+        narrowest set that never fires a false positive."""
+        self.write_phase(status="approved", ready=1, reviewed=1, tasks={
+            "T1": ([], "in_progress", ["src/a.py"]),
+            "T2": ([], "in_progress", ["src/b.py"]),
+        })
+        self.assertEqual(self.run_guard("read", "src/a.py").returncode, 0)
+        self.assertEqual(self.run_guard("read", "src/b.py").returncode, 0)
+        self.assertEqual(self.run_guard("read", "src/c.py").returncode, 2)
+
+    def test_guard_allows_everything_while_no_task_is_in_progress(self):
+        self.write_phase()
+        self.assertEqual(self.run_guard("read", "src/anything.py").returncode, 0)
+
+    def test_guard_reads_the_hook_event_from_stdin_bom_and_all(self):
+        """Windows PowerShell prepends a BOM when it pipes to a native
+        command. A BOM that reached json.loads would make every gate on that
+        platform a silent no-op, because guard fails open."""
+        self.write_phase(status="approved", ready=1, reviewed=1,
+                         tasks={"T1": ([], "in_progress", ["src/a.py"])})
+        target = str(self.root / "src" / "nope.py")
+        payload = {"tool_name": "Read", "tool_input": {"file_path": target}}
+        self.assertEqual(self.run_guard("read", payload=payload).returncode, 2)
+
+        env = os.environ.copy()
+        env["PLAN_ROOT"] = str(self.root)
+        with_bom = subprocess.run(
+            [sys.executable, str(PLAN), "guard", "read"],
+            input=b"\xef\xbb\xbf" + json.dumps(payload).encode("utf-8"),
+            capture_output=True, env=env, check=False,
+        )
+        self.assertEqual(with_bom.returncode, 2)
+
+    def test_guard_refuses_an_agent_written_approval(self):
+        self.write_phase()
+        phase = str(self.phase)
+        introduces = self.run_guard("write", payload={"tool_input": {
+            "file_path": phase,
+            "old_string": "status: draft",
+            "new_string": "status: approved"}})
+        self.assertEqual(introduces.returncode, 2)
+        self.assertIn("E24", introduces.stderr)
+
+        whole_file = self.run_guard("write", payload={"tool_input": {
+            "file_path": phase,
+            "content": phase_text(status="approved", ready=1, reviewed=1)}})
+        self.assertEqual(whole_file.returncode, 2)
+
+    def test_guard_allows_an_edit_that_carries_an_approval_through(self):
+        """Only an edit that introduces the line is an approval. An already
+        approved phase edited for another reason is not."""
+        self.write_phase(status="approved", ready=1, reviewed=1)
+        untouched = self.run_guard("write", payload={"tool_input": {
+            "file_path": str(self.phase),
+            "old_string": "status: approved\nreviewed: 1",
+            "new_string": "status: approved\nreviewed: 2"}})
+        self.assertEqual(untouched.returncode, 0)
+
+        source = self.run_guard("write", payload={"tool_input": {
+            "file_path": str(self.root / "src" / "a.py"),
+            "old_string": "x", "new_string": "status: approved"}})
+        self.assertEqual(source.returncode, 0)
+
+    def test_guard_keeps_judging_commands_out_of_the_authoring_session(self):
+        self.write_phase()
+        self.assertEqual(self.run_guard("stage", "/cs-plan", "--session", "A").returncode, 0)
+        for judging in ("/cs-review", "/cs-approve", "/cs-close"):
+            blocked = self.run_guard("stage", judging, "--session", "A")
+            self.assertEqual(blocked.returncode, 2, judging)
+            self.assertIn("E25", blocked.stderr)
+            self.assertIn("cs-plan", blocked.stderr)
+        self.assertEqual(self.run_guard("stage", "/cs-review", "--session", "B").returncode, 0)
+        self.assertEqual(
+            self.run_guard("stage", "/cs-review --resume", "--session", "B").returncode, 0)
+
+    def test_guard_stage_ignores_prose_and_missing_session_ids(self):
+        self.write_phase()
+        self.run_guard("stage", "/cs-revise", "--session", "A")
+        self.assertEqual(
+            self.run_guard("stage", "what does /cs-review do?", "--session", "A").returncode, 0)
+        self.assertEqual(
+            self.run_guard("stage", payload={"prompt": "/cs-review"}).returncode, 0)
+
+    def test_guard_lints_the_phase_file_on_write(self):
+        self.write_phase()
+        self.assertEqual(self.run_guard("lint", str(self.phase)).returncode, 0)
+
+        broken = phase_text().replace(
+            "  T2: {deps: [], status: pending, files: [src/b.py]}",
+            "  T2 deps [] status pending")
+        self.phase.write_text(broken, encoding="utf-8")
+        fired = self.run_guard("lint", str(self.phase))
+        self.assertEqual(fired.returncode, 2)
+        self.assertIn("E01", fired.stderr)
+        self.assertEqual(
+            self.run_guard("lint", str(self.root / "src" / "a.py")).returncode, 0)
+
+
 class WorkflowContractTest(unittest.TestCase):
     def test_objective_template_is_planning_ready(self):
         text = (ROOT / "templates" / "OBJECTIVE.md").read_text(encoding="utf-8")
@@ -266,6 +418,44 @@ class WorkflowContractTest(unittest.TestCase):
         existing_plan_branch = text[marker:boundary]
         self.assertIn("Do not open, search, quote, or otherwise read `OBJECTIVE.md`", existing_plan_branch)
         self.assertIn("Never rewrite an active phase", existing_plan_branch)
+
+    def test_every_hook_ships_for_both_shells(self):
+        """Windows parity, checked rather than remembered: a gate that only
+        has a .sh is a gate that silently does not exist on the PowerShell
+        install path."""
+        hooks = ROOT / "hooks"
+        for kind in ("read", "write", "lint", "stage"):
+            posix = hooks / f"cs-guard-{kind}.sh"
+            windows = hooks / f"cs-guard-{kind}.cmd"
+            self.assertTrue(posix.exists(), posix)
+            self.assertTrue(windows.exists(), windows)
+            for path in (posix, windows):
+                raw = path.read_bytes()
+                self.assertFalse(raw.startswith(b"\xef\xbb\xbf"), f"{path} has a BOM")
+                raw.decode("ascii")
+                self.assertIn(f"guard {kind}".encode(), raw)
+            self.assertNotIn(b"\r", posix.read_bytes(), f"{posix} must be LF")
+            self.assertIn(b"\r\n", windows.read_bytes(), f"{windows} must be CRLF")
+
+    def test_the_codex_adapter_keeps_the_rule_claude_now_enforces(self):
+        """Enforcement asymmetry, stated once and asserted here: the bounded
+        read rule left cs-build.md when the hook took it over, so the Codex
+        adapter -- which has no hooks -- has to carry it in prose."""
+        skill = (ROOT / "skills" / "cs-build" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Read exactly the files the brief lists", skill)
+        self.assertIn("Nothing else.", skill)
+
+    def test_installers_agree_on_the_hook_surface(self):
+        posix = (ROOT / "install.sh").read_text(encoding="utf-8")
+        powershell = (ROOT / "install.ps1").read_text(encoding="utf-8")
+        for kind in ("read", "write", "lint", "stage"):
+            self.assertIn(f"cs-guard-{kind}.sh", posix)
+            self.assertIn(f"cs-guard-{kind}.cmd", powershell)
+        # Both must keep recognising the three-key default written before
+        # hooks existed, or an upgrading user is warned about a file they
+        # never touched.
+        self.assertIn('{"model", "env", "permissions"}', posix)
+        self.assertIn('@("model", "env", "permissions")', powershell)
 
 
 if __name__ == "__main__":
