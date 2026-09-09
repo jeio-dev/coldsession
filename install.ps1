@@ -153,14 +153,21 @@ function Remove-ManagedDirectory($Path) {
     }
 }
 
-# Only this installer's own wrappers, never the whole directory: a project may
-# keep hooks of its own alongside them. The directory goes only if removing
-# ours emptied it.
+# The wrappers this installer ships, and so the only files it will copy or
+# remove: a project may keep hooks of its own in the same directory. One list
+# for both operations, and the same list install.sh uses -- when the two
+# installers disagreed about it, a project uninstalled from PowerShell lost a
+# hook it kept when uninstalled from sh.
+$HookPatterns = @("cs-guard-*.sh", "cs-guard-*.cmd")
+
+# The directory goes only if removing ours emptied it.
 function Remove-ManagedHooks($Root) {
     $dir = "$Root\.claude\hooks"
     if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return }
-    Get-ChildItem -LiteralPath $dir -File -Filter "cs-guard-*" |
-        ForEach-Object { Remove-ManagedFile $_.FullName }
+    foreach ($pattern in $HookPatterns) {
+        Get-ChildItem -LiteralPath $dir -File -Filter $pattern |
+            ForEach-Object { Remove-ManagedFile $_.FullName }
+    }
     if (-not (Get-ChildItem -LiteralPath $dir -Force)) {
         Remove-Item -LiteralPath $dir -Force
     }
@@ -325,8 +332,10 @@ if ($Agent -eq "codex") {
     }
     Copy-Item -LiteralPath "$SourceRoot\bin\plan" -Destination "$DestinationRoot\.claude\bin\plan" -Force
     Copy-Item -LiteralPath "$SourceRoot\bin\plan.cmd" -Destination "$DestinationRoot\.claude\bin\plan.cmd" -Force
-    Get-ChildItem -LiteralPath "$SourceRoot\hooks" -File -Filter "cs-guard-*" | ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName -Destination "$DestinationRoot\.claude\hooks\$($_.Name)" -Force
+    foreach ($pattern in $HookPatterns) {
+        Get-ChildItem -LiteralPath "$SourceRoot\hooks" -File -Filter $pattern | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination "$DestinationRoot\.claude\hooks\$($_.Name)" -Force
+        }
     }
 
     $settingsPath = "$DestinationRoot\.claude\settings.json"

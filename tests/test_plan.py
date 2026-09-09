@@ -841,6 +841,58 @@ class InstalledHookTest(unittest.TestCase):
     def test_powershell_installed_stage_hook_fails_open_without_a_plan(self):
         self.assert_stage_gate_fails_open_without_a_plan("ps1")
 
+    SHIPPED_HOOKS = tuple(sorted(
+        f"cs-guard-{kind}{ext}"
+        for kind in ("lint", "read", "stage", "write")
+        for ext in (".cmd", ".sh")))
+    FOREIGN_HOOK = "cs-guard-house-style.py"
+
+    def hooks_after_a_round_trip(self, flavour):
+        """Install, plant a hook the project owns, then uninstall the Claude
+        surface by switching to codex. Returns what is left behind."""
+        dest = self.spaced_project()
+        self.install(flavour, dest)
+        hooks = dest / ".claude" / "hooks"
+        self.assertEqual(sorted(p.name for p in hooks.iterdir()),
+                         list(self.SHIPPED_HOOKS),
+                         f"{flavour} installed the wrong hook set")
+
+        (hooks / self.FOREIGN_HOOK).write_text(
+            "# a hook this project owns\n", encoding="utf-8")
+        self.install(flavour, dest, agent="codex")
+        if not hooks.exists():
+            return []
+        return sorted(p.name for p in hooks.iterdir())
+
+    @unittest.skipUnless(BASH and SH and POWERSHELL and os.name == "nt",
+                         "needs both installers")
+    def test_both_installers_manage_the_same_hook_files(self):
+        """The parity that matters is what each installer *does*, not which
+        strings appear in its source.
+
+        install.sh removed `cs-guard-*.sh` and `cs-guard-*.cmd`; install.ps1
+        removed every `cs-guard-*`. Both comments claimed to remove only this
+        installer's own wrappers so a project may keep hooks of its own, and
+        one of them was wrong -- so the same project uninstalled from
+        PowerShell lost a file it kept when uninstalled from sh.
+        """
+        self.assertEqual(self.hooks_after_a_round_trip("sh"),
+                         self.hooks_after_a_round_trip("ps1"),
+                         "the two installers disagree about which hooks are theirs")
+
+    def assert_round_trip_keeps_foreign_hooks(self, flavour):
+        left = self.hooks_after_a_round_trip(flavour)
+        self.assertEqual(left, [self.FOREIGN_HOOK],
+                         f"{flavour} did not leave exactly the project's own hook")
+
+    @unittest.skipUnless(BASH and SH, "needs a POSIX shell")
+    def test_sh_round_trip_keeps_a_hook_the_project_owns(self):
+        self.assert_round_trip_keeps_foreign_hooks("sh")
+
+    @unittest.skipUnless(POWERSHELL and os.name == "nt", "needs Windows PowerShell")
+    def test_powershell_round_trip_keeps_a_hook_the_project_owns(self):
+        self.assert_round_trip_keeps_foreign_hooks("ps1")
+
     def test_at_least_one_installer_is_exercisable_here(self):
         """A platform where neither installer can run would skip every test
         above and still report green. Say so instead."""

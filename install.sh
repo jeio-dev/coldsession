@@ -100,16 +100,23 @@ remove_dir() {
   fi
 }
 
-# Only this installer's own wrappers, never the whole directory: a project
-# may keep hooks of its own alongside them. The directory goes only if
-# removing ours emptied it.
+# The wrappers this installer ships, and so the only files it will copy or
+# remove: a project may keep hooks of its own in the same directory. One list
+# for both operations, and the same list install.ps1 uses -- when the two
+# installers disagreed about it, a project uninstalled from PowerShell lost a
+# hook it kept when uninstalled from sh.
+HOOK_PATTERNS=("cs-guard-*.sh" "cs-guard-*.cmd")
+
+# The directory goes only if removing ours emptied it.
 remove_hooks() {
   local dir="$1/.claude/hooks"
   [ -d "$dir" ] || return 0
-  for path in "$dir"/cs-guard-*.sh "$dir"/cs-guard-*.cmd; do
-    if [ -f "$path" ]; then
-      remove_file "$path"
-    fi
+  for pattern in "${HOOK_PATTERNS[@]}"; do
+    for path in "$dir"/$pattern; do
+      if [ -f "$path" ]; then
+        remove_file "$path"
+      fi
+    done
   done
   rmdir "$dir" 2>/dev/null || true
 }
@@ -255,7 +262,9 @@ else
   cp "$SRC/bin/plan" "$DEST/.claude/bin/plan"
   chmod +x "$DEST/.claude/bin/plan"
   cp "$SRC/bin/plan.cmd" "$DEST/.claude/bin/plan.cmd"
-  cp "$SRC"/hooks/cs-guard-*.sh "$SRC"/hooks/cs-guard-*.cmd "$DEST/.claude/hooks/"
+  for pattern in "${HOOK_PATTERNS[@]}"; do
+    cp "$SRC"/hooks/$pattern "$DEST/.claude/hooks/"
+  done
   chmod +x "$DEST"/.claude/hooks/cs-guard-*.sh
 
   write_settings() {
