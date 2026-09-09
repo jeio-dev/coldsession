@@ -49,7 +49,9 @@ function Test-ExactKeys($Object, [string[]]$Names) {
 
 # Hook wrappers ship as .sh/.cmd pairs, so a command is compared by name and
 # not by path: this installer registers the .cmd, install.sh registers the .sh,
-# and both are generated output.
+# and both are generated output. The surrounding quotes come off first --
+# Write-ClaudeSettings quotes the executable path so a project directory with
+# a space in it still launches, and this has to recognise what it writes.
 $ExpectedHookSignature = (@(
     "PostToolUse::0::Edit|Write::cs-guard-lint",
     "PreToolUse::0::Read|Edit|Write::cs-guard-read",
@@ -71,7 +73,7 @@ function Get-HookSignature($Hooks) {
             if ($specs[0].type -ne "command") { return $null }
             $command = [string]$specs[0].command
             if (-not $command) { return $null }
-            $leaf = ($command -replace '\\', '/').Split('/')[-1]
+            $leaf = ($command.Trim().Trim('"') -replace '\\', '/').Split('/')[-1]
             $leaf = $leaf -replace '\.(sh|cmd)$', ''
             $matcher = ""
             if (@($entry.PSObject.Properties.Name) -contains "matcher") {
@@ -186,7 +188,7 @@ function Write-ClaudeSettings($Path) {
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-stage.cmd"
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-stage.cmd\""
           }
         ]
       }
@@ -197,7 +199,7 @@ function Write-ClaudeSettings($Path) {
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-read.cmd"
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-read.cmd\""
           }
         ]
       },
@@ -206,7 +208,7 @@ function Write-ClaudeSettings($Path) {
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-write.cmd"
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-write.cmd\""
           }
         ]
       }
@@ -217,7 +219,7 @@ function Write-ClaudeSettings($Path) {
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-lint.cmd"
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-lint.cmd\""
           }
         ]
       }

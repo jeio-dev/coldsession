@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PLAN = ROOT / "bin" / "plan"
+BASH = shutil.which("bash")
+SH = shutil.which("sh") or BASH
+POWERSHELL = shutil.which("powershell") or shutil.which("pwsh")
 
 
 def phase_text(*, rev=1, reviewed=None, ready=None, status="draft",
@@ -522,6 +526,110 @@ class WorkflowContractTest(unittest.TestCase):
         # never touched.
         self.assertIn('{"model", "env", "permissions"}', posix)
         self.assertIn('@("model", "env", "permissions")', powershell)
+
+
+class InstalledHookTest(unittest.TestCase):
+    """The hooks as a hook host actually runs them.
+
+    Every other installer test in this file asserts on installer *source
+    text*, which is why a generated hook command that no shell can launch
+    survived a green suite: nothing ever ran one. These install for real and
+    execute what landed in `.claude/settings.json`.
+
+    The project directory contains a space on purpose. A command the shell
+    splits on that space exits 127, and a non-zero exit from a `PreToolUse`
+    hook blocks the tool -- so an unquoted path does not merely miss a gate,
+    it fails CLOSED on every file operation in the project, which is the one
+    outcome the whole design is built to avoid.
+    """
+
+    def spaced_project(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        dest = Path(tmp.name) / "scratch dir" / "proj"
+        dest.mkdir(parents=True)
+        return dest
+
+    def install(self, flavour, dest, agent="both"):
+        if flavour == "sh":
+            argv = [BASH, str(ROOT / "install.sh"),
+                    str(dest).replace("\\", "/"), "--agent", agent]
+        else:
+            argv = [POWERSHELL, "-NoProfile", "-NonInteractive", "-File",
+                    str(ROOT / "install.ps1"), "-Target", str(dest),
+                    "-Agent", agent]
+        result = subprocess.run(argv, text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0,
+                         f"{flavour} installer failed:\n{result.stdout}{result.stderr}")
+        return result
+
+    def hook_commands(self, dest):
+        settings = json.loads(
+            (dest / ".claude" / "settings.json").read_text(encoding="utf-8-sig"))
+        return [(event, spec["command"])
+                for event, entries in settings["hooks"].items()
+                for entry in entries
+                for spec in entry["hooks"]]
+
+    def run_hook_command(self, command, dest, payload=None):
+        """Hand the whole command string to a shell, the way a hook host does.
+
+        Deliberately not an argv list: Python would re-quote each element and
+        paper over exactly the missing quotes this exercises. The shell has to
+        do the word splitting for the test to mean anything.
+        """
+        if command.rstrip('"').endswith(".cmd"):
+            expanded = command.replace("$CLAUDE_PROJECT_DIR", str(dest))
+            argv, shell = expanded, True
+        else:
+            expanded = command.replace("$CLAUDE_PROJECT_DIR",
+                                       str(dest).replace("\\", "/"))
+            argv, shell = [SH, "-c", expanded], False
+        result = subprocess.run(
+            argv, shell=shell, input=json.dumps(payload or {}), text=True,
+            capture_output=True, cwd=str(dest), check=False)
+        return expanded, result
+
+    def assert_hooks_launch_from_a_spaced_path(self, flavour):
+        dest = self.spaced_project()
+        self.install(flavour, dest)
+        commands = self.hook_commands(dest)
+        self.assertEqual(len(commands), 4, commands)
+
+        for event, command in commands:
+            with self.subTest(flavour=flavour, event=event):
+                # The whole executable path as one quoted token. Claude Code
+                # substitutes $CLAUDE_PROJECT_DIR and hands the result to a
+                # shell; nothing downstream can re-quote it.
+                self.assertEqual(
+                    command.count('"'), 2,
+                    f"{command!r} does not quote the executable path")
+                self.assertTrue(command.startswith('"') and command.endswith('"'),
+                                f"{command!r} is not a single quoted token")
+
+                expanded, ran = self.run_hook_command(command, dest)
+                self.assertNotEqual(
+                    ran.returncode, 127,
+                    f"the shell could not launch {expanded!r}: the gate fails closed")
+                # No PLAN.md anywhere in this project, so every gate must also
+                # fail open here -- the real hook path, not the wrapper.
+                self.assertEqual(ran.returncode, 0,
+                                 f"{expanded!r} exited {ran.returncode}\n{ran.stderr}")
+                self.assertEqual(ran.stderr, "", f"{expanded!r} was not silent")
+
+    @unittest.skipUnless(BASH and SH, "needs a POSIX shell")
+    def test_sh_installed_hooks_launch_from_a_path_with_a_space(self):
+        self.assert_hooks_launch_from_a_spaced_path("sh")
+
+    @unittest.skipUnless(POWERSHELL and os.name == "nt", "needs Windows PowerShell")
+    def test_powershell_installed_hooks_launch_from_a_path_with_a_space(self):
+        self.assert_hooks_launch_from_a_spaced_path("ps1")
+
+    def test_at_least_one_installer_is_exercisable_here(self):
+        """A platform where neither installer can run would skip every test
+        above and still report green. Say so instead."""
+        self.assertTrue(bool(BASH and SH) or bool(POWERSHELL and os.name == "nt"),
+                        "no installer flavour is runnable on this platform")
 
 
 if __name__ == "__main__":

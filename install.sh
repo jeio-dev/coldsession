@@ -141,7 +141,9 @@ allowed_sets = (
 
 # Hook wrappers ship as .sh/.cmd pairs, so the command is compared by name
 # rather than by path: one install writes .sh, the other .cmd, and both are
-# this installer's own output.
+# this installer's own output. The surrounding quotes come off first --
+# write_settings quotes the executable path so a project directory with a
+# space in it still launches, and this has to recognise what it writes.
 expected_hooks = {
     "UserPromptSubmit": [(None, "cs-guard-stage")],
     "PreToolUse": [("Read|Edit|Write", "cs-guard-read"),
@@ -170,7 +172,7 @@ def signature(hooks):
             command = spec.get("command")
             if not isinstance(command, str):
                 return None
-            name = command.replace("\\", "/").rsplit("/", 1)[-1]
+            name = command.strip().strip('"').replace("\\", "/").rsplit("/", 1)[-1]
             for suffix in (".sh", ".cmd"):
                 if name.endswith(suffix):
                     name = name[: -len(suffix)]
@@ -276,7 +278,7 @@ else
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-stage.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-stage.sh\""
           }
         ]
       }
@@ -287,7 +289,7 @@ else
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-read.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-read.sh\""
           }
         ]
       },
@@ -296,7 +298,7 @@ else
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-write.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-write.sh\""
           }
         ]
       }
@@ -307,7 +309,7 @@ else
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-lint.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-lint.sh\""
           }
         ]
       }
