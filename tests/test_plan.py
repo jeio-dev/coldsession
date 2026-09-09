@@ -299,6 +299,39 @@ class PlanRuntimeTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, f"guard {args} denied")
                 self.assertEqual(result.stderr, "", f"guard {args} was not silent")
 
+    def test_guard_stage_fails_open_across_a_whole_session_with_no_plan_state(self):
+        """The cold-session gate only ever denies on the *second* command, so
+        checking one command at a time -- which is all the test above did --
+        can never reach the denial. A repository that never adopted
+        coldsession has to be able to run the entire sequence untouched."""
+        with tempfile.TemporaryDirectory() as empty_root:
+            sessions = Path(empty_root) / ".sessions"
+            for prompt in ("/cs-plan", "/cs-revise", "/cs-review",
+                           "/cs-approve", "/cs-close"):
+                result = self.run_guard("stage", prompt, "--session", "one",
+                                        root=empty_root, session_dir=sessions)
+                self.assertEqual(result.returncode, 0,
+                                 f"{prompt} denied with no plan state: {result.stderr}")
+                self.assertEqual(result.stderr, "", prompt)
+
+    def test_guard_stage_fails_open_when_plan_state_is_unreadable(self):
+        """Absent is not the only unclear state. A dangling `current:` pointer
+        and a phase file that will not parse are equally no basis to refuse."""
+        self.write_phase()
+        self.run_guard("stage", "/cs-plan", "--session", "dangling")
+        (self.root / "PLAN.md").write_text(
+            "---\ncurrent: docs/plans/missing.md\nworkflow-rev: 1.4.0\n---\n",
+            encoding="utf-8")
+        blocked = self.run_guard("stage", "/cs-review", "--session", "dangling")
+        self.assertEqual(blocked.returncode, 0, blocked.stderr)
+        self.assertEqual(blocked.stderr, "")
+
+        self.run_guard("stage", "/cs-plan", "--session", "unreadable")
+        (self.root / "PLAN.md").write_text("not frontmatter at all\n", encoding="utf-8")
+        unreadable = self.run_guard("stage", "/cs-review", "--session", "unreadable")
+        self.assertEqual(unreadable.returncode, 0, unreadable.stderr)
+        self.assertEqual(unreadable.stderr, "")
+
     def test_guard_fails_open_on_a_dangling_current_pointer(self):
         self.write_phase(tasks={"T1": ([], "in_progress", ["src/a.py"])})
         (self.root / "PLAN.md").write_text(
@@ -397,6 +430,38 @@ class PlanRuntimeTest(unittest.TestCase):
         self.assertEqual(self.run_guard("stage", "/cs-review", "--session", "B").returncode, 0)
         self.assertEqual(
             self.run_guard("stage", "/cs-review --resume", "--session", "B").returncode, 0)
+
+    def test_guard_stage_still_bites_when_cs_plan_created_the_plan_state(self):
+        """The fail-open cases must not be bought by neutering the gate.
+
+        /cs-plan is the command that *writes* PLAN.md, so in a fresh project
+        it runs with no plan state at all. Suppressing the denial by
+        returning early -- before the command is recorded -- would pass every
+        fail-open test above and silently disable the product's core claim on
+        exactly the path it was built for. The command is recorded whatever
+        the plan state; only the denial waits for state to judge against.
+        """
+        empty = self.root / "fresh"
+        (empty / "docs" / "plans").mkdir(parents=True)
+        sessions = empty / ".sessions"
+
+        opened = self.run_guard("stage", "/cs-plan", "--session", "hot",
+                                root=empty, session_dir=sessions)
+        self.assertEqual(opened.returncode, 0, opened.stderr)
+
+        # /cs-plan's own output: an index and the phase file it points at.
+        (empty / "PLAN.md").write_text(
+            "---\ncurrent: docs/plans/01-test.md\nworkflow-rev: 1.4.0\n---\n",
+            encoding="utf-8")
+        (empty / "docs" / "plans" / "01-test.md").write_text(
+            phase_text(), encoding="utf-8")
+
+        blocked = self.run_guard("stage", "/cs-review", "--session", "hot",
+                                 root=empty, session_dir=sessions)
+        self.assertEqual(blocked.returncode, 2,
+                         "the cold-session gate stopped biting")
+        self.assertIn("E25", blocked.stderr)
+        self.assertIn("cs-plan", blocked.stderr)
 
     def test_guard_stage_ignores_prose_and_missing_session_ids(self):
         self.write_phase()
@@ -585,9 +650,14 @@ class InstalledHookTest(unittest.TestCase):
             expanded = command.replace("$CLAUDE_PROJECT_DIR",
                                        str(dest).replace("\\", "/"))
             argv, shell = [SH, "-c", expanded], False
+        env = os.environ.copy()
+        # Keep session state inside the fixture: `plan guard stage` otherwise
+        # writes to the shared system temp directory, where one run's session
+        # log would decide the next run's verdict.
+        env["PLAN_SESSION_DIR"] = str(dest / ".sessions")
         result = subprocess.run(
             argv, shell=shell, input=json.dumps(payload or {}), text=True,
-            capture_output=True, cwd=str(dest), check=False)
+            capture_output=True, cwd=str(dest), env=env, check=False)
         return expanded, result
 
     def assert_hooks_launch_from_a_spaced_path(self, flavour):
@@ -624,6 +694,36 @@ class InstalledHookTest(unittest.TestCase):
     @unittest.skipUnless(POWERSHELL and os.name == "nt", "needs Windows PowerShell")
     def test_powershell_installed_hooks_launch_from_a_path_with_a_space(self):
         self.assert_hooks_launch_from_a_spaced_path("ps1")
+
+    def assert_stage_gate_fails_open_without_a_plan(self, flavour):
+        """F2 through the real hook path.
+
+        An audit can only reach `plan guard` and the wrapper; neither shows
+        what the command registered in settings.json actually does to a
+        session. This drives the installed UserPromptSubmit hook with the
+        event JSON Claude Code sends, in a project that has no PLAN.md --
+        which is every repository that never adopted coldsession.
+        """
+        dest = self.spaced_project()
+        self.install(flavour, dest)
+        stage = dict(self.hook_commands(dest))["UserPromptSubmit"]
+        for prompt in ("/cs-plan", "/cs-revise", "/cs-review",
+                       "/cs-approve", "/cs-close"):
+            with self.subTest(flavour=flavour, prompt=prompt):
+                expanded, ran = self.run_hook_command(
+                    stage, dest, {"session_id": "cold-open", "prompt": prompt})
+                self.assertEqual(
+                    ran.returncode, 0,
+                    f"{prompt} denied with no plan state\n{ran.stderr}")
+                self.assertEqual(ran.stderr, "", f"{prompt}: {ran.stderr!r}")
+
+    @unittest.skipUnless(BASH and SH, "needs a POSIX shell")
+    def test_sh_installed_stage_hook_fails_open_without_a_plan(self):
+        self.assert_stage_gate_fails_open_without_a_plan("sh")
+
+    @unittest.skipUnless(POWERSHELL and os.name == "nt", "needs Windows PowerShell")
+    def test_powershell_installed_stage_hook_fails_open_without_a_plan(self):
+        self.assert_stage_gate_fails_open_without_a_plan("ps1")
 
     def test_at_least_one_installer_is_exercisable_here(self):
         """A platform where neither installer can run would skip every test
