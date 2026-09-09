@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coldsession Fanout"
+  short_description: "Build a disjoint task group in parallel workers"
+  default_prompt: "Use $cs-fanout to build the next group of independent tasks in parallel."

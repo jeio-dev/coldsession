@@ -47,5 +47,6 @@ On success:
    message.
 4. Print `.claude/bin/plan recommend` and stop.
 
-On a blocker, run `plan block <task-id> "reason"`, add the next open High Risk
-finding with its concrete unblock action, print `plan recommend`, and stop.
+On a blocker, run `.claude/bin/plan block <task-id> "reason"`, add the next
+open High Risk finding with its concrete unblock action, print
+`.claude/bin/plan recommend`, and stop.

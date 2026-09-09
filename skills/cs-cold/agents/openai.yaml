@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coldsession Cold Handoff"
+  short_description: "Start the next step in a new session and stop"
+  default_prompt: "Use $cs-cold to run the next coldsession step in a new session."

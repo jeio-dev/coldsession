@@ -14,7 +14,7 @@ For each line give PASS or FAIL with a finding ID, task ID, linter output, or
 quoted plan line as evidence. "Looks fine" is a FAIL.
 
 - The linter exits clean.
-- `plan findings --open` prints nothing.
+- `.claude/bin/plan findings --open` prints nothing.
 - Every Critical and High has a changelog entry and the named plan line carries
   the fix.
 - Every task has acceptance criteria and a runnable Verify line.
@@ -38,8 +38,8 @@ deduplicated open finding to Findings:
 
 Do not leave a gap only in this transcript: `/cs-revise` reads on-disk open
 findings, not pasted feedback. Then run `.claude/bin/plan lint` and
-`.claude/bin/plan finish approve --fail`, print `plan recommend`, and tell me
-to run Revise followed by Review in a new session.
+`.claude/bin/plan finish approve --fail`, print `.claude/bin/plan recommend`,
+and tell me to run Revise followed by Review in a new session.
 
 If every line passes, run `.claude/bin/plan finish approve --pass`. This writes
 `ready: <rev>` and clears the marker; it does not approve. Tell me to set

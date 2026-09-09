@@ -653,7 +653,7 @@
       in <code>.claude/commands/</code> to commit them with the repo, or
       <code>~/.claude/commands/</code> to have them everywhere.</p>
 
-    <p>Codex uses repository-scoped skills instead. The installer adds nine
+    <p>Codex uses repository-scoped skills instead. The installer adds eleven
       canonical adapters plus an explicit-only compatibility alias under
       <code>.agents/skills/</code>; each one loads a
       runtime-patched copy of the same canonical command from
@@ -787,7 +787,7 @@
     <div class="code-block">
       <div class="code-head"><span>bash</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>cd ~/my-project
-git clone --depth 1 --branch v2.3.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.4.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/install.sh --agent both
 git add .claude .agents templates &amp;&amp; git commit -m "chore: coldsession"</code></pre>
     </div>
@@ -795,7 +795,7 @@ git add .claude .agents templates &amp;&amp; git commit -m "chore: coldsession"<
     <div class="code-block">
       <div class="code-head"><span>PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>cd $HOME\my-project
-git clone --depth 1 --branch v2.3.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.4.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .\.coldsession\install.ps1 -Agent both
 
 git add .claude .agents templates
@@ -1483,6 +1483,53 @@ handoff docs/plans/02-offline-sync.log.md  (read the last entry only)</code></pr
       </div>
     </div>
 
+    <h3>Who opens the next session</h3>
+    <p>The rule that a judging step runs cold has always been enforced by
+      making you do it: quit the session, start another, retype the command.
+      Three to five times a phase. That is friction sitting directly on the
+      workflow's load-bearing claim, and friction there is not neutral — it is
+      the thing that gets skipped on the day you are in a hurry, and a review
+      that never happened is at least honest about it. The failure mode worth
+      fearing is the other one: running the review in the session that wrote
+      the plan, getting the right wording without the independence, and
+      believing it.</p>
+    <p>An editor that can open a second terminal removes the tax without
+      touching the rule. <code>/cs-cold</code> starts a separate process with
+      its own session id and empty scrollback and hands it the command. The
+      important part is what it does <em>not</em> do: it is not a flag on
+      <code>/cs-review</code>, because the gate matches the command name in
+      the prompt and a flag would need an exception carved into the one
+      function the guarantee rests on. A separate command is not a judging
+      command, so the gate is untouched and the new session's own guard clears
+      the step on its own merits. The automation goes through the gate, not
+      around it.</p>
+    <p>Supervision is deliberately absent. A coordinator watching the cold
+      session would give it a reason to report back, and not reporting back is
+      what makes it independent. It is a handoff and then silence.</p>
+
+    <h3>How wide parallel builds go</h3>
+    <p><code>plan next --parallel</code> partitions runnable tasks by file
+      overlap, so a group is disjoint by construction and safe to build at
+      once. The usual advice — two sessions, no more — was never about the
+      tasks. It was about a human watching terminals, and it stops applying
+      the moment something else is doing the watching.</p>
+    <p>Two things had to be true first. Every phase-file mutation is a
+      read-modify-write of the whole file, so overlapping commands silently
+      dropped one of the two writes; that was already a latent race for anyone
+      running two terminals by hand, and a certainty at six. And the read gate
+      allowed the union of every in-progress task's read set, because a hook
+      could not tell which session owned which task — so the bounded read
+      list, the largest token lever in the workflow, loosened with every
+      session added. The write race is closed everywhere:
+      <code>plan start</code> stamps the claiming session — Orca's terminal
+      handle covers a Codex worker inside Orca as well as a Claude one — and
+      every mutating command takes a lock regardless of surface. The read
+      gate is a different story: only Claude enforces it, because only Claude
+      has the hook that calls it. A stamped Codex worker still gets no
+      narrower reads than the union; it stays inside the brief because
+      <code>/cs-fanout</code> tells it to, not because anything refuses a
+      wider read.</p>
+
     <h3>At the phase close</h3>
     <p>Corrections are the raw material for AGENTS.md, but you can't count
       them inside a session that only lives for one task. Collect them at the
@@ -1599,11 +1646,50 @@ current: on that file. The next Plan reads this handoff, never OBJECTIVE.md.</co
   <!-- CHANGES -->
   <section id="changes">
     <div class="eyebrow">v2.3.0</div>
-    <h2>What v2.3.0 adds</h2>
-    <p>This release adds programmatic checks behind the workflow rules,
-      project-owned policy, and feedback from recorded phase history.
-      The phase format remains v1.4.0.</p>
+    <h2>What v2.4.0 adds</h2>
+    <p>This release makes the cold session something a command opens rather
+      than something you are told to open, dispatches disjoint task groups as
+      supervised workers, and closes the two gaps that made width unsafe.
+      The phase format moves to v1.5.0, additively.</p>
     <div class="gears">
+      <div class="gear">
+        <div class="gear-name">Cold sessions, spawned</div>
+        <div class="gear-body"><code>/cs-cold</code> starts the next step in a
+          new Orca session and stops. Not a flag on the judging commands: a
+          separate command passes through the gate instead of needing an
+          exception inside it.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Supervised fanout</div>
+        <div class="gear-body"><code>/cs-fanout</code> builds one disjoint
+          group as Orca workers, relays their questions, and reports outcomes.
+          The coordinator never builds a task or marks one done.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Owned claims</div>
+        <div class="gear-body"><code>plan start</code> stamps the calling
+          session onto the task, Orca's terminal handle first: a Codex worker
+          inside Orca gets one exactly as a Claude one does. The read gate
+          then scopes to the owning task instead of the union — but that gate
+          is a Claude hook, so only Claude enforces it; a Codex worker still
+          relies on its dispatch brief. An unstamped claim (a 1.4 phase file,
+          or any session with no id -- a Codex session outside Orca) falls
+          back to the union, as before.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Locked writes</div>
+        <div class="gear-body">Mutating commands take an exclusive lock on the
+          phase file for their whole span, because the stale read happens long
+          before the write. Read-only commands take none, and
+          <code>guard</code> above all.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Board mirroring</div>
+        <div class="gear-body">Inside Orca, phase state follows onto the
+          workspace card at each transition. Gated on the worktree
+          environment, best-effort, and silent: outside Orca no subprocess
+          runs at all.</div>
+      </div>
       <div class="gear">
         <div class="gear-name">Deterministic gates</div>
         <div class="gear-body">Four Claude hook pairs call

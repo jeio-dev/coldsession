@@ -22,9 +22,9 @@ cd /tmp/coldsession-check \
 ```
 
 Also validate every Codex skill with the `quick_validate.py` shipped by
-Codex's `skill-creator` skill, and confirm an install contains nine canonical
-`cs-*` skills and commands plus the explicit-only `cs-recheck` compatibility
-alias on both surfaces. Confirm the shared templates include `OBJECTIVE.md`,
+Codex's `skill-creator` skill, and confirm an install contains eleven
+canonical `cs-*` skills and commands plus the explicit-only `cs-recheck`
+compatibility alias on both surfaces. Confirm the shared templates include `OBJECTIVE.md`,
 `PLAN.md`, and `phase.md`.
 
 The shipped phase template must pass its own linter. Runtime state transitions
@@ -73,6 +73,22 @@ fixtures relevant to what you changed, in addition to the checklist above.
 Run only the fixture matching what you changed, e.g.
 `python evals/run.py review-writes-findings`; a full sweep of every fixture
 is capped near $6 (`--max-budget-usd`, default $2.00 per fixture).
+
+Orca is optional and must stay that way. Every call into it goes through
+`_orca`, which returns immediately unless `ORCA_WORKTREE_ID` is set, swallows
+every failure, prints nothing, and is never allowed to change an exit code --
+the same reasoning as guard failing open. A test asserting that no subprocess
+is spawned outside Orca is not optional. The test harness scrubs `ORCA_*` and
+`CLAUDE_CODE_SESSION_ID` from the child environment; a new helper that builds
+its own environment must use `clean_env`, or a suite run from inside either
+tool will mirror onto the developer's real workspace card and let one live
+session id satisfy the ownership tests by accident.
+
+The phase lock spans a whole mutating command, not `write_phase`, because the
+stale read happens first. Read-only commands take no lock and `guard` must
+never take one. Do not read the lock file to decide staleness: on Windows,
+opening it for reading denies the holder's own `unlink`, which orphans the
+lock. Use `os.stat`.
 
 Changing the shape of the `tasks:` frontmatter is a phase-format change. Bump
 `FORMAT_VERSION`, teach the linter exactly which older majors remain readable,

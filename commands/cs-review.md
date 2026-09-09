@@ -54,7 +54,7 @@ most likely failure points.
 Read the current revision's Changelog and only the tasks its entries name.
 For each `resolved` or `accepted` finding, decide whether it is actually,
 partially, or not resolved and quote the settling plan line. Reopen unsupported
-claims with `plan resolve F2 open "T4 line still omits worker.ts"`.
+claims with `.claude/bin/plan resolve F2 open "T4 line still omits worker.ts"`.
 
 Beyond those lines, check only whether a resolution created a dependency,
 ordering, scope, or policy problem; changed touched files without changing

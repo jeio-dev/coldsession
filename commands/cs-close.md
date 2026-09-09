@@ -20,7 +20,7 @@ construction, not by memory.
 Audit the delivered phase against every acceptance criterion and report gaps,
 dead code, and unwired work. If the audit finds a material gap, add a
 deduplicated open finding, run `.claude/bin/plan finish close --fail`, print
-`plan recommend`, and stop without closing.
+`.claude/bin/plan recommend`, and stop without closing.
 
 If clean, run `.claude/bin/plan finish close --pass`. It atomically ticks this
 phase in PLAN.md, sets `status: closed`, clears the marker, and leaves
