@@ -2,9 +2,9 @@
 
 Every step that judges the previous one runs cold.
 
-A six-step planning loop for Claude Code and Codex, packaged as nine canonical
-commands and matching skills, one explicit compatibility alias, and one
-dependency-free script.
+A six-step planning loop for Claude Code and Codex, packaged as eleven
+canonical commands and matching skills, one explicit compatibility alias, and
+one dependency-free script.
 The session that reviews a plan never held the pen that wrote it, the phase
 file carries a linted task graph, and a build session reads a computed list
 of files rather than a codebase.
@@ -18,7 +18,7 @@ and the temporary clone deletes itself.
 
 ```bash
 cd ~/my-project
-git clone --depth 1 --branch v2.3.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.4.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/install.sh --agent both
 git add .claude .agents templates && git commit -m "chore: coldsession"
 ```
@@ -27,12 +27,12 @@ git add .claude .agents templates && git commit -m "chore: coldsession"
 
 ```powershell
 cd $HOME\my-project
-git clone --depth 1 --branch v2.3.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.4.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .\.coldsession\install.ps1 -Agent both
 git add .claude .agents templates; git commit -m "chore: coldsession"
 ```
 
-`--branch v2.3.0` pins the clone to a tagged release rather than whatever's
+`--branch v2.4.0` pins the clone to a tagged release rather than whatever's
 on `main`, so following this README always gets a tested version; bump it to
 the latest tag from the [releases page](https://github.com/jeio-dev/coldsession/tags)
 if this copy of the README is older than the repo. The clone never outlives
@@ -71,7 +71,7 @@ phase files.
 
 ```bash
 cd ~/my-project
-git clone --depth 1 --branch v2.3.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.4.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/install.sh --agent both
 git add .claude .agents && git commit -m "chore: update coldsession"
 ```
@@ -139,6 +139,8 @@ that is what those adapters are for.
 | `/cs-build T2 [--resume]` | one per task | normal · sonnet · `--effort medium` | One claimed task, verified and committed. |
 | `/cs-close [--resume]` | new | normal · sonnet | Guarded audit and phase close. |
 | `/cs-status` | anywhere | any | Four lines. Reads no source. |
+| `/cs-cold [/cs-x]` | anywhere | any | Orca only. Starts the next step in a new session and stops. |
+| `/cs-fanout [--max N]` | anywhere | any | Orca only. Builds one disjoint task group as supervised workers. |
 
 `/cs-recheck` and `$cs-recheck` remain as deprecated 2.x compatibility aliases.
 They are never recommended, and the Codex alias cannot be selected implicitly;
@@ -263,10 +265,10 @@ rev: 3
 status: approved
 reviewed: 3
 ready: 3
-workflow-rev: 1.4.0
+workflow-rev: 1.5.0
 tasks:
   T1: {deps: [], status: done, files: [src/db/schema.ts]}
-  T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts]}
+  T2: {deps: [T1], status: in_progress, files: [src/sync/queue.ts, src/sync/types.ts], owner: term_a0eb}
   T3: {deps: [T1], status: pending, files: [src/sync/worker.ts]}
   T4: {deps: [T2, T3], status: pending, files: [src/sync/index.ts]}
 ---
@@ -287,6 +289,12 @@ holds — no task at all, a configuration change, an extension of existing code,
 a new file, a new abstraction — because a task built one rung too high widens
 `files` before anyone has written a line. `/cs-review` names the rung a task
 should have stopped at and files the miss as `Unnecessary scope`.
+
+`owner` is the one field you never write. `plan start` stamps it with the
+session claiming the task and `plan done` removes it again, so the read gate
+can tell two build sessions apart. Seeing it on a task means that task is in
+progress somewhere; seeing it on a task you thought was finished means a build
+stopped without reporting.
 
 `Verify` is the other load-bearing field. Build cannot mark a task done
 without running that command and showing its output, so a task whose Verify
@@ -390,13 +398,26 @@ all exit 0 in silence. It denies only on a positive match. A gate that dies
 here would break repositories that have never heard of coldsession, which is a
 far worse failure than a gate that misses.
 
-Two limits worth naming. While `plan next --parallel` has two build terminals
-running, a hook cannot tell which session owns which task, so the read gate
-allows the *union* of every in-progress task's read set — still a large
-narrowing over the whole repository, and narrowing it to the owning task means
-having `plan start` stamp a session id, which is a later change. And the read
-gate polices paths inside the project only: a path outside it is not something
-a phase file can describe.
+`plan start` stamps the calling session onto the task it claims — Orca's
+terminal handle where there is one, because it outlives a restarted session,
+and Claude Code's session id otherwise. Stamping itself is shared: a Codex
+worker dispatched inside Orca gets `ORCA_TERMINAL_HANDLE` set for it exactly
+as a Claude one does, and only a Codex session run outside Orca has no id to
+give.
+
+The read gate that *scopes to* the stamped owner is a different thing, and it
+is Claude-only, because it lives in a hook: a Codex-only install never writes
+a `.claude/` directory at all, so `plan guard` never runs there. A stamped
+Codex worker's task ID is on disk, ready for a gate to use, but nothing on
+that surface enforces it — the worker keeps to its bounded read list only
+because `/cs-fanout`'s dispatch brief tells it to. On Claude, the contract is
+as tight with six build sessions as with one. A claim nobody stamped — a 1.4
+phase file, or any session with no id, Codex outside Orca included — falls
+back to the *union* of every in-progress task's read set, which is how it
+behaved before format 1.5: looser, never wrong.
+
+One limit remains. The read gate polices paths inside the project only: a path
+outside it is not something a phase file can describe.
 
 Hooks ship as `.sh`/`.cmd` pairs. `install.sh` registers the `.sh`,
 `install.ps1` the `.cmd`, for the same reason each registers its own `plan`.
@@ -487,9 +508,43 @@ reads the last entry, so nothing has to survive in a terminal you closed.
 
 `plan next --parallel` partitions the runnable set by file overlap. Tasks in
 one group share no files and can run in separate terminals at once; groups run
-in sequence. Two sessions is usually the ceiling worth having, and on a plan
-with a usage cap it may be zero — parallelism costs tokens in proportion to
-how much you use it. Treat this as a scheduling readout first.
+in sequence.
+
+Two sessions is the ceiling worth opening by hand, because the cost is a human
+watching them, not anything the tasks impose. Under Orca, `/cs-fanout`
+dispatches a whole group as supervised workers and reports back, so the useful
+width is the group's. On a plan with a usage cap it may still be zero:
+parallelism costs tokens in proportion to how much you use it, and the readout
+is worth having on its own.
+
+## Orca
+
+[Orca](https://onorca.dev) runs each checkout as a tracked workspace with its
+own terminals. Coldsession uses it where it removes friction from a rule
+rather than adding a layer, and never requires it: outside an Orca worktree
+nothing below runs, and no subprocess is spawned to find that out.
+
+`/cs-cold` starts the next step in a new session and stops. The cold-session
+rule is the one the workflow rests on, and until now the gate could only
+refuse — it told you to quit and start another session by hand, several times
+a phase. Friction on a load-bearing rule is friction that erodes it. This
+spawns a separate process with its own session id and empty scrollback, in a
+pane beside the current one, and hands it the command. It is a handoff: the
+new session is not supervised, because being unsupervised is the point.
+
+`/cs-fanout` builds one group from `plan next --parallel` as supervised
+workers, answers their questions, and reports outcomes. Orchestration is
+behind Settings → Experimental in Orca.
+
+`plan` also mirrors phase state onto the workspace card — the status column
+follows the phase, the comment carries what `plan recommend` says — so a board
+of ten worktrees answers "where is this one" without opening a terminal in
+each. Every call is best-effort: a missing, slow, or unhappy Orca changes
+nothing about what `plan` does, prints, or returns.
+
+Both commands ship on the Codex surface too, launching `codex` workers. What
+Codex does not have is the hook that enforces the bounded read list, so there
+the dispatch says the rule out loud instead of assuming it.
 
 ## Model routing
 
@@ -540,7 +595,7 @@ Prompt wording inside a command is not part of the contract — it will change
 whenever the model's behavior makes it worth changing.
 
 The tool release and phase format are versioned separately: `plan version`
-prints the 2.x release, while new phase templates use `workflow-rev: 1.4.0`.
+prints the 2.x release, while new phase templates use `workflow-rev: 1.5.0`.
 `plan lint` compares that field with the supported format version, so updating
 the installer does not invalidate an existing 1.x phase.
 

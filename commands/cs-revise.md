@@ -8,7 +8,8 @@ output. If it refuses, print that output and stop. A matching interrupted pass
 continues only with `--resume`.
 
 Run `.claude/bin/plan bump`. It increments once for a new Revise pass and is a
-safe no-op on resume; never hand-edit `rev:`. Then run `plan findings --open`.
+safe no-op on resume; never hand-edit `rev:`. Then run
+`.claude/bin/plan findings --open`.
 
 Revise the current phase in place. Do not create a replacement file. Update
 PLAN.md only when a finding changes phase ordering.

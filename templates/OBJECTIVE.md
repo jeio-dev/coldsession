@@ -1,7 +1,7 @@
 ---
 objective-rev: 1
 status: ready
-workflow-rev: 1.4.0
+workflow-rev: 1.5.0
 ---
 
 # Objective — <name>

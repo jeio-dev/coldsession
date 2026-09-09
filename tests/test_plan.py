@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -5,6 +6,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -16,12 +19,34 @@ SH = shutil.which("sh") or BASH
 POWERSHELL = shutil.which("powershell") or shutil.which("pwsh")
 
 
+def clean_env(**extra):
+    """A child environment with the ambient editor stripped out.
+
+    `plan` mirrors phase state onto the enclosing Orca workspace card when
+    ORCA_WORKTREE_ID is set. Running this suite inside Orca would otherwise
+    point every fixture's mutating command at the developer's own card and
+    overwrite its status and comment with a temp directory's state. Tests
+    assert on files, never on the card, so the whole channel is switched off
+    here rather than mocked.
+
+    CLAUDE_CODE_SESSION_ID goes for the same reason on the other axis: it is
+    what `plan start` stamps as a task's owner, so a suite run from inside a
+    Claude Code session would inherit one real id for every fixture and make
+    the ownership tests agree by accident.
+    """
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith("ORCA_") and k != "CLAUDE_CODE_SESSION_ID"}
+    env.update(extra)
+    return env
+
+
 def phase_text(*, rev=1, reviewed=None, ready=None, status="draft",
-               workflow="1.4.0", findings="", tasks=None):
+               workflow="1.4.0", findings="", tasks=None, owners=None):
     tasks = tasks or {
         "T1": ([], "pending", ["src/a.py"]),
         "T2": ([], "pending", ["src/b.py"]),
     }
+    owners = owners or {}
     meta = [
         "---",
         "phase: 01-test",
@@ -34,9 +59,10 @@ def phase_text(*, rev=1, reviewed=None, ready=None, status="draft",
         meta.append(f"ready: {ready}")
     meta += [f"workflow-rev: {workflow}", "tasks:"]
     for tid, (deps, task_status, files) in tasks.items():
+        owner = f", owner: {owners[tid]}" if tid in owners else ""
         meta.append(
             f"  {tid}: {{deps: [{', '.join(deps)}], status: {task_status}, "
-            f"files: [{', '.join(files)}]}}"
+            f"files: [{', '.join(files)}]{owner}}}"
         )
     body = ["---", "", "# Phase 01 — test", ""]
     for tid in tasks:
@@ -77,9 +103,46 @@ class PlanRuntimeTest(unittest.TestCase):
     def write_phase(self, **kwargs):
         self.phase.write_text(phase_text(**kwargs), encoding="utf-8")
 
-    def run_plan(self, *args, ok=True):
-        env = os.environ.copy()
+    def fake_orca(self):
+        """An `orca` stand-in that records the exact argv it was handed.
+
+        A launcher plus a Python recorder rather than a shell one-liner: the
+        comment plan sends contains spaces and pipes, and asserting on how a
+        given shell requoted them would test the shell instead of plan.
+        """
+        log = self.root / "orca-calls.jsonl"
+        recorder = self.root / "fake_orca.py"
+        recorder.write_text(
+            "import json, os, sys\n"
+            "with open(os.environ['FAKE_ORCA_LOG'], 'a', encoding='utf-8') as fh:\n"
+            "    fh.write(json.dumps(sys.argv[1:]) + '\\n')\n",
+            encoding="utf-8",
+        )
+        if os.name == "nt":
+            launcher = self.root / "fake-orca.cmd"
+            launcher.write_text(
+                f'@echo off\r\n"{sys.executable}" "{recorder}" %*\r\n',
+                encoding="utf-8",
+            )
+        else:
+            launcher = self.root / "fake-orca.sh"
+            launcher.write_text(
+                f'#!/bin/sh\nexec "{sys.executable}" "{recorder}" "$@"\n',
+                encoding="utf-8",
+            )
+            launcher.chmod(0o755)
+        return launcher, log
+
+    def orca_calls(self, log):
+        if not log.exists():
+            return []
+        return [json.loads(line) for line in
+                log.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    def run_plan(self, *args, ok=True, env_extra=None):
+        env = clean_env()
         env["PLAN_ROOT"] = str(self.root)
+        env.update(env_extra or {})
         result = subprocess.run(
             [sys.executable, str(PLAN), *args],
             text=True,
@@ -91,11 +154,13 @@ class PlanRuntimeTest(unittest.TestCase):
             self.fail(f"plan {' '.join(args)} failed:\n{result.stdout}{result.stderr}")
         return result
 
-    def run_guard(self, *args, payload=None, root=None, session_dir=None):
+    def run_guard(self, *args, payload=None, root=None, session_dir=None,
+                  env_extra=None):
         """A hook call: the event JSON on stdin, the decision in the exit code."""
-        env = os.environ.copy()
+        env = clean_env()
         env["PLAN_ROOT"] = str(root or self.root)
         env["PLAN_SESSION_DIR"] = str(session_dir or (self.root / ".sessions"))
+        env.update(env_extra or {})
         return subprocess.run(
             [sys.executable, str(PLAN), "guard", *args],
             input="" if payload is None else json.dumps(payload),
@@ -175,6 +240,241 @@ class PlanRuntimeTest(unittest.TestCase):
         self.assertIn("/cs-build T2 --resume", self.run_plan("recommend").stdout)
         self.run_plan("done", "T2")
 
+    # -------------------------------------------------------- task ownership
+
+    def build_pair(self, **owners):
+        """Two independent tasks, both approved and claimable."""
+        self.write_phase(reviewed=1, ready=1, status="approved",
+                         tasks={"T1": ([], "in_progress", ["src/a.py"]),
+                                "T2": ([], "in_progress", ["src/b.py"])},
+                         owners=owners)
+
+    def test_start_stamps_the_calling_session_and_done_clears_it(self):
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        self.run_plan("start", "T1", env_extra={"CLAUDE_CODE_SESSION_ID": "sess-A"})
+        self.assertRegex(self.phase.read_text(encoding="utf-8"),
+                         r"T1: \{[^}]*owner: sess-A")
+        self.run_plan("done", "T1", env_extra={"CLAUDE_CODE_SESSION_ID": "sess-A"})
+        line = [l for l in self.phase.read_text(encoding="utf-8").splitlines()
+                if l.startswith("  T1:")][0]
+        self.assertNotIn("owner", line, "a finished task kept its claim")
+
+    def test_an_orca_terminal_handle_outranks_the_session_id(self):
+        """The handle survives a restarted agent session; the session id does
+        not, and a resumed build should keep the claim it started with."""
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        self.run_plan("start", "T1", env_extra={
+            "CLAUDE_CODE_SESSION_ID": "sess-A",
+            "ORCA_TERMINAL_HANDLE": "term_99",
+        })
+        self.assertRegex(self.phase.read_text(encoding="utf-8"),
+                         r"T1: \{[^}]*owner: term_99")
+
+    def test_the_read_gate_scopes_to_the_owning_task(self):
+        """The gap the union was standing in for: with two build sessions
+        running, each one now sees only its own brief."""
+        self.build_pair(T1="sess-A", T2="sess-B")
+        a = {"CLAUDE_CODE_SESSION_ID": "sess-A"}
+        self.assertEqual(
+            self.run_guard("read", "src/a.py", env_extra=a).returncode, 0)
+        denied = self.run_guard("read", "src/b.py", env_extra=a)
+        self.assertEqual(denied.returncode, 2)
+        self.assertIn("E23", denied.stderr)
+        self.assertIn("T1", denied.stderr)
+        self.assertNotIn("T2", denied.stderr)
+        self.assertEqual(
+            self.run_guard("read", "src/b.py",
+                           env_extra={"CLAUDE_CODE_SESSION_ID": "sess-B"}).returncode, 0)
+
+    def test_an_unrecognised_owner_falls_back_to_the_union(self):
+        self.build_pair(T1="sess-A", T2="sess-B")
+        for env in ({"CLAUDE_CODE_SESSION_ID": "sess-Z"}, {}):
+            for path in ("src/a.py", "src/b.py"):
+                self.assertEqual(
+                    self.run_guard("read", path, env_extra=env).returncode, 0,
+                    f"{path} refused for {env or 'an unidentified caller'}")
+
+    def test_a_phase_file_from_before_ownership_still_reads_the_union(self):
+        """Format 1.5 adds `owner:`; 1.4 files have none and must not tighten
+        into refusing the very reads they used to allow."""
+        self.build_pair()
+        text = self.phase.read_text(encoding="utf-8")
+        self.assertNotIn("owner:", text)
+        for path in ("src/a.py", "src/b.py"):
+            self.assertEqual(
+                self.run_guard("read", path,
+                               env_extra={"CLAUDE_CODE_SESSION_ID": "sess-A"}).returncode,
+                0)
+
+    def test_resume_moves_the_claim_to_the_session_that_resumed_it(self):
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        self.run_plan("start", "T1", env_extra={"CLAUDE_CODE_SESSION_ID": "sess-A"})
+        self.run_plan("start", "T1", "--resume",
+                      env_extra={"CLAUDE_CODE_SESSION_ID": "sess-B"})
+        text = self.phase.read_text(encoding="utf-8")
+        self.assertRegex(text, r"T1: \{[^}]*owner: sess-B")
+        self.assertNotIn("sess-A", text)
+
+    # --------------------------------------------------------------- locking
+
+    def lock_dir(self):
+        return self.root / ".locks"
+
+    def lock_file(self):
+        """The lock plan will use for this fixture's phase.
+
+        Mirrors _lock_path deliberately: both sides use abspath on a path
+        already rooted at an absolute temp directory, so neither resolves
+        symlinks and the two strings agree on every platform.
+        """
+        key = hashlib.sha256(
+            os.path.abspath(str(self.phase)).encode("utf-8")).hexdigest()
+        return self.lock_dir() / (key[:32] + ".lock")
+
+    def test_concurrent_task_completions_all_land(self):
+        """The race parallel builds create.
+
+        `plan done` reads the whole phase file, edits that text, and writes it
+        back. Six overlapping runs without a lock keep whichever write landed
+        last and silently drop the rest.
+        """
+        tasks = {f"T{i}": ([], "in_progress", [f"src/f{i}.py"]) for i in range(1, 7)}
+        self.phase.write_text(
+            phase_text(reviewed=1, ready=1, status="approved", tasks=tasks),
+            encoding="utf-8")
+
+        env = {"PLAN_LOCK_DIR": str(self.lock_dir())}
+        start = threading.Barrier(len(tasks))
+        codes = {}
+
+        def finish(tid):
+            start.wait()
+            done = self.run_plan("done", tid, ok=False, env_extra=env)
+            codes[tid] = (done.returncode, done.stderr.strip())
+
+        threads = [threading.Thread(target=finish, args=(tid,)) for tid in tasks]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        failed = {tid: err for tid, (rc, err) in codes.items() if rc != 0}
+        self.assertEqual(failed, {}, f"a concurrent completion was refused: {failed}")
+        text = self.phase.read_text(encoding="utf-8")
+        for tid in tasks:
+            self.assertRegex(text, rf"{tid}: \{{[^}}]*status: done")
+
+    def test_read_only_commands_take_no_lock(self):
+        """guard especially: it runs on every file tool call, and a gate that
+        can block or fail is worse than no gate."""
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        env = {"PLAN_LOCK_DIR": str(self.lock_dir())}
+        for command in (("status",), ("recommend",), ("next",), ("lint",),
+                        ("findings",), ("brief", "T1")):
+            self.run_plan(*command, ok=False, env_extra=env)
+        self.assertFalse(self.lock_dir().exists(),
+                         "a read-only command created a lock")
+
+    def test_a_held_lock_refuses_rather_than_racing(self):
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        lock = self.lock_file()
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text(f"424242 {int(time.time())}", encoding="utf-8")
+        result = self.run_plan("start", "T1", ok=False,
+                               env_extra={"PLAN_LOCK_DIR": str(self.lock_dir())})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("424242", result.stderr)
+        self.assertIn("status: pending", self.phase.read_text(encoding="utf-8"))
+
+    def test_a_stale_lock_is_broken_rather_than_wedging_the_phase(self):
+        """A holder that died without releasing must not need a human with rm."""
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        lock = self.lock_file()
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text(f"424242 {int(time.time()) - 3600}", encoding="utf-8")
+        # Age the file itself: staleness is read from mtime, because opening
+        # the lock to read its contents is what blocks the holder's unlink
+        # on Windows.
+        old = time.time() - 3600
+        os.utime(lock, (old, old))
+        self.run_plan("start", "T1", env_extra={"PLAN_LOCK_DIR": str(self.lock_dir())})
+        self.assertIn("status: in_progress", self.phase.read_text(encoding="utf-8"))
+        self.assertFalse(lock.exists(), "the lock outlived the command that took it")
+
+    # ------------------------------------------------------- orca mirroring
+
+    def test_orca_card_is_not_touched_outside_orca(self):
+        """The whole point of the ORCA_WORKTREE_ID gate: no Orca, no subprocess.
+
+        Poison ORCA_CLI_COMMAND as well, so a regression that reached the CLI
+        by another route would still be caught here.
+        """
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        launcher, log = self.fake_orca()
+        result = self.run_plan("start", "T1", env_extra={
+            "ORCA_CLI_COMMAND": str(launcher),
+            "FAKE_ORCA_LOG": str(log),
+        })
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.orca_calls(log), [])
+
+    def test_orca_card_mirrors_phase_state_after_a_mutating_command(self):
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        launcher, log = self.fake_orca()
+        env = {
+            "ORCA_WORKTREE_ID": "repo-1::/tmp/wt",
+            "ORCA_CLI_COMMAND": str(launcher),
+            "FAKE_ORCA_LOG": str(log),
+        }
+        self.run_plan("start", "T1", env_extra=env)
+        self.run_plan("done", "T1", env_extra=env)
+        calls = self.orca_calls(log)
+        self.assertEqual(len(calls), 2, calls)
+        for call in calls:
+            self.assertEqual(call[:4], ["worktree", "set", "--worktree", "active"])
+            self.assertEqual(call[call.index("--workspace-status") + 1], "in-progress")
+        latest = calls[-1][calls[-1].index("--comment") + 1]
+        self.assertIn("1/2 done", latest)
+        self.assertIn("next /cs-build T2", latest)
+
+    def test_orca_card_reports_a_claimed_stage_as_in_review(self):
+        self.write_phase()
+        launcher, log = self.fake_orca()
+        self.run_plan("begin", "review", env_extra={
+            "ORCA_WORKTREE_ID": "repo-1::/tmp/wt",
+            "ORCA_CLI_COMMAND": str(launcher),
+            "FAKE_ORCA_LOG": str(log),
+        })
+        call = self.orca_calls(log)[-1]
+        self.assertEqual(call[call.index("--workspace-status") + 1], "in-review")
+
+    def test_read_only_commands_never_mirror(self):
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        launcher, log = self.fake_orca()
+        env = {
+            "ORCA_WORKTREE_ID": "repo-1::/tmp/wt",
+            "ORCA_CLI_COMMAND": str(launcher),
+            "FAKE_ORCA_LOG": str(log),
+        }
+        for command in (("status",), ("recommend",), ("next",), ("lint",),
+                        ("findings",), ("brief", "T1")):
+            self.run_plan(*command, ok=False, env_extra=env)
+        self.assertEqual(self.orca_calls(log), [])
+
+    def test_a_broken_orca_changes_nothing_about_plan(self):
+        """Mirroring is a side channel; it may not alter output or exit code."""
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        env = {
+            "ORCA_WORKTREE_ID": "repo-1::/tmp/wt",
+            "ORCA_CLI_COMMAND": str(self.root / "does-not-exist"),
+        }
+        quiet = self.run_plan("start", "T1")
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        loud = self.run_plan("start", "T1", env_extra=env)
+        self.assertEqual(loud.returncode, quiet.returncode)
+        self.assertEqual(loud.stdout, quiet.stdout)
+        self.assertEqual(loud.stderr, quiet.stderr)
+
     def test_build_blocker_demotes_phase_and_clears_readiness(self):
         self.write_phase(reviewed=1, ready=1, status="approved")
         self.run_plan("start", "T1")
@@ -236,7 +536,7 @@ class PlanRuntimeTest(unittest.TestCase):
 
     def test_metrics_fails_open_with_no_plan_state(self):
         with tempfile.TemporaryDirectory() as empty_root:
-            env = os.environ.copy()
+            env = clean_env()
             env["PLAN_ROOT"] = empty_root
             result = subprocess.run(
                 [sys.executable, str(PLAN), "metrics"],
@@ -255,7 +555,7 @@ class PlanRuntimeTest(unittest.TestCase):
         stops the next reader from "fixing" one to match the other.
         """
         with tempfile.TemporaryDirectory() as empty_root:
-            env = os.environ.copy()
+            env = clean_env()
             env["PLAN_ROOT"] = empty_root
             result = subprocess.run(
                 [sys.executable, str(PLAN), "metrics"],
@@ -422,7 +722,7 @@ class PlanRuntimeTest(unittest.TestCase):
         payload = {"tool_name": "Read", "tool_input": {"file_path": target}}
         self.assertEqual(self.run_guard("read", payload=payload).returncode, 2)
 
-        env = os.environ.copy()
+        env = clean_env()
         env["PLAN_ROOT"] = str(self.root)
         with_bom = subprocess.run(
             [sys.executable, str(PLAN), "guard", "read"],
@@ -543,6 +843,12 @@ class PlanRuntimeTest(unittest.TestCase):
         expected = {
             "cs-define": 0, "cs-groundwork": 0, "cs-plan": 0, "cs-build": 0,
             "cs-revise": 0, "cs-status": 0,
+            # Allowed on purpose, and specifically in the session that just
+            # authored the plan: cs-cold's whole job is to spawn the cold
+            # session the gate would otherwise only refuse to let you have.
+            "cs-cold": 0,
+            # Dispatches builds and judges nothing, so it sits with cs-build.
+            "cs-fanout": 0,
             "cs-review": 2, "cs-approve": 2, "cs-close": 2, "cs-recheck": 2,
         }
         shipped = sorted(path.stem for path in (ROOT / "commands").glob("cs-*.md"))
@@ -809,6 +1115,24 @@ class WorkflowContractTest(unittest.TestCase):
         self.assertIn('{"model", "env", "permissions"}', posix)
         self.assertIn('@("model", "env", "permissions")', powershell)
 
+    def test_every_command_has_a_matching_codex_skill(self):
+        """F4: a Claude-only command ships green -- nothing else in this
+        suite reads the skills tree -- and leaves Codex users no entry
+        point. Parity is currently intact across all twelve commands; this
+        is the missing guard, not a present break, so it asserts set
+        equality among the three shipped surfaces rather than a fixed
+        count that would drift the moment either side grows.
+        """
+        commands = {path.stem for path in (ROOT / "commands").glob("cs-*.md")}
+        skill_dirs = {path.parent.name
+                      for path in (ROOT / "skills").glob("cs-*/SKILL.md")}
+        openai_dirs = {path.parent.parent.name
+                       for path in (ROOT / "skills").glob("cs-*/agents/openai.yaml")}
+        self.assertEqual(commands, skill_dirs,
+                         "commands/ and skills/*/SKILL.md are out of parity")
+        self.assertEqual(commands, openai_dirs,
+                         "commands/ and skills/*/agents/openai.yaml are out of parity")
+
 
 class InstalledHookTest(unittest.TestCase):
     """The hooks as a hook host actually runs them.
@@ -867,7 +1191,7 @@ class InstalledHookTest(unittest.TestCase):
             expanded = command.replace("$CLAUDE_PROJECT_DIR",
                                        str(dest).replace("\\", "/"))
             argv, shell = [SH, "-c", expanded], False
-        env = os.environ.copy()
+        env = clean_env()
         # Keep session state inside the fixture: `plan guard stage` otherwise
         # writes to the shared system temp directory, where one run's session
         # log would decide the next run's verdict.
@@ -999,6 +1323,81 @@ class InstalledHookTest(unittest.TestCase):
         above and still report green. Say so instead."""
         self.assertTrue(bool(BASH and SH) or bool(POWERSHELL and os.name == "nt"),
                         "no installer flavour is runnable on this platform")
+
+    # F3: a `plan` invocation written without its install-path prefix
+    # survives both installers' rewrite verbatim -- install.sh's sed only
+    # rewrites the literal `.claude/bin/plan`, and install.ps1's -replace is
+    # the same trick -- so it fails with exit 127 on any host where `plan` is
+    # not on PATH, Claude or Codex alike. Every bare `plan ...` code span left
+    # in a shipped command has to be referential prose describing what a
+    # command already does, never an instruction to run one, so the allowed
+    # set is pinned by exact text and fails on any new one: the same
+    # deliberate-classification shape as test_the_gate_classifies_every_shipped_command.
+    ALLOWED_BARE_PLAN_MENTIONS = {
+        ("cs-close.md", "`plan lint`"),
+        ("cs-fanout.md", "`plan next --parallel`"),
+        ("cs-fanout.md", "`plan done`"),
+        ("cs-review.md", "`plan resolve`"),
+    }
+
+    def bare_plan_mentions(self, name, text):
+        return {(name, span) for span in
+                re.findall(r"`plan [a-z][a-z0-9_-]*[^`]*`", text)}
+
+    def assert_installed_commands_have_no_unclassified_bare_plan(self, flavour):
+        dest = self.spaced_project()
+        self.install(flavour, dest, agent="both")
+        found = set()
+        for commands_dir in (dest / ".claude" / "commands",
+                             dest / ".agents" / "coldsession" / "commands"):
+            self.assertTrue(commands_dir.is_dir(), commands_dir)
+            for path in sorted(commands_dir.glob("cs-*.md")):
+                found |= self.bare_plan_mentions(
+                    path.name, path.read_text(encoding="utf-8"))
+        unclassified = found - self.ALLOWED_BARE_PLAN_MENTIONS
+        self.assertEqual(
+            unclassified, set(),
+            f"{flavour}: bare `plan` invocation(s) survive install "
+            f"unclassified, and will exit 127 where `plan` is not on PATH: "
+            f"{unclassified}")
+        self.assertEqual(
+            found, self.ALLOWED_BARE_PLAN_MENTIONS,
+            f"{flavour}: an allowed bare mention went missing -- update "
+            f"ALLOWED_BARE_PLAN_MENTIONS deliberately if that prose moved")
+
+    @unittest.skipUnless(BASH and SH, "needs a POSIX shell")
+    def test_sh_installed_commands_have_no_unclassified_bare_plan(self):
+        self.assert_installed_commands_have_no_unclassified_bare_plan("sh")
+
+    @unittest.skipUnless(POWERSHELL and os.name == "nt", "needs Windows PowerShell")
+    def test_powershell_installed_commands_have_no_unclassified_bare_plan(self):
+        self.assert_installed_commands_have_no_unclassified_bare_plan("ps1")
+
+    def assert_installed_surfaces_stay_in_parity(self, flavour):
+        """F4, through a real install: the source-tree parity check can pass
+        while an installer's own glob drops a command, so this re-derives the
+        same three sets from what --agent both actually wrote to disk."""
+        dest = self.spaced_project()
+        self.install(flavour, dest, agent="both")
+        claude_commands = {path.stem for path in
+                           (dest / ".claude" / "commands").glob("cs-*.md")}
+        codex_commands = {path.stem for path in
+                          (dest / ".agents" / "coldsession" / "commands").glob("cs-*.md")}
+        skill_dirs = {path.name for path in
+                      (dest / ".agents" / "skills").glob("cs-*") if path.is_dir()}
+        self.assertTrue(claude_commands, "no commands installed under .claude")
+        self.assertEqual(claude_commands, codex_commands,
+                         f"{flavour}: Claude and Codex command sets diverge on install")
+        self.assertEqual(claude_commands, skill_dirs,
+                         f"{flavour}: installed commands and installed skills diverge")
+
+    @unittest.skipUnless(BASH and SH, "needs a POSIX shell")
+    def test_sh_installed_surfaces_stay_in_parity(self):
+        self.assert_installed_surfaces_stay_in_parity("sh")
+
+    @unittest.skipUnless(POWERSHELL and os.name == "nt", "needs Windows PowerShell")
+    def test_powershell_installed_surfaces_stay_in_parity(self):
+        self.assert_installed_surfaces_stay_in_parity("ps1")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 ---
 current: docs/plans/01-<slug>.md
 objective-rev: 1
-workflow-rev: 1.4.0
+workflow-rev: 1.5.0
 ---
 
 # Plan

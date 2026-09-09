@@ -26,16 +26,18 @@ Stdlib only, no install step.
 """
 
 import glob
+import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime
 
-TOOL_VERSION = "2.3.0"
-FORMAT_VERSION = "1.4.0"
+TOOL_VERSION = "2.4.0"
+FORMAT_VERSION = "1.5.0"
 
 ROOT = os.environ.get("PLAN_ROOT", ".")
 INDEX = os.path.join(ROOT, "PLAN.md")
@@ -49,6 +51,11 @@ FINDING_RE = re.compile(r"^F\d+\b")
 CHANGE_RE = re.compile(r"^rev\s+(\d+)\s*\|\s*(F\d+)\s*\|\s*([A-Za-z_-]+)\s*\|\s*(.*)$")
 LIST_RE = lambda k: re.compile(k + r":\s*\[([^\]]*)\]")
 WORD_RE = lambda k: re.compile(k + r":\s*([A-Za-z_-]+)")
+# Owner ids are opaque and come from the surface, not from us: an Orca
+# terminal handle or a Claude Code session id. Match anything up to the next
+# field separator rather than a word, so a new surface's id shape needs no
+# change here.
+OWNER_RE = re.compile(r"owner:\s*([^,}\s]+)")
 STATUSES = ("pending", "in_progress", "done", "blocked")
 PSTATUSES = ("draft", "approved", "closed")
 FSTATUSES = ("open", "resolved", "accepted")
@@ -136,10 +143,14 @@ def parse_tasks(fm):
             deps = LIST_RE("deps").search(inner)
             files = LIST_RE("files").search(inner)
             status = WORD_RE("status").search(inner)
+            owner = OWNER_RE.search(inner)
             tasks[tid] = {
                 "deps": csv(deps.group(1)) if deps else [],
                 "files": csv(files.group(1)) if files else [],
                 "status": status.group(1) if status else "?",
+                # Absent on every phase file written before format 1.5, and
+                # absent again the moment the task stops being in progress.
+                "owner": owner.group(1) if owner else None,
             }
             order.append(tid)
     return tasks, order, malformed
@@ -581,6 +592,39 @@ def append_to_block(text, name, line):
     return join_frontmatter(fm, "\n".join(lines))
 
 
+def _owner_id():
+    """Who is running this build, as durably as the surface allows.
+
+    Orca's terminal handle first: it outlives a restarted agent session and
+    names a terminal that a coordinator can address, so a resumed build keeps
+    the claim it started with. Claude Code's session id is the fallback and is
+    what a plain install has; Codex supplies neither, and an unstamped claim
+    simply behaves the way every claim did before format 1.5.
+    """
+    return (os.environ.get("ORCA_TERMINAL_HANDLE")
+            or os.environ.get("CLAUDE_CODE_SESSION_ID") or None)
+
+
+def _set_owner(text, tid, owner):
+    """Write, replace, or drop one task's `owner:` field.
+
+    Appended last inside the braces rather than woven in beside `status:`, so
+    a phase file written before 1.5 gains the key without its other fields
+    moving, and a diff of a claim is one field wide.
+    """
+    line = re.compile(r"^(\s{2}%s:\s*\{)(.*?)(\}\s*)$" % tid, re.M)
+
+    def rewrite(m):
+        inner = OWNER_RE.sub("", m.group(2))
+        inner = re.sub(r",\s*,", ",", inner).rstrip().rstrip(",").rstrip()
+        if owner:
+            inner += f", owner: {owner}"
+        return m.group(1) + inner + m.group(3)
+
+    updated, _ = sub_outside_comments(line, rewrite, text)
+    return updated
+
+
 def _set_status(phase, tid, status, note=None):
     if tid not in phase["tasks"]:
         die(f"{tid} is not in this phase")
@@ -588,6 +632,9 @@ def _set_status(phase, tid, status, note=None):
     text, hit = sub_outside_comments(pat, lambda m: m.group(1) + status, phase["text"])
     if not hit:
         die(f"could not find a status field for {tid}")
+    # One write, not two: the claim and the status it belongs to should never
+    # be separately observable, least of all by a parallel build session.
+    text = _set_owner(text, tid, _owner_id() if status == "in_progress" else None)
     write_phase(phase, text)
     print(f"{tid} -> {status}")
     if note:
@@ -961,6 +1008,10 @@ def cmd_start(phase, args):
     if task["status"] == "in_progress":
         if not resume:
             die(f"{tid} is already in_progress; rerun /cs-build {tid} --resume")
+        # A resume is nearly always a new session, and the read gate follows
+        # the claim, so the claim has to follow the session. Without this a
+        # resumed build would be scoped to the dead session that stamped it.
+        write_phase(phase, _set_owner(phase["text"], tid, _owner_id()))
         print(f"resume {tid}")
         return 0
     if resume:
@@ -1285,14 +1336,19 @@ def _guard_norm(path):
         return None
 
 
-def _guard_scope(phase):
+def _guard_scope(phase, owner=None):
     """(in-progress task ids, allowed paths), or None when no build is running.
 
-    The union of every in-progress task's read set, not one task's: `plan next
-    --parallel` runs two build terminals at once and a hook cannot tell which
-    session owns which task. The union is still a large narrowing over the
-    whole repository. Scoping to the owning task means having `plan start`
-    stamp a session id -- a follow-up, not a blocker.
+    `plan start` stamps the calling session onto the task it claims, so when
+    the caller owns exactly the tasks it started, the gate scopes to those and
+    the bounded-read contract stays as tight with six build sessions running
+    as with one.
+
+    Everything else falls back to the union of every in-progress task's read
+    set: an unstamped claim from a pre-1.5 phase file, a Codex session that
+    has no id to stamp, or a caller Orca and Claude Code both declined to
+    name. The union is looser but never wrong, which is the trade guard makes
+    everywhere -- it denies only on a positive match.
 
     PLAN.md and the phase handoff log join the set because a build session
     legitimately reads the index and appends to the log, and neither appears
@@ -1303,6 +1359,10 @@ def _guard_scope(phase):
     active = [t for t in phase["order"] if phase["tasks"][t]["status"] == "in_progress"]
     if not active:
         return None
+    if owner:
+        mine = [t for t in active if phase["tasks"][t].get("owner") == owner]
+        if mine:
+            active = mine
     paths = {_guard_norm(INDEX), _guard_norm(phase["path"]),
              _guard_norm(phase["path"][:-3] + ".log.md")}
     for tid in active:
@@ -1312,8 +1372,8 @@ def _guard_scope(phase):
     return active, paths
 
 
-def _guard_read(phase, path):
-    scope = _guard_scope(phase)
+def _guard_read(phase, path, owner=None):
+    scope = _guard_scope(phase, owner)
     if scope is None:
         return 0
     active, allowed = scope
@@ -1570,10 +1630,231 @@ def cmd_guard(_phase, args):
             return _guard_lint(path)
         phase = _guard_phase()
         if kind == "read":
-            return _guard_read(phase, path)
+            # The environment first, so the gate resolves the caller exactly
+            # the way `plan start` did when it stamped the claim. The event's
+            # session_id is the backstop for a surface that hands a hook the
+            # id without also exporting it.
+            owner = _owner_id() or payload.get("session_id")
+            return _guard_read(phase, path, owner if isinstance(owner, str) else None)
         return _guard_write(phase, path, payload)
     except Exception:
         return 0
+
+
+# ------------------------------------------------------------------ locking
+
+# Every mutation is a read-modify-write of the whole phase file: main() parses
+# it, the command edits that text, write_phase puts it back. Two commands whose
+# spans overlap therefore lose one of the two writes, and `plan done T2` racing
+# `plan done T3` from two build sessions is exactly the shape parallel builds
+# produce. The lock spans the whole command rather than write_phase alone,
+# because by the time write_phase runs the stale read has already happened.
+#
+# Read-only commands take no lock, and `guard` above all: it runs on every file
+# tool call, and a gate that can block or fail is worse than no gate.
+
+LOCK_TIMEOUT = 10.0
+LOCK_STALE = 60.0
+
+
+def _lock_dir():
+    base = os.environ.get("PLAN_LOCK_DIR")
+    if base:
+        return base
+    return os.path.join(tempfile.gettempdir(), "coldsession-locks")
+
+
+def _lock_path(phase_path):
+    """One lock file per phase file, keyed on its absolute path.
+
+    Hashed and kept out of the repository: a lock is per-machine and
+    ephemeral, so it has no business being a file the project can commit.
+    """
+    key = hashlib.sha256(os.path.abspath(phase_path).encode("utf-8")).hexdigest()
+    return os.path.join(_lock_dir(), key[:32] + ".lock")
+
+
+def _lock_age(path):
+    """Seconds since the lock was taken, or None if it is already gone.
+
+    Deliberately os.stat rather than reading the file. On Windows CPython
+    opens a file for reading without FILE_SHARE_DELETE, so a waiter that
+    read the lock on every retry would make the holder's own unlink fail with
+    a sharing violation -- orphaning the lock and stalling every waiter until
+    the stale threshold. os.stat shares delete access and never blocks it.
+    """
+    try:
+        return max(0.0, time.time() - os.stat(path).st_mtime)
+    except OSError:
+        return None
+
+
+def _lock_pid(path):
+    """The holder's pid, for the refusal message only. Best effort."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read().split(" ")[0] or None
+    except OSError:
+        return None
+
+
+def _lock_acquire(phase_path):
+    """Claim one phase file for the length of one command.
+
+    O_EXCL is the portable primitive: atomic on both platforms, no third-party
+    file locking, and it leaves the holder's pid on disk for the error message.
+
+    Returns the lock path, or None when locking is simply unavailable. An
+    unwritable temp directory is a reason to run unlocked, not to refuse to
+    work -- the single-session case, which is most of them, is unaffected.
+    """
+    path = _lock_path(phase_path)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    except OSError:
+        return None
+    deadline = time.monotonic() + LOCK_TIMEOUT
+    while True:
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            pass
+        except OSError:
+            return None
+        else:
+            try:
+                os.write(fd, f"{os.getpid()} {time.time():.0f}".encode("utf-8"))
+            finally:
+                os.close(fd)
+            return path
+
+        age = _lock_age(path)
+        if age is not None and age > LOCK_STALE:
+            # The holder died without releasing. Breaking the lock can only
+            # lose a write a dead process was never going to make, and the
+            # alternative is a workflow that stays wedged until a human runs
+            # rm on a path they have to be told about.
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            continue
+        if time.monotonic() >= deadline:
+            die(f"another plan command is holding this phase "
+                f"(pid {_lock_pid(path) or '?'}).\n"
+                "  Wait for it to finish and rerun this command.\n"
+                f"  If nothing is running, delete {path}.")
+        time.sleep(0.05)
+
+
+def _lock_release(path):
+    """Drop the claim, retrying briefly.
+
+    A single swallowed failure here is not a lost write but a lock nobody
+    holds and nobody can take, which stalls every waiter until the stale
+    threshold. Windows can still refuse the unlink if something has the file
+    open for the moment, so give it a few tries before giving up.
+    """
+    if not path:
+        return
+    for _ in range(20):
+        try:
+            os.unlink(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            time.sleep(0.01)
+
+
+# ------------------------------------------------------------------- orca
+
+# Orca is an editor that runs each checkout as a tracked workspace with a
+# status column and a comment on its card. When plan runs inside one, the
+# phase's state is worth pushing there, so a board of ten worktrees answers
+# "where is this one" without opening a terminal in each. Everything below is
+# a convenience: a missing, slow, or unhappy Orca must never change what plan
+# does, how long it takes, or what it prints.
+
+ORCA_TIMEOUT = 5
+ORCA_STATUS = {"draft": "todo", "approved": "in-progress", "closed": "completed"}
+MUTATING = ("start", "done", "block", "begin", "finish", "resolve", "bump",
+            "reviewed")
+
+
+def _orca_cli():
+    """The Orca CLI for this session, or None when there is nothing to mirror.
+
+    ORCA_WORKTREE_ID gates the whole feature. It is set only inside an
+    Orca-managed terminal, so a non-Orca user never pays for a subprocess --
+    and, because the terminal is managed, bare `orca` is the Orca CLI on every
+    platform. Outside one, on Linux, it would usually be the GNOME screen
+    reader, which is why this returns None rather than guessing a name.
+    """
+    if not os.environ.get("ORCA_WORKTREE_ID"):
+        return None
+    explicit = os.environ.get("ORCA_CLI_COMMAND")
+    if explicit:
+        return explicit
+    return "orca-dev" if os.environ.get("ORCA_DEV_REPO_ROOT") else "orca"
+
+
+def _orca(*args):
+    """Run one Orca command, best effort. Never raises, never prints.
+
+    Every failure -- no Orca, no binary on PATH, a timeout, a non-zero exit --
+    is the same silent no-op, for the reason guard fails open: a side channel
+    that breaks the thing it decorates is worse than no side channel.
+    """
+    cli = _orca_cli()
+    if not cli:
+        return None
+    try:
+        proc = subprocess.run([cli, *args], stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, timeout=ORCA_TIMEOUT)
+    except Exception:
+        return None
+    return proc.stdout if proc.returncode == 0 else None
+
+
+def _orca_card(phase):
+    """(workspace status id, comment) for the phase as it now stands.
+
+    An active stage means the phase is being judged rather than built, which
+    is `in-review` whatever the phase status says underneath it.
+    """
+    meta = phase["meta"]
+    if meta.get("active") in STAGES:
+        status = "in-review"
+    else:
+        status = ORCA_STATUS.get(meta.get("status", "draft"), "todo")
+    cmd, _ = recommend(phase)
+    done = sum(1 for t in phase["order"] if phase["tasks"][t]["status"] == "done")
+    comment = (f"{meta.get('phase', '?')} rev {intof(meta.get('rev'), 1)} | "
+               f"{done}/{len(phase['order'])} done | next {cmd}")
+    return status, comment
+
+
+def _orca_mirror():
+    """Push the phase's state onto its Orca card. Best effort, always silent.
+
+    Called once from main() after a mutating command rather than from each
+    command, because only main() knows the command ran to completion -- every
+    refusal path dies before returning. The phase is re-read because the
+    command edited the file after `phase` was parsed.
+
+    die() raises SystemExit, which is not an Exception, so an unreadable index
+    or phase has to be caught explicitly or it would escape a helper whose
+    whole contract is that it cannot fail.
+    """
+    if not _orca_cli():
+        return
+    try:
+        status, comment = _orca_card(read_phase(read_index()))
+    except (Exception, SystemExit):
+        return
+    _orca("worktree", "set", "--worktree", "active",
+          "--workspace-status", status, "--comment", comment, "--json")
 
 
 COMMANDS = {"version": cmd_version, "status": cmd_status, "lint": cmd_lint,
@@ -1601,8 +1882,20 @@ def main():
         # read_phase(read_index()) -- that dies on a repo with no PLAN.md
         # yet, which is exactly the case both must fail open on.
         return COMMANDS[name](None, argv[1:])
-    phase = read_phase(read_index())
-    return COMMANDS[name](phase, argv[1:]) or 0
+    path = read_index()
+    if name not in MUTATING:
+        return COMMANDS[name](read_phase(path), argv[1:]) or 0
+
+    # The lock spans the read as well as the write: a command that parsed the
+    # file before another finished writing it would overwrite that write.
+    lock = _lock_acquire(path)
+    try:
+        rc = COMMANDS[name](read_phase(path), argv[1:]) or 0
+    finally:
+        _lock_release(lock)
+    if rc == 0:
+        _orca_mirror()
+    return rc
 
 
 if __name__ == "__main__":

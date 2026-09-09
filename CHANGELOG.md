@@ -4,6 +4,111 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
+## [v2.4.0]
+
+### The cold session, spawned rather than asked for
+
+- `/cs-cold` starts the next step in a genuinely new agent session and stops.
+  The gate that keeps judging cold could only ever refuse: it told you to exit
+  and start another session by hand, three to five times a phase, and friction
+  that lands on the load-bearing rule is friction that erodes it. Inside Orca
+  the same rule now costs one command, and buys a stronger guarantee than the
+  manual version -- a separate process with its own session id and empty
+  scrollback, in a pane beside this one.
+- The gate itself is unchanged. `/cs-cold` is not a judging command, so it
+  passes through the gate rather than around it: the spawned session's own
+  guard sees a clean session log and allows the step on its own merits. No
+  flag on `/cs-review` could have done that without putting an exception
+  inside the function the guarantee rests on.
+
+### Parallel builds, dispatched and supervised
+
+- `/cs-fanout` builds one file-disjoint group from `plan next --parallel` as
+  supervised Orca workers, answers their questions, and reports outcomes.
+  The partition was always provably safe; what capped it near two was a human
+  watching two terminals, and that is not a limit the tasks impose.
+- Phase-file writes are now locked. Every mutation is a read-modify-write of
+  the whole file, so two commands whose spans overlap lost one of the two
+  writes -- already true for anyone running two build terminals by hand, and
+  a certainty at six. The lock spans the whole command, because by the time
+  the write runs the stale read has already happened. Read-only commands take
+  none, `guard` above all.
+
+### The read gate knows who is asking
+
+- `plan start` stamps the calling session onto the task it claims, and the
+  read gate scopes to the owning task. Until now it allowed the union of every
+  in-progress task's read set, because a hook could not tell which session
+  owned which task -- so the bounded-read contract, the largest token lever in
+  the workflow, loosened with every session added. It no longer does.
+- The identity is Orca's terminal handle where there is one, because it
+  outlives a restarted session, and Claude Code's session id otherwise; a
+  Codex worker dispatched inside Orca gets the same terminal handle a Claude
+  one does. The scoped *gate*, though, is a Claude hook -- Codex has none, so
+  a Codex-only install never runs it and a stamped Codex worker relies on its
+  dispatch brief instead. An unstamped claim -- a phase file from before
+  format 1.5, or any session with no id, Codex run outside Orca included --
+  falls back to the union, which is looser but never wrong.
+- Format 1.5.0 adds `owner:` to the task line. It is additive and the field is
+  ignored by any parser that does not know it, so 1.4 phase files keep working
+  and keep the behaviour they had.
+
+### Orca board mirroring
+
+- Inside an Orca worktree, `plan` mirrors phase state onto the workspace card
+  at each transition: the status column follows the phase, the comment carries
+  what `plan recommend` says. A board of ten worktrees answers "where is this
+  one" without opening a terminal in each.
+- Gated on `ORCA_WORKTREE_ID`, so outside Orca no subprocess is ever spawned,
+  and best-effort throughout: a missing, slow, or unhappy Orca changes nothing
+  about what `plan` does, prints, or returns.
+
+### Fixed
+
+- The test suite stripped no ambient environment, so running it from inside
+  Orca or Claude Code would have pointed the new mirroring at the developer's
+  own workspace card and let one real session id satisfy the ownership tests
+  by accident. Both are scrubbed at the harness now.
+- `/cs-cold` and `/cs-fanout` handed the Codex form of a command --
+  `$cs-review`, `$cs-build`, and so on -- to a double-quoted shell argument.
+  In a POSIX shell or PowerShell that expands `$cs` (unset) to nothing and
+  leaves the rest, so the handoff sent `-review` instead of `$cs-review`.
+  The payload is now single-quoted in both command files and both adapters.
+- `skills/cs-cold/SKILL.md` and `skills/cs-fanout/SKILL.md` claimed Codex
+  takes model and reasoning effort from the active session and told the agent
+  to drop `--model`/`--effort`. `orca orchestration worker-start` accepts both
+  for a Codex launch exactly as it does for Claude, so `/cs-fanout` Codex
+  workers were dispatched at whatever default effort applied instead of the
+  medium the build step needs. The fanout adapter now passes `--model
+  <codex-model-id> --effort medium`, with a stated fallback for a worker
+  server that rejects them; the cold-handoff adapter now passes
+  `-c model_reasoning_effort=medium` to a direct `codex` launch for
+  `/cs-build`.
+- Several commands invoked `plan` without its install-path prefix
+  (`plan findings --open`, `plan recommend`, `plan block`, `plan resolve`).
+  Both installers rewrite only the literal `.claude/bin/plan`, so a bare
+  invocation survived install verbatim and exited 127 wherever `plan` was not
+  on `PATH` -- on a Codex install always, and on a Claude install without a
+  manual `PATH` entry. Every executable invocation now carries the
+  `.claude/bin/plan` prefix the installer knows how to rewrite; a test now
+  asserts no unclassified bare invocation survives either agent's install.
+- Nothing asserted that a shipped `commands/cs-*.md` has a matching
+  `skills/<name>/SKILL.md` and `skills/<name>/agents/openai.yaml`, so a
+  Claude-only command could ship with a green suite and leave Codex users no
+  entry point. A test now asserts set equality among the three surfaces, on
+  both the source tree and an installed `--agent both` tree. Parity was
+  already intact across all eleven canonical commands plus the `cs-recheck`
+  alias; README.md and CONTRIBUTING.md's stale "nine canonical" are now
+  "eleven".
+- The parallel-builds and Codex-parity write-ups implied the read-gate
+  widening gap closed on both surfaces once `plan start` began stamping an
+  owner. Stamping is shared -- a Codex worker inside Orca gets
+  `ORCA_TERMINAL_HANDLE` too -- but the *gate* that scopes to it is a Claude
+  hook, so a Codex worker (in or out of Orca) still relies on its dispatch
+  brief rather than enforcement. `docs/universal-planning-workflow.html` and
+  README.md's Hooks section now state stamping, enforcement, and the two ways
+  a claim goes unstamped as four distinct facts.
+
 ## [v2.3.0]
 
 ### Deterministic gates behind the load-bearing rules
