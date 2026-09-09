@@ -29,18 +29,18 @@ temp copy this harness owns, never the working repo — and grades the result.
 `--max-budget-usd` (default $2.00 per fixture) caps API spend on a run that
 goes sideways.
 
-## Why this isn't wired into CI yet
+## Why this isn't wired into CI
 
 The plan this package implements calls for triggering on any change to
 `commands/`, `skills/`, `templates/`, or `bin/plan`, plus a schedule — the
 playbook's Stage 4 recipe. Doing that for real means a GitHub Actions job
 that calls a live model on every matching push, which needs an API key
 committed to the repo's secrets and a standing decision about who pays for
-it. That's a real decision, not an implementation detail, and it hasn't been
-made yet. Building the harness now — runnable by hand, fully tested without
-spending a token via `tests/test_evals.py` — means CI wiring is a follow-up
-that adds one workflow file on top of working infrastructure, not a
-blocker to shipping the eval harness itself.
+it. That's a real decision, and it has been made: declined, deliberately.
+This harness is a manual pre-PR tool by design — runnable by hand, fully
+tested without spending a token via `tests/test_evals.py`. CI wiring stays
+possible (it would add one workflow file on top of working infrastructure)
+but it is not planned.
 
 ## Fixtures
 
@@ -70,9 +70,5 @@ Shipped fixtures, the highest-value three named in the plan:
   a closed phase with an unticked next phase line. `/cs-plan` must write the
   next phase without ever reading root `OBJECTIVE.md` again.
 
-Candidates for the remaining fixtures toward "roughly a dozen" (not built in
-this package): a revision-review pass that reopens an unsupported
-`resolved` claim; `/cs-plan` producing at most eight tasks and refusing a
-ninth; `/cs-build` respecting a task's bounded `files` list; `/cs-close`
-refusing to close with an open finding; the round-three stop condition
-routing to `/cs-plan` instead of a fourth `/cs-revise`.
+These three cover the highest-value contracts; the harness accepts new
+fixtures the same way if another contract needs one.

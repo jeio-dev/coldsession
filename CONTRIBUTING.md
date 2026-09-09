@@ -70,6 +70,9 @@ reworded `commands/*.md` still does what it claims. If you change the prose
 in `commands/`, `skills/`, or `templates/`, run `python evals/run.py` (needs
 the `claude` CLI and live credentials -- see `evals/README.md`) against the
 fixtures relevant to what you changed, in addition to the checklist above.
+Run only the fixture matching what you changed, e.g.
+`python evals/run.py review-writes-findings`; a full sweep of every fixture
+is capped near $6 (`--max-budget-usd`, default $2.00 per fixture).
 
 Changing the shape of the `tasks:` frontmatter is a phase-format change. Bump
 `FORMAT_VERSION`, teach the linter exactly which older majors remain readable,

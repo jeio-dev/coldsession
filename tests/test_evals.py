@@ -84,6 +84,16 @@ class EvalHarnessTest(unittest.TestCase):
         ):
             self.assertIn(expected, names)
 
+    def test_every_fixture_has_a_loadable_expect(self):
+        """Nothing runs evals/run.py automatically, so a fixture broken by a
+        rename would stay broken until someone finally ran it by hand. This
+        catches that for free: load_expect() raises FixtureError for a
+        missing or grade-less expect.py."""
+        names = evals_lib.list_fixtures()
+        self.assertTrue(names)
+        for name in names:
+            evals_lib.load_expect(name)
+
     def test_review_fixture_starts_lint_clean(self):
         _lay_down_fixture("review-writes-findings", self.tmp)
         ctx = evals_lib.EvalContext(tmp=self.tmp)
