@@ -508,11 +508,12 @@
 
   <div class="titleblock">
     <div class="tb-row"><span>Title</span><span>Universal Planning Workflow</span></div>
+    <div class="tb-row"><span>Release</span><span>v2.3.0</span></div>
     <div class="tb-row"><span>Format</span><span>v1.4.0</span></div>
     <div class="tb-row"><span>Scale</span><span>1 idea : 1 shippable plan</span></div>
     <div class="tb-row"><span>Sessions</span><span>plan · review · approve · 1 per task</span></div>
     <div class="tb-row"><span>State</span><span>PLAN.md + docs/plans/ + task graph</span></div>
-    <div class="tb-row"><span>Date</span><span>2026-08-14</span></div>
+    <div class="tb-row"><span>Date</span><span>2026-09-09</span></div>
   </div>
 
   <h1>Define → Plan → Review → Revise → Approve → Build</h1>
@@ -685,19 +686,20 @@
 
     <h3>What a command does not carry</h3>
     <p>This is the part that bites. A command supplies the prompt text and
-      nothing else. It does not start a new session, it does not enter plan
-      mode, and it does not pick a model. Typing <code>/cs-review</code> in the
-      session that just wrote the plan gives you a compromised review with
-      correct wording, which is worse than no review because it looks like
-      one.</p>
+      nothing else. It does not start a new session, enter plan mode, or pick
+      a model. A review in the session that wrote the plan inherits its
+      assumptions. The installed Claude hook can refuse that command;
+      on the Codex surface, keeping the review cold remains an instruction
+      the session must follow.</p>
 
     <div class="gears">
       <div class="gear">
         <div class="gear-name">You do</div>
         <div class="gear-body">Start the session, enter or exit plan mode, set
           <code>--effort</code> at launch. The session and mode chips on each
-          step below are still the instruction — the command file can't
-          enforce them.</div>
+          step below are still the instruction — a command file cannot start a
+          session or pick a model for you. A hook can refuse a judging command
+          in the wrong one; see below.</div>
       </div>
       <div class="gear">
         <div class="gear-name">Settings do</div>
@@ -712,13 +714,92 @@
       </div>
     </div>
 
+    <h3>Where the prompt stops and a program starts</h3>
+    <p>Everything above is advisory. A command asks a model to do something,
+      and the model usually does it — but "usually" is the whole problem for
+      the rules this workflow rests on. Four of them are decidable by a
+      program, at no model cost, so on Claude Code a program decides them.
+      They install to <code>.claude/hooks/</code> and register in
+      <code>.claude/settings.json</code>.</p>
+
+    <div class="gears">
+      <div class="gear">
+        <div class="gear-name">Cold session</div>
+        <div class="gear-body"><code>UserPromptSubmit</code> refuses
+          <code>/cs-review</code>, <code>/cs-approve</code>, or
+          <code>/cs-close</code> after <code>/cs-plan</code> or
+          <code>/cs-revise</code> in the same session (<code>E25</code>).
+          The <code>/cs-recheck</code> alias receives the same check.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Bounded reads</div>
+        <div class="gear-body"><code>PreToolUse</code> checks
+          <code>Read</code>, <code>Edit</code>, and <code>Write</code> while
+          a task is <code>in_progress</code>. Repository paths outside the
+          allowed context are refused (<code>E23</code>).</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Human approval</div>
+        <div class="gear-body"><code>PreToolUse</code> refuses an
+          <code>Edit</code> or <code>Write</code> that introduces
+          <code>status: approved</code> into a phase file (<code>E24</code>).
+          Preserving an existing approved status is allowed.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Lint on write</div>
+        <div class="gear-body"><code>PostToolUse</code> reports E-codes
+          after a phase file is edited or written, including a new phase
+          before <code>current:</code> points at it. It reports errors after
+          the write; it does not undo it.</div>
+      </div>
+    </div>
+
+    <p>Each hook ships as an <code>.sh</code>/<code>.cmd</code> wrapper pair
+      that passes the event to <code>plan guard</code>. Both installers quote
+      hook paths so projects with spaces in their directory names work.
+      Decisions live in the same Python runtime that computes
+      <code>plan brief</code>.</p>
+
+    <p>The path gate allows the union of all in-progress tasks' briefs,
+      plus PLAN.md, the phase file, and its handoff log. It cannot identify
+      which parallel session owns a task. Paths outside the repository and
+      shell commands are outside this path check; each Build session must
+      still follow its own brief.</p>
+
+    <p><code>guard</code> fails open when the state needed for a check is
+      absent, unreadable, or ambiguous. The cold-session gate requires both
+      session history and a readable current phase; the path gate requires
+      an in-progress task. Lint-on-write checks the written phase itself,
+      even before PLAN.md exists. Allowed or unrecognised invocations exit 0
+      silently; positive violations report their codes on stderr and exit 2.
+      A bare <code>plan guard</code> is silent too; its usage lives in
+      <code>plan --help</code>.</p>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>Codex has no hook mechanism, so there all four rules stay prompt
+        text. The surfaces are identical in commands, phase format, and
+        tooling, and differ in <em>enforcement</em> — worth knowing before you
+        assume a rule holds because it held yesterday on the other one.</p>
+    </div>
+
     <h3>Setting it up</h3>
     <div class="code-block">
       <div class="code-head"><span>bash</span><button class="copy-btn" type="button">Copy</button></div>
       <pre><code>cd ~/my-project
-git clone --depth 1 --branch v2.2.0 https://github.com/&lt;you&gt;/coldsession .coldsession
+git clone --depth 1 --branch v2.3.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/install.sh --agent both
 git add .claude .agents templates &amp;&amp; git commit -m "chore: coldsession"</code></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-head"><span>PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>cd $HOME\my-project
+git clone --depth 1 --branch v2.3.0 https://github.com/jeio-dev/coldsession.git .coldsession
+.\.coldsession\install.ps1 -Agent both
+
+git add .claude .agents templates
+git commit -m "chore: coldsession"</code></pre>
     </div>
 
     <p class="fine">The clone goes inside the project and the installer deletes
@@ -726,11 +807,12 @@ git add .claude .agents templates &amp;&amp; git commit -m "chore: coldsession"<
       install is the one committed with the code.</p>
 
     <p class="fine">Installing per project rather than globally is
-      deliberate: the workflow version is pinned with the code, so a phase
-      planned six months ago still reads the way it was planned. Record it: add
-      <code>workflow-rev: 1.4.0</code> to PLAN.md's frontmatter, so a phase
-      planned under an older loop is readable as an older plan rather than a
-      wrong-looking one.</p>
+      deliberate: the tool release is pinned with the code. v2.3.0 keeps
+      phase format v1.4.0; the two versions advance independently. Preserve
+      <code>workflow-rev: 1.4.0</code> in PLAN.md and each phase file as the
+      shipped templates do. <code>plan lint</code> checks the phase's format,
+      while <code>plan version</code> reports the tool release. On PowerShell,
+      invoke the installed <code>plan.cmd</code> wrapper.</p>
   </section>
 
   <!-- 0. DEFINE -->
@@ -880,6 +962,9 @@ complete minimal files list, observable acceptance criteria, and an exact
 Verify command. Size each task at the lowest rung that holds: no task at all,
 a configuration change, an extension, a new file, a new abstraction.
 
+Apply the project's own policy-* skills: read each description, open only the
+ones this phase can violate, record what you considered under ## Policy.
+
 Resolve blocking questions first, as one round of numbered questions carrying
 recommended answers; two rounds at the outside. Record `Open questions: None.`
 Move current: only after the new phase exists and lints.</code></pre>
@@ -900,6 +985,61 @@ Move current: only after the new phase exists and lints.</code></pre>
       <code>files</code> is the envelope every Build session is bounded to — so
       the cost is paid again on every read of that task, by sessions that never
       saw the decision.</p>
+
+    <h3>Policy the project owns</h3>
+    <p>Brand, security, privacy, compliance, UX. Every organisation has rules
+      a plan can break without breaking a test, and none of them belong to a
+      planning workflow — they belong to the project. The enterprise shape for
+      this is a <code>spec.md</code> stage between intent and plan, reviewed by
+      whoever owns the policy. That is a fifth session, and this loop already
+      costs four before a line of code exists.</p>
+
+    <p>So policy lands as skills the project writes and owns, named
+      <code>policy-*</code>, in the skills directory the agent already reads:
+      <code>.claude/skills/</code> under Claude Code,
+      <code>.agents/skills/</code> under Codex. The <code>cs-*</code> skills
+      are this workflow's own invocation adapters and carry no policy; the
+      prefix is what keeps them apart, and it is why an install or uninstall,
+      which only touches <code>cs-*</code>, can never disturb the project's
+      own.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>docs/plans/02-offline-sync.md</span></div>
+      <pre><code>## Policy
+
+policy-a11y | T2, T4 | contrast and focus order on the new list view
+policy-billing | - | not applicable; this phase touches no pricing surface
+</code></pre>
+    </div>
+
+    <p>Plan lists them, reads only each skill's frontmatter description, and
+      opens in full just the ones this phase could actually violate. An
+      applicable one constrains the phase like any durable constraint: it can
+      add acceptance criteria, add a task, or put a file in
+      <code>files</code> that the goal alone would not have needed — and that
+      is the point of doing it here rather than at Build, where the read
+      envelope is already closed.</p>
+
+    <p>Step 2 lists the same skills itself instead of trusting the section
+      above, since that section is the judgement it is checking, and files
+      each miss as a <code>Policy</code> finding. From there nothing is new:
+      an open Critical or High blocks approval whatever its category, Approve
+      demands a changelog line that names what settled it, and
+      <code>plan metrics</code> counts it with the rest. A policy violation
+      inherits the whole machine because it is just a finding.</p>
+
+    <div class="note">
+      <span class="tick">&gt;</span>
+      <p>A project with no <code>policy-*</code> skill has no policy layer.
+        Plan writes <code>None.</code>, Review files nothing, and the absence
+        is never itself a finding — the same fail-open instinct the hooks
+        have.</p>
+    </div>
+
+    <p class="fine">Policy skills can exist before a procedure has run
+      twice. The repetition rule at phase close applies to procedures learned
+      from corrections; an established policy must inform the first plan
+      that could violate it.</p>
 
     <h3>The task graph</h3>
     <p>The phase file's frontmatter is machine-readable and its body is prose.
@@ -983,6 +1123,8 @@ When reviewed is lower than rev, inspect only the current changelog entries
 and affected tasks. Record each issue once in the seven-field Findings shape.
 For an over-built task, name the rung it should have stopped at and make that
 rung the fix: Medium normally, High when it widens files past the goal.
+List the project's policy-* skills yourself rather than trusting the phase's
+## Policy section, and file each miss under the category Policy.
 
 Run `plan finish review` to set reviewed: and clear the marker atomically,
 then lint and print `plan recommend`. A completed revision review names what
@@ -1002,6 +1144,12 @@ its intentionally narrow scope did not inspect.</code></pre>
         reviewer didn't read the codebase. Check that it actually opened the
         files before you accept the result.</p>
     </div>
+
+    <p class="fine">Categories are free text and the linter does not check
+      them, but three are named so a later pass can count like with like:
+      <code>Task ordering</code>, <code>Unnecessary scope</code>, and
+      <code>Policy</code>. Severity never follows the category — a privacy
+      policy breach is Critical, a copy deviation is Medium.</p>
 
     <h3>Round 2 and after: the same command narrows its scope</h3>
     <p>A second full review is a cold read of a plan that changed in three
@@ -1281,6 +1429,12 @@ handoff docs/plans/02-offline-sync.log.md  (read the last entry only)</code></pr
       everything before the task's own files is a cache read rather than a
       fresh one.</p>
 
+    <p class="fine">On Claude Code this list is enforced, not requested: while
+      the task is <code>in_progress</code>, a read outside it is refused with
+      the task id. That is the largest token lever in the workflow, and not
+      because it deletes prompt lines — it deletes the session that would
+      otherwise have read a codebase instead of four files.</p>
+
     <p>Searching is not reading. When a session needs to locate something it
       dispatches a subagent and takes back the <code>file:line</code>, so grep
       output never lands in the context that has to hold the task.</p>
@@ -1332,7 +1486,14 @@ handoff docs/plans/02-offline-sync.log.md  (read the last entry only)</code></pr
     <h3>At the phase close</h3>
     <p>Corrections are the raw material for AGENTS.md, but you can't count
       them inside a session that only lives for one task. Collect them at the
-      boundary instead, where you can see the whole phase.</p>
+      boundary instead, where you can see the whole phase — and only write one
+      down on its second occurrence. The first time is signal, not yet a
+      pattern, even when it was caused by missing repository guidance.
+      Once AGENTS.md hits its sixty-line budget (<code>plan lint</code> warns
+      <code>W06</code> past that, never blocking a build), the close audit
+      names the line a new one replaces instead of appending — the file's
+      growth stays bounded by the rule that fills it, not by a linter noticing
+      afterward.</p>
 
     <div class="code-block">
       <div class="code-head"><span>.claude/commands/cs-close.md</span><button class="copy-btn" type="button">Copy</button></div>
@@ -1368,55 +1529,122 @@ current: on that file. The next Plan reads this handoff, never OBJECTIVE.md.</co
       say.</p>
   </section>
 
-  <!-- CHANGES -->
-  <section id="changes">
-    <div class="eyebrow">v1.0.0</div>
-    <h2>What v1.0.0 added</h2>
-    <p>The previous revision was a document you copied from. This one is a repo you install,
-      and the three additions are the ones that only work with a tool
-      underneath them.</p>
+  <!-- METRICS -->
+  <section id="metrics">
+    <div class="eyebrow">Workflow health</div>
+    <h2>Use the phase history to improve the next plan</h2>
+    <p>At a phase boundary, run <code>plan metrics</code> to inspect every
+      readable phase under <code>docs/plans/</code>. It works independently
+      of PLAN.md and its current pointer, using recorded state and git
+      history without a model call.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>installed runtime · choose your surface</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code># Claude Code installation
+.claude/bin/plan metrics
+# Codex installation
+.agents/coldsession/bin/plan metrics
+# PowerShell: use plan.cmd in the same directory.</code></pre>
+    </div>
+
     <div class="gears">
       <div class="gear">
-        <div class="gear-name">Task graph</div>
-        <div class="gear-body">Dependencies, status, and a file list per task,
-          in parseable frontmatter. <code>plan lint</code> catches cycles,
-          forward references, tasks marked done ahead of their dependencies,
-          missing Verify lines, and graph/body drift — so shape errors never
-          burn a human review round.</div>
+        <div class="gear-name">Leading indicators</div>
+        <div class="gear-body">Revisions to approval, first-pass approval
+          rate, currently blocked tasks, and review rounds. Use them to spot
+          phases that need smaller scope or more complete task file lists.</div>
       </div>
       <div class="gear">
-        <div class="gear-name">Context envelope</div>
-        <div class="gear-body">Build reads the list
-          <code>plan brief</code> prints and nothing else, in fixed order. A
-          wrong file list now stops a session instead of quietly widening it,
-          and the cached prefix is identical across every build session in the
-          phase.</div>
-      </div>
-      <div class="gear">
-        <div class="gear-name">Dependency awareness</div>
-        <div class="gear-body"><code>plan next</code> picks the runnable task,
-          <code>--parallel</code> groups the ones with no shared files, and
-          <code>plan done</code> refuses a task whose dependency isn't
-          finished. Rev 07 wrote dependencies down and nothing read them.</div>
-      </div>
-      <div class="gear">
-        <div class="gear-name">Handoffs on disk</div>
-        <div class="gear-body">The next-session note is appended to a log file
-          instead of printed for you to paste. Ten lines, only what the repo
-          can't tell you.</div>
-      </div>
-      <div class="gear">
-        <div class="gear-name">Phase cap</div>
-        <div class="gear-body">Eight tasks. Every session re-reads the phase
-          file, so length is a recurring cost, not a one-off.</div>
-      </div>
-      <div class="gear">
-        <div class="gear-name">Search isolation</div>
-        <div class="gear-body">Locating something is a subagent returning
-          <code>file:line</code>. Grep output stays out of the session that
-          has to hold the task.</div>
+        <div class="gear-name">Lagging indicators</div>
+        <div class="gear-body">Findings by severity, reopen entries in
+          closed phases, resolved versus accepted findings, and phase cycle
+          time from git history. Use these alongside the close audit to
+          choose the next process correction.</div>
       </div>
     </div>
+
+    <p class="fine">These are summaries of recorded state: review rounds
+      use <code>rev:</code>, and blocked tasks reflect current status rather
+      than every past blockage. Missing approval or git history is reported
+      as <code>n/a</code>. With no phase files, metrics prints a message and
+      exits 0. Unlike the hook-invoked guard, it has a human reader and
+      reports an empty result explicitly.</p>
+  </section>
+
+  <!-- EVALS -->
+  <section id="evals">
+    <div class="eyebrow">Prompt verification</div>
+    <h2>Check what the commands actually do</h2>
+    <p>Runtime tests verify the Python gates. The prompt-eval harness runs a
+      real command through <code>claude -p</code> in a temporary installed
+      fixture project, then grades phase state and tool traces. The three
+      shipped fixtures check that Review writes findings, Approve records
+      readiness without setting approved status, and later Plans do not
+      reread OBJECTIVE.md.</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>coldsession repository · manual pre-PR check</span><button class="copy-btn" type="button">Copy</button></div>
+      <pre><code>python evals/run.py review-writes-findings</code></pre>
+    </div>
+
+    <p>Run the fixture relevant to a command, skill, or template change.
+      Live evals require an authenticated Claude CLI; the default budget cap
+      is $2 per fixture. They are a manual pre-PR check, deliberately not
+      wired into CI, and the harness currently covers the Claude surface.
+      <code>tests/test_evals.py</code> tests grading logic without model
+      calls. See <a href="../evals/README.md">the eval guide</a> for fixture
+      details and runner options.</p>
+  </section>
+
+  <!-- CHANGES -->
+  <section id="changes">
+    <div class="eyebrow">v2.3.0</div>
+    <h2>What v2.3.0 adds</h2>
+    <p>This release adds programmatic checks behind the workflow rules,
+      project-owned policy, and feedback from recorded phase history.
+      The phase format remains v1.4.0.</p>
+    <div class="gears">
+      <div class="gear">
+        <div class="gear-name">Deterministic gates</div>
+        <div class="gear-body">Four Claude hook pairs call
+          <code>plan guard</code> for cold judging sessions, bounded file
+          access, human approval, and lint-on-write. The shipped Codex
+          adapters retain advisory instructions.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Project policy</div>
+        <div class="gear-body">Plan applies relevant host-owned
+          <code>policy-*</code> skills and records its judgement in
+          <code>## Policy</code>. Review independently checks coverage.
+          Installers leave the project's policy skills alone.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Bounded guidance</div>
+        <div class="gear-body"><code>W06</code> warns when AGENTS.md exceeds
+          60 lines. Close proposes guidance on a correction's second
+          occurrence and names a replacement line when the budget is full.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Workflow metrics</div>
+        <div class="gear-body"><code>plan metrics</code> reports leading
+          and lagging indicators across the phase history, even without a
+          current phase pointer.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Prompt evals</div>
+        <div class="gear-body">Three manual Claude fixtures grade command
+          behavior from machine-readable state and tool traces. Standard
+          unit tests cover the grading logic without live model calls.</div>
+      </div>
+      <div class="gear">
+        <div class="gear-name">Release fixes</div>
+        <div class="gear-body">Quoted hook paths, matching installer
+          filters, alias-aware session checks, and linting before the pointer
+          moves. Version checks keep install pins aligned with the tool.</div>
+      </div>
+    </div>
+    <p class="fine">See <a href="../CHANGELOG.md">the changelog</a> for the
+      complete release history.</p>
   </section>
 
   <footer>

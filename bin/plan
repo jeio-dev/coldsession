@@ -20,18 +20,27 @@ Stdlib only, no install step.
   plan start T2 [--resume]         claim one approved build task
   plan bump                       bump the phase rev, at the start of a revise
   plan reviewed                   record that this rev has had a review pass
+  plan metrics                    deterministic workflow metrics across every phase
+  plan guard KIND [target]        deterministic hook gate; always fails open
   plan version                    print the coldsession release version
 """
 
+import glob
+import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
+from datetime import datetime
 
-TOOL_VERSION = "2.2.0"
+TOOL_VERSION = "2.3.0"
 FORMAT_VERSION = "1.4.0"
 
 ROOT = os.environ.get("PLAN_ROOT", ".")
 INDEX = os.path.join(ROOT, "PLAN.md")
+AGENTS_PATH = os.path.join(ROOT, "AGENTS.md")
+AGENTS_MD_BUDGET = 60
 
 TASK_RE = re.compile(r"^\s{2}(T\d+):\s*\{(.*)\}\s*$")
 HEAD_RE = re.compile(r"^##\s+(.+?)\s*$")
@@ -390,6 +399,16 @@ def lint_issues(phase):
                      "or the objective is wrong. Split it and re-plan rather than "
                      "revising again")
 
+    if os.path.exists(AGENTS_PATH):
+        try:
+            agents_lines = len(read_text(AGENTS_PATH).splitlines())
+        except OSError:
+            agents_lines = 0
+        if agents_lines > AGENTS_MD_BUDGET:
+            warns.append(f"W06 AGENTS.md is {agents_lines} lines, over the "
+                         f"{AGENTS_MD_BUDGET}-line budget; a build session re-reads it "
+                         "every task, trim it before adding more")
+
     return errs, warns
 
 
@@ -690,6 +709,28 @@ def _transitive_deps(phase, tid):
     return order
 
 
+def read_set(phase, tid):
+    """The bounded read list for one task, in the order a build session opens it.
+
+    AGENTS.md, the phase file, the files of every transitive dependency, then
+    the task's own; first occurrence wins so the prefix stays byte-identical
+    across build sessions. `plan brief` prints this list and `plan guard`
+    enforces it; they must never disagree about what a session may open, so
+    both call this rather than rebuilding the traversal.
+    """
+    reads = ["AGENTS.md", phase["path"]]
+    for dep in _transitive_deps(phase, tid):
+        reads += phase["tasks"].get(dep, {}).get("files", [])
+    reads += phase["tasks"].get(tid, {}).get("files", [])
+
+    seen, ordered = set(), []
+    for r in reads:
+        if r not in seen:
+            seen.add(r)
+            ordered.append(r)
+    return ordered
+
+
 def cmd_brief(phase, args):
     if not args:
         die("usage: plan brief T2")
@@ -699,16 +740,7 @@ def cmd_brief(phase, args):
     task = phase["tasks"][tid]
 
     unmet = [d for d in task["deps"] if phase["tasks"].get(d, {}).get("status") != "done"]
-    reads = ["AGENTS.md", phase["path"]]
-    for dep in _transitive_deps(phase, tid):
-        reads += phase["tasks"].get(dep, {}).get("files", [])
-    reads += task["files"]
-
-    seen, ordered = set(), []
-    for r in reads:
-        if r not in seen:
-            seen.add(r)
-            ordered.append(r)
+    ordered = read_set(phase, tid)
 
     status = phase["meta"].get("status", "?")
     print(f"task    {tid}   status {task['status']}")
@@ -1012,12 +1044,545 @@ def cmd_version(_phase, _args):
     return 0
 
 
+# --------------------------------------------------------------- metrics
+
+def _phase_files():
+    """Every phase file on disk, `.log.md` handoffs excluded."""
+    plans_dir = os.path.join(ROOT, "docs", "plans")
+    try:
+        paths = glob.glob(os.path.join(plans_dir, "*.md"))
+    except OSError:
+        return []
+    return sorted(p for p in paths if not p.endswith(".log.md"))
+
+
+def _load_phases():
+    """Every phase file that parses, skipping any that don't.
+
+    Unlike every other subcommand, metrics has no single `current:` phase to
+    trust: it reads the whole `docs/plans/` directory, so one unreadable or
+    malformed file must not take the rest of the report down with it.
+    """
+    phases = []
+    for path in _phase_files():
+        try:
+            phases.append(read_phase(path))
+        except Exception:
+            continue
+    return phases
+
+
+def _git_cycle_days(path):
+    """Days between a phase file's first and most recent commit, or None.
+
+    None covers every way this can't be answered -- git missing, the path
+    outside a repo, the file never committed -- so metrics degrades to "n/a"
+    for that phase rather than failing the whole report.
+    """
+    rel = os.path.relpath(path, ROOT)
+    try:
+        result = subprocess.run(
+            ["git", "-C", ROOT, "log", "--follow", "--format=%aI", "--", rel],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    stamps = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if len(stamps) < 2:
+        return None
+    try:
+        parsed = sorted(datetime.fromisoformat(s) for s in stamps)
+    except ValueError:
+        return None
+    return (parsed[-1] - parsed[0]).total_seconds() / 86400.0
+
+
+def _fmt_avg(values, unit=""):
+    if not values:
+        return "n/a"
+    return f"avg {sum(values) / len(values):.1f}{unit} ({len(values)} phase(s))"
+
+
+def cmd_metrics(_phase, _args):
+    """Deterministic metrics over every phase file, for the Stage 6 loopback.
+
+    Scans docs/plans/*.md directly rather than the current phase, so -- like
+    guard -- it must fail open: no docs/plans directory, no PLAN.md, or a
+    repo that hasn't adopted coldsession yet all exit 0 with nothing to
+    report, never a traceback.
+    """
+    try:
+        phases = _load_phases()
+    except Exception:
+        return 0
+    if not phases:
+        print("no phase files under docs/plans/; nothing to report")
+        return 0
+
+    closed = [p for p in phases if p["meta"].get("status") == "closed"]
+    approved = [p for p in phases if p["meta"].get("status") == "approved"]
+    draft = len(phases) - len(closed) - len(approved)
+
+    print(f"phases   {len(phases)} scanned "
+          f"({len(closed)} closed, {len(approved)} approved, {draft} draft)")
+
+    print("\nleading indicators")
+
+    revisions = [intof(p["meta"].get("ready"), 0) - 1
+                 for p in phases if p["meta"].get("ready") is not None]
+    print(f"  revisions to approval   {_fmt_avg(revisions)}")
+
+    if revisions:
+        first_pass = sum(1 for r in revisions if r == 0)
+        rate = 100.0 * first_pass / len(revisions)
+        print(f"  first-pass approve rate {rate:.0f}% ({first_pass} of {len(revisions)})")
+    else:
+        print("  first-pass approve rate n/a (no phase has an approved revision yet)")
+
+    blocked_counts = [sum(1 for t in p["tasks"].values() if t["status"] == "blocked")
+                       for p in phases]
+    phases_with_blocked = sum(1 for c in blocked_counts if c)
+    print(f"  tasks blocked           {sum(blocked_counts)} total across "
+          f"{phases_with_blocked} of {len(phases)} phase(s)")
+
+    rounds = [intof(p["meta"].get("rev"), 1) for p in phases]
+    print(f"  review rounds           {_fmt_avg(rounds)}")
+
+    print("\nlagging indicators")
+
+    by_sev = {}
+    for p in phases:
+        for f in p["findings"].values():
+            by_sev[f["severity"]] = by_sev.get(f["severity"], 0) + 1
+    total_findings = sum(by_sev.values())
+    if total_findings:
+        sev_line = ", ".join(f"{sev} {by_sev[sev]}" for sev in SEVERITIES if sev in by_sev)
+        print(f"  findings by severity    {sev_line} ({total_findings} total)")
+    else:
+        print("  findings by severity    none recorded")
+
+    reopened = sum(1 for p in closed for c in p["changelog"] if c["state"] == "open")
+    print(f"  findings reopened       {reopened} (across {len(closed)} closed phase(s))")
+
+    resolved = sum(1 for p in phases for f in p["findings"].values()
+                   if f["status"] == "resolved")
+    accepted = sum(1 for p in phases for f in p["findings"].values()
+                   if f["status"] == "accepted")
+    if resolved + accepted:
+        share = 100.0 * resolved / (resolved + accepted)
+        print(f"  resolved vs accepted    {resolved} resolved, {accepted} accepted "
+              f"({share:.0f}% resolved)")
+    else:
+        print("  resolved vs accepted    n/a (no closed findings yet)")
+
+    cycle_days = [d for d in (_git_cycle_days(p["path"]) for p in closed) if d is not None]
+    if cycle_days:
+        print(f"  phase cycle time        {_fmt_avg(cycle_days, 'd')} (git-tracked, closed)")
+    else:
+        print("  phase cycle time        n/a (no closed phase is tracked in git history)")
+
+    return 0
+
+
+# ----------------------------------------------------------------- guard
+
+# Advisory prompt text asks a model to honour these rules; `plan guard` is the
+# deterministic layer behind it, called from .claude/hooks/ on the Claude
+# surface. Codex has no hook mechanism, so there the same rules stay advisory.
+#
+# Every path through guard fails open. It runs on every prompt and every file
+# tool call in whatever repository the user happens to be in, including one
+# that has never heard of coldsession, so absent, unreadable, or ambiguous
+# plan state must exit 0 in silence. Deny only on a positive match.
+
+GUARD_KINDS = ("read", "write", "lint", "stage")
+AUTHORING_COMMANDS = ("cs-plan", "cs-revise")
+JUDGING_COMMANDS = ("cs-review", "cs-approve", "cs-close")
+# A 2.x compatibility alias runs the stage it aliases, so it has to face the
+# same gate. Resolved to the canonical name before anything is checked or
+# recorded: a gate that named only the canonical commands was one rename away
+# from bypassable, and a session log that recorded both spellings would leave
+# the same hole for whatever consults it next.
+COMMAND_ALIASES = {"cs-recheck": "cs-review"}
+CS_COMMAND_RE = re.compile(r"^[/$]?(cs-[a-z-]+)\b")
+APPROVED_RE = re.compile(r"^status:\s*approved\s*$", re.M)
+
+
+def _guard_deny(code, message, hint=""):
+    """Exit 2 with the reason on stderr, which is what a hook feeds back."""
+    print(f"{code} {message}", file=sys.stderr)
+    if hint:
+        print(f"  {hint}", file=sys.stderr)
+    return 2
+
+
+def _guard_phase():
+    """The current phase, or None the moment anything is unclear.
+
+    Deliberately not read_index(): that calls die() on a missing PLAN.md or a
+    dangling `current:` pointer, and a guard that exits 1 there would break
+    every session in every repository that does not use coldsession.
+    """
+    try:
+        if not os.path.exists(INDEX):
+            return None
+        fm, _ = split_frontmatter(read_text(INDEX))
+        m = re.search(r"^current:\s*(\S+)", fm, re.M)
+        if not m:
+            return None
+        path = os.path.join(ROOT, m.group(1))
+        if not os.path.exists(path):
+            return None
+        return read_phase(path)
+    except Exception:
+        return None
+
+
+def _guard_payload():
+    """The hook event JSON on stdin, or {} when there is none.
+
+    Hooks pipe the event in rather than passing arguments, so the shell
+    wrappers stay trivial and every field is parsed in one place. The
+    argument forms (`plan guard read src/a.py`) exist for humans and tests,
+    and take precedence over anything on stdin.
+
+    Decoded from bytes as utf-8-sig rather than read as text, for the reason
+    read_text() gives: Windows PowerShell prepends a BOM when it pipes to a
+    native command, and a BOM ahead of the opening brace makes json.loads
+    raise -- which, because guard fails open, would turn every gate on that
+    platform into a silent no-op. Reading bytes also keeps a non-ASCII path
+    intact when the console codepage is not UTF-8.
+    """
+    try:
+        if sys.stdin is None or sys.stdin.isatty():
+            return {}
+        stream = getattr(sys.stdin, "buffer", None)
+        raw = stream.read().decode("utf-8-sig", "replace") if stream else sys.stdin.read()
+    except Exception:
+        return {}
+    raw = raw.strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _guard_norm(path):
+    """One comparable form for a path: absolute against ROOT, case-folded."""
+    if not path or not isinstance(path, str):
+        return None
+    try:
+        p = os.path.expanduser(path)
+        if not os.path.isabs(p):
+            p = os.path.join(ROOT, p)
+        return os.path.normcase(os.path.abspath(p))
+    except Exception:
+        return None
+
+
+def _guard_scope(phase):
+    """(in-progress task ids, allowed paths), or None when no build is running.
+
+    The union of every in-progress task's read set, not one task's: `plan next
+    --parallel` runs two build terminals at once and a hook cannot tell which
+    session owns which task. The union is still a large narrowing over the
+    whole repository. Scoping to the owning task means having `plan start`
+    stamp a session id -- a follow-up, not a blocker.
+
+    PLAN.md and the phase handoff log join the set because a build session
+    legitimately reads the index and appends to the log, and neither appears
+    in any task's `files`.
+    """
+    if phase is None:
+        return None
+    active = [t for t in phase["order"] if phase["tasks"][t]["status"] == "in_progress"]
+    if not active:
+        return None
+    paths = {_guard_norm(INDEX), _guard_norm(phase["path"]),
+             _guard_norm(phase["path"][:-3] + ".log.md")}
+    for tid in active:
+        for entry in read_set(phase, tid):
+            paths.add(_guard_norm(entry))
+    paths.discard(None)
+    return active, paths
+
+
+def _guard_read(phase, path):
+    scope = _guard_scope(phase)
+    if scope is None:
+        return 0
+    active, allowed = scope
+    target = _guard_norm(path)
+    root = _guard_norm(ROOT)
+    if target is None or root is None or target in allowed:
+        return 0
+    if not target.startswith(root + os.sep):
+        # Outside the project. What this gate enforces is "the files of this
+        # repository, as listed in the brief"; a path outside it is not
+        # something a phase file can describe, so it is not guard's to refuse.
+        # Denying here buys little and false-positives on scratch space, and a
+        # false positive on the happy path is the worse failure.
+        return 0
+    return _guard_deny(
+        "E23",
+        f"{os.path.relpath(target, root)} is not in the brief for "
+        f"{', '.join(active)}",
+        f"run `plan brief {active[0]}` for the read list. A file the task "
+        "needs and the brief omits is a plan finding, not permission to "
+        "widen context.")
+
+
+def _guard_write(phase, path, payload):
+    """Refuse the edit that sets `status: approved`.
+
+    /cs-approve deliberately cannot approve: a clean pass writes `ready:
+    <rev>` and the human sets the status. That is the one line in the
+    workflow no agent may write, so it is checked rather than requested.
+
+    Only an edit that *introduces* the line is refused. An edit that carries
+    an already-approved status line through untouched is not an approval.
+    """
+    if phase is None:
+        return 0
+    root = _guard_norm(ROOT)
+    target = _guard_norm(path)
+    plans = _guard_norm(os.path.join(ROOT, "docs", "plans"))
+    if target is None or plans is None or not target.startswith(plans + os.sep):
+        return 0
+
+    tool_input = payload.get("tool_input")
+    tool_input = tool_input if isinstance(tool_input, dict) else {}
+    try:
+        before = read_text(target) if os.path.exists(target) else ""
+    except Exception:
+        before = ""
+
+    edits = []
+    if isinstance(tool_input.get("content"), str):
+        edits.append((before, tool_input["content"]))
+    if isinstance(tool_input.get("new_string"), str):
+        edits.append((tool_input.get("old_string") or "", tool_input["new_string"]))
+    for item in tool_input.get("edits") or []:
+        if isinstance(item, dict) and isinstance(item.get("new_string"), str):
+            edits.append((item.get("old_string") or "", item["new_string"]))
+
+    for old, new in edits:
+        if APPROVED_RE.search(new) and not APPROVED_RE.search(old):
+            return _guard_deny(
+                "E24",
+                "an agent may not set `status: approved` in "
+                f"{os.path.relpath(target, root)}",
+                "/cs-approve writes `ready: <rev>` and stops. The human sets "
+                "the status; that separation is the point of the checklist.")
+    return 0
+
+
+def _guard_phase_at(path):
+    """The phase file just written, or None when it is not one of ours.
+
+    Deliberately not `current:`. The hook fires on every Edit|Write, and the
+    write that most needs linting is the next phase file -- /cs-plan writes
+    it and only then moves the pointer, so keying on the pointer left the
+    freshly authored file as the one file the gate could not see. The first
+    /cs-plan of a project writes a phase file before PLAN.md exists at all.
+
+    Widening past the pointer must not widen past coldsession, so the match
+    is positive and made on the file itself: a `.md` under docs/plans/, not a
+    `.log.md` handoff, that parses and declares a `phase:` in its
+    frontmatter. A repository keeping unrelated markdown there gets nothing.
+    """
+    target = _guard_norm(path)
+    plans = _guard_norm(os.path.join(ROOT, "docs", "plans"))
+    if target is None or plans is None:
+        return None
+    if not target.startswith(plans + os.sep):
+        return None
+    if not target.endswith(".md") or target.endswith(".log.md"):
+        return None
+    try:
+        phase = read_phase(target)
+    except Exception:
+        return None
+    return phase if phase["meta"].get("phase") else None
+
+
+def _guard_lint(path):
+    """Surface a shape error on the write that caused it.
+
+    Errors only -- `plan lint` exits non-zero on E-codes alone -- so a phase
+    still being drafted does not fire on every intermediate save.
+    """
+    phase = _guard_phase_at(path)
+    if phase is None:
+        return 0
+    target = phase["path"]
+    try:
+        errs, _ = lint_issues(phase)
+    except Exception:
+        return 0
+    if not errs:
+        return 0
+    print(f"E-codes in {os.path.relpath(target, _guard_norm(ROOT))}:", file=sys.stderr)
+    for line in errs:
+        print(f"  {line}", file=sys.stderr)
+    print("  fix these now rather than spending a review round on them.",
+          file=sys.stderr)
+    return 2
+
+
+def _session_dir():
+    base = os.environ.get("PLAN_SESSION_DIR")
+    if base:
+        return base
+    return os.path.join(tempfile.gettempdir(), "coldsession-sessions")
+
+
+def _session_log(session):
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(session))[:120]
+    return os.path.join(_session_dir(), safe + ".txt")
+
+
+def _session_ran(session):
+    try:
+        with open(_session_log(session), encoding="utf-8") as handle:
+            return [line.strip() for line in handle if line.strip()]
+    except OSError:
+        return []
+
+
+def _session_record(session, command):
+    try:
+        os.makedirs(_session_dir(), exist_ok=True)
+        with open(_session_log(session), "a", encoding="utf-8") as handle:
+            handle.write(command + "\n")
+    except OSError:
+        pass
+
+
+def _split_session(args):
+    """(session id or None, the remaining arguments)."""
+    rest = list(args)
+    if "--session" not in rest:
+        return None, rest
+    i = rest.index("--session")
+    session = rest[i + 1] if i + 1 < len(rest) else None
+    return session, rest[:i] + rest[i + 2:]
+
+
+def _guard_stage(args, payload):
+    """Keep the judging commands cold.
+
+    A review written in the session that wrote the plan has the right wording
+    and none of the independence, which is worse than no review: it looks like
+    one. The rule is the product's core claim, and until now was only ever
+    asked for in prose.
+
+    State is one line per command in a temp file keyed on the session id --
+    sessions are ephemeral and so is this. No session id, and no readable
+    plan state to judge against, both mean no basis to refuse, so both exit 0.
+    """
+    session, rest = _split_session(args)
+    if session is None:
+        session = payload.get("session_id")
+    prompt = rest[0] if rest else payload.get("prompt")
+    if not session or not isinstance(prompt, str):
+        return 0
+
+    m = CS_COMMAND_RE.match(prompt.strip())
+    if not m:
+        return 0
+    command = COMMAND_ALIASES.get(m.group(1), m.group(1))
+
+    if command in JUDGING_COMMANDS:
+        authored = [c for c in _session_ran(session) if c in AUTHORING_COMMANDS]
+        # Session history alone is not grounds to refuse. Everything else in
+        # guard reads plan state before it denies; this did not, so a stray
+        # session log was enough to gate /cs-review in a repository that has
+        # no PLAN.md and never adopted coldsession. Checked here rather than
+        # at the top of the function because /cs-plan legitimately runs
+        # *before* PLAN.md exists -- it is the command that writes it -- so
+        # the command still has to be recorded, and only the denial waits for
+        # state that can justify it.
+        if authored and _guard_phase() is not None:
+            return _guard_deny(
+                "E25",
+                f"/{command} cannot run in the session that ran /{authored[0]}",
+                "every step that judges the previous one runs cold. Exit this "
+                f"session and run /{command} in a new one; the phase file "
+                "carries everything it needs.")
+    _session_record(session, command)
+    return 0
+
+
+def cmd_guard(_phase, args):
+    """Deterministic gates behind the workflow's advisory rules.
+
+      plan guard read  [PATH]                 bounded reads
+      plan guard write [PATH]                 human-only approval
+      plan guard lint  [PATH]                 lint on write
+      plan guard stage [CMD] [--session ID]   cold judging sessions
+
+    With no PATH or CMD the event is read as hook JSON on stdin.
+    """
+    if not args or args[0] not in GUARD_KINDS:
+        # Silently. Guard has no caller but a hook, and a hook's stderr is
+        # fed back to the model -- on UserPromptSubmit and PreToolUse it
+        # arrives mid-turn, in whatever the user was actually doing. Usage
+        # text belongs in `plan --help`, which lists the kinds, and not in
+        # someone else's conversation.
+        return 0
+    kind, rest = args[0], args[1:]
+
+    # Read stdin only when the arguments do not already answer the question.
+    # A hook passes everything on stdin; a human passes it on the command
+    # line and should not have the call block waiting for input that is
+    # never coming.
+    if kind == "stage":
+        session, tail = _split_session(rest)
+        needs_stdin = not (session and tail)
+    else:
+        needs_stdin = not rest or kind == "write"
+    payload = _guard_payload() if needs_stdin else {}
+
+    if kind == "stage":
+        try:
+            return _guard_stage(rest, payload)
+        except Exception:
+            return 0
+
+    path = rest[0] if rest else None
+    if path is None:
+        tool_input = payload.get("tool_input")
+        if isinstance(tool_input, dict):
+            path = tool_input.get("file_path") or tool_input.get("path")
+    if not path:
+        return 0
+
+    try:
+        # lint decides from the written file alone, so it never pays for the
+        # index read -- and this hook fires on every Edit and Write.
+        if kind == "lint":
+            return _guard_lint(path)
+        phase = _guard_phase()
+        if kind == "read":
+            return _guard_read(phase, path)
+        return _guard_write(phase, path, payload)
+    except Exception:
+        return 0
+
+
 COMMANDS = {"version": cmd_version, "status": cmd_status, "lint": cmd_lint,
             "next": cmd_next, "brief": cmd_brief, "start": cmd_start,
             "done": cmd_done, "block": cmd_block, "begin": cmd_begin,
             "finish": cmd_finish,
             "findings": cmd_findings, "resolve": cmd_resolve, "bump": cmd_bump,
-            "reviewed": cmd_reviewed, "recommend": cmd_recommend}
+            "reviewed": cmd_reviewed, "recommend": cmd_recommend,
+            "metrics": cmd_metrics, "guard": cmd_guard}
 
 
 def main():
@@ -1028,8 +1593,14 @@ def main():
     name = argv[0]
     if name not in COMMANDS:
         die(f"unknown command {name!r}. Try: {', '.join(COMMANDS)}")
-    if name == "version":
-        return cmd_version(None, argv[1:])
+    if name in ("version", "metrics", "guard"):
+        # None of the three answer from a `current:` phase: version needs no
+        # phase file at all, metrics scans every phase file itself, and guard
+        # reads plan state defensively because it runs from a hook in
+        # whatever repository the user is in. None may go through
+        # read_phase(read_index()) -- that dies on a repo with no PLAN.md
+        # yet, which is exactly the case both must fail open on.
+        return COMMANDS[name](None, argv[1:])
     phase = read_phase(read_index())
     return COMMANDS[name](phase, argv[1:]) or 0
 

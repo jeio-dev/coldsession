@@ -47,6 +47,50 @@ function Test-ExactKeys($Object, [string[]]$Names) {
     return $actual.Count -eq $expected.Count -and -not (Compare-Object $actual $expected)
 }
 
+# Hook wrappers ship as .sh/.cmd pairs, so a command is compared by name and
+# not by path: this installer registers the .cmd, install.sh registers the .sh,
+# and both are generated output. The surrounding quotes come off first --
+# Write-ClaudeSettings quotes the executable path so a project directory with
+# a space in it still launches, and this has to recognise what it writes.
+$ExpectedHookSignature = (@(
+    "PostToolUse::0::Edit|Write::cs-guard-lint",
+    "PreToolUse::0::Read|Edit|Write::cs-guard-read",
+    "PreToolUse::1::Edit|Write::cs-guard-write",
+    "UserPromptSubmit::0::::cs-guard-stage"
+) | Sort-Object) -join "`n"
+
+function Get-HookSignature($Hooks) {
+    if ($null -eq $Hooks) { return $null }
+    $rows = @()
+    foreach ($event in @($Hooks.PSObject.Properties.Name)) {
+        $index = 0
+        foreach ($entry in @($Hooks.$event)) {
+            if ($null -eq $entry) { return $null }
+            $shape = (Test-ExactKeys $entry @("matcher", "hooks")) -or (Test-ExactKeys $entry @("hooks"))
+            if (-not $shape) { return $null }
+            $specs = @($entry.hooks)
+            if ($specs.Count -ne 1) { return $null }
+            if ($specs[0].type -ne "command") { return $null }
+            $command = [string]$specs[0].command
+            if (-not $command) { return $null }
+            $leaf = ($command.Trim().Trim('"') -replace '\\', '/').Split('/')[-1]
+            $leaf = $leaf -replace '\.(sh|cmd)$', ''
+            $matcher = ""
+            if (@($entry.PSObject.Properties.Name) -contains "matcher") {
+                $matcher = [string]$entry.matcher
+            }
+            $rows += "$event::$index::$matcher::$leaf"
+            $index += 1
+        }
+    }
+    return (($rows | Sort-Object) -join "`n")
+}
+
+# True when settings.json is this installer's own output and nobody has touched
+# it. It decides both whether an uninstall may delete the file and whether an
+# update may rewrite it, so it has to keep recognising the pre-hooks three-key
+# default: a user upgrading from 2.2 never edited that file and must not be
+# warned about it.
 function Test-GeneratedClaudeSettings($Path) {
     try {
         $settings = [System.IO.File]::ReadAllText($Path) | ConvertFrom-Json
@@ -54,7 +98,13 @@ function Test-GeneratedClaudeSettings($Path) {
         return $false
     }
 
-    if (-not (Test-ExactKeys $settings @("model", "env", "permissions"))) { return $false }
+    $hasHooks = @($settings.PSObject.Properties.Name) -contains "hooks"
+    if ($hasHooks) {
+        if (-not (Test-ExactKeys $settings @("model", "env", "permissions", "hooks"))) { return $false }
+        if ((Get-HookSignature $settings.hooks) -ne $ExpectedHookSignature) { return $false }
+    } else {
+        if (-not (Test-ExactKeys $settings @("model", "env", "permissions"))) { return $false }
+    }
     if ($settings.model -ne "opusplan") { return $false }
     if (-not (Test-ExactKeys $settings.env @("CLAUDE_CODE_SUBAGENT_MODEL"))) { return $false }
     if ($settings.env.CLAUDE_CODE_SUBAGENT_MODEL -ne "sonnet") { return $false }
@@ -78,6 +128,17 @@ function Test-GeneratedClaudeSettings($Path) {
     return $matchesCurrent -or $matchesLegacy
 }
 
+# True for the generated default written before hooks existed: still ours,
+# still untouched, and one rewrite short of having the gates.
+function Test-SettingsPredateHooks($Path) {
+    try {
+        $settings = [System.IO.File]::ReadAllText($Path) | ConvertFrom-Json
+    } catch {
+        return $false
+    }
+    return -not (@($settings.PSObject.Properties.Name) -contains "hooks")
+}
+
 function Remove-ManagedFile($Path) {
     if (Test-Path -LiteralPath $Path -PathType Leaf) {
         Remove-Item -LiteralPath $Path -Force
@@ -90,6 +151,90 @@ function Remove-ManagedDirectory($Path) {
         Remove-Item -LiteralPath $Path -Recurse -Force
         $script:Removed += 1
     }
+}
+
+# The wrappers this installer ships, and so the only files it will copy or
+# remove: a project may keep hooks of its own in the same directory. One list
+# for both operations, and the same list install.sh uses -- when the two
+# installers disagreed about it, a project uninstalled from PowerShell lost a
+# hook it kept when uninstalled from sh.
+$HookPatterns = @("cs-guard-*.sh", "cs-guard-*.cmd")
+
+# The directory goes only if removing ours emptied it.
+function Remove-ManagedHooks($Root) {
+    $dir = "$Root\.claude\hooks"
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return }
+    foreach ($pattern in $HookPatterns) {
+        Get-ChildItem -LiteralPath $dir -File -Filter $pattern |
+            ForEach-Object { Remove-ManagedFile $_.FullName }
+    }
+    if (-not (Get-ChildItem -LiteralPath $dir -Force)) {
+        Remove-Item -LiteralPath $dir -Force
+    }
+}
+
+function Write-ClaudeSettings($Path) {
+    # Single-quoted here-string: $CLAUDE_PROJECT_DIR is Claude Code's own
+    # placeholder and must survive into the file unexpanded.
+    $settingsJson = @'
+{
+  "model": "opusplan",
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(.claude/bin/plan:*)",
+      "Bash(.claude/bin/plan.cmd:*)",
+      "PowerShell(.claude/bin/plan.cmd:*)"
+    ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-stage.cmd\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-read.cmd\""
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-write.cmd\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-lint.cmd\""
+          }
+        ]
+      }
+    ]
+  }
+}
+'@
+    [System.IO.File]::WriteAllText($Path, $settingsJson, (New-Object System.Text.UTF8Encoding($false)))
 }
 
 function Copy-Command($Source, $Destination, $RuntimePath) {
@@ -165,6 +310,7 @@ if ($Agent -eq "codex") {
         }
         Remove-ManagedFile "$DestinationRoot\.claude\bin\plan"
         Remove-ManagedFile "$DestinationRoot\.claude\bin\plan.cmd"
+        Remove-ManagedHooks $DestinationRoot
         $settingsPath = "$DestinationRoot\.claude\settings.json"
         if (Test-Path -LiteralPath $settingsPath -PathType Leaf) {
             if (Test-GeneratedClaudeSettings $settingsPath) {
@@ -179,32 +325,29 @@ if ($Agent -eq "codex") {
         Get-ChildItem -LiteralPath "$DestinationRoot\.claude\commands" -File -Filter "cs-*.md" |
             ForEach-Object { Remove-ManagedFile $_.FullName }
     }
-    New-Item -ItemType Directory -Force -Path "$DestinationRoot\.claude\commands", "$DestinationRoot\.claude\bin" | Out-Null
+    Remove-ManagedHooks $DestinationRoot
+    New-Item -ItemType Directory -Force -Path "$DestinationRoot\.claude\commands", "$DestinationRoot\.claude\bin", "$DestinationRoot\.claude\hooks" | Out-Null
     Get-ChildItem -LiteralPath "$SourceRoot\commands" -File -Filter "cs-*.md" | ForEach-Object {
         Copy-Command $_.FullName "$DestinationRoot\.claude\commands\$($_.Name)" ".claude/bin/plan"
     }
     Copy-Item -LiteralPath "$SourceRoot\bin\plan" -Destination "$DestinationRoot\.claude\bin\plan" -Force
     Copy-Item -LiteralPath "$SourceRoot\bin\plan.cmd" -Destination "$DestinationRoot\.claude\bin\plan.cmd" -Force
+    foreach ($pattern in $HookPatterns) {
+        Get-ChildItem -LiteralPath "$SourceRoot\hooks" -File -Filter $pattern | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination "$DestinationRoot\.claude\hooks\$($_.Name)" -Force
+        }
+    }
 
     $settingsPath = "$DestinationRoot\.claude\settings.json"
     if (-not (Test-Path -LiteralPath $settingsPath)) {
-        $settingsJson = @"
-{
-  "model": "opusplan",
-  "env": {
-    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
-  },
-  "permissions": {
-    "allow": [
-      "Bash(.claude/bin/plan:*)",
-      "Bash(.claude/bin/plan.cmd:*)",
-      "PowerShell(.claude/bin/plan.cmd:*)"
-    ]
-  }
-}
-"@
-        [System.IO.File]::WriteAllText($settingsPath, $settingsJson, (New-Object System.Text.UTF8Encoding($false)))
+        Write-ClaudeSettings $settingsPath
         Write-Host "wrote .claude/settings.json"
+    } elseif ((Test-GeneratedClaudeSettings $settingsPath) -and (Test-SettingsPredateHooks $settingsPath)) {
+        # Untouched output of an installer that predates the gates. Rewriting
+        # it is the only way an upgrade delivers them, and there is nothing of
+        # the user's in there to lose.
+        Write-ClaudeSettings $settingsPath
+        Write-Host "updated .claude/settings.json with the hook gates"
     } else {
         Write-Host "kept existing .claude/settings.json"
     }
@@ -260,7 +403,7 @@ if ($KnownInstall) {
     Write-Host "installed coldsession $NewVersion into $DestinationRoot"
 }
 Write-Host "  agents: $Agent"
-if ($Agent -ne "codex") { Write-Host "  Claude: .claude\commands\cs-* and .claude\bin\plan" }
+if ($Agent -ne "codex") { Write-Host "  Claude: .claude\commands\cs-*, .claude\bin\plan, .claude\hooks\cs-guard-*" }
 if ($Agent -ne "claude") { Write-Host "  Codex:  .agents\skills\cs-* and .agents\coldsession\" }
 Write-Host "  shared: templates\ and docs\plans\"
 if ($Removed -gt 0) { Write-Host "  replaced/removed $Removed managed item(s)" }

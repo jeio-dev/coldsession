@@ -8,10 +8,14 @@ If it refuses, print that output and stop. Close begins only for an approved
 phase whose tasks are all done; an interrupted close requires `--resume`.
 
 Read the phase's commits, its log, and the complete phase including findings.
-List only corrections that happened more than once or failures caused by
-missing repository guidance. Tie each to a commit, log entry, or finding and
-propose exactly one durable home: AGENTS.md globally, a directory rule, or a
-skill for a repeated procedure.
+A correction earns a line only on its second occurrence — the first time is
+signal, not yet a pattern, even when it was caused by missing repository
+guidance. Tie each to the two commits, log entries, or findings where it
+happened and propose exactly one durable home: AGENTS.md globally, a
+directory rule, or a skill for a repeated procedure. If AGENTS.md is already
+at its 60-line budget (`plan lint` warns `W06` past that), name the existing
+line the new one replaces instead of appending — growth stays bounded by
+construction, not by memory.
 
 Audit the delivered phase against every acceptance criterion and report gaps,
 dead code, and unwired work. If the audit finds a material gap, add a

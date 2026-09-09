@@ -100,6 +100,32 @@ remove_dir() {
   fi
 }
 
+# The wrappers this installer ships, and so the only files it will copy or
+# remove: a project may keep hooks of its own in the same directory. One list
+# for both operations, and the same list install.ps1 uses -- when the two
+# installers disagreed about it, a project uninstalled from PowerShell lost a
+# hook it kept when uninstalled from sh.
+HOOK_PATTERNS=("cs-guard-*.sh" "cs-guard-*.cmd")
+
+# The directory goes only if removing ours emptied it.
+remove_hooks() {
+  local dir="$1/.claude/hooks"
+  [ -d "$dir" ] || return 0
+  for pattern in "${HOOK_PATTERNS[@]}"; do
+    for path in "$dir"/$pattern; do
+      if [ -f "$path" ]; then
+        remove_file "$path"
+      fi
+    done
+  done
+  rmdir "$dir" 2>/dev/null || true
+}
+
+# Exit 0 when settings.json is one this installer generated and nobody has
+# touched. It decides both whether an uninstall may delete the file and
+# whether an update may rewrite it, so it has to keep recognising the
+# pre-hooks three-key default: a user upgrading from 2.2 never edited that
+# file and must not be warned about it.
 settings_is_generated_default() {
   python3 - "$1" <<'PY'
 import json
@@ -120,7 +146,51 @@ allowed_sets = (
     {"Bash(.claude/bin/plan:*)", "Bash(.claude/bin/plan.cmd:*)"},
 )
 
-if set(actual) != {"model", "env", "permissions"}:
+# Hook wrappers ship as .sh/.cmd pairs, so the command is compared by name
+# rather than by path: one install writes .sh, the other .cmd, and both are
+# this installer's own output. The surrounding quotes come off first --
+# write_settings quotes the executable path so a project directory with a
+# space in it still launches, and this has to recognise what it writes.
+expected_hooks = {
+    "UserPromptSubmit": [(None, "cs-guard-stage")],
+    "PreToolUse": [("Read|Edit|Write", "cs-guard-read"),
+                   ("Edit|Write", "cs-guard-write")],
+    "PostToolUse": [("Edit|Write", "cs-guard-lint")],
+}
+
+
+def signature(hooks):
+    if not isinstance(hooks, dict):
+        return None
+    sig = {}
+    for event, entries in hooks.items():
+        if not isinstance(entries, list):
+            return None
+        rows = []
+        for entry in entries:
+            if not isinstance(entry, dict) or set(entry) - {"matcher", "hooks"}:
+                return None
+            specs = entry.get("hooks")
+            if not isinstance(specs, list) or len(specs) != 1:
+                return None
+            spec = specs[0]
+            if not isinstance(spec, dict) or spec.get("type") != "command":
+                return None
+            command = spec.get("command")
+            if not isinstance(command, str):
+                return None
+            name = command.strip().strip('"').replace("\\", "/").rsplit("/", 1)[-1]
+            for suffix in (".sh", ".cmd"):
+                if name.endswith(suffix):
+                    name = name[: -len(suffix)]
+            rows.append((entry.get("matcher"), name))
+        sig[event] = rows
+    return sig
+
+
+keys = set(actual)
+if keys not in ({"model", "env", "permissions"},
+                {"model", "env", "permissions", "hooks"}):
     raise SystemExit(1)
 if actual.get("model") != "opusplan":
     raise SystemExit(1)
@@ -132,6 +202,24 @@ if not isinstance(permissions, dict) or set(permissions) != {"allow"}:
 allow = permissions.get("allow")
 if not isinstance(allow, list) or set(allow) not in allowed_sets or len(allow) != len(set(allow)):
     raise SystemExit(1)
+if "hooks" in keys and signature(actual["hooks"]) != expected_hooks:
+    raise SystemExit(1)
+PY
+}
+
+# True for the generated default written before hooks existed: still ours,
+# still untouched, and one rewrite short of having the gates.
+settings_predates_hooks() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8-sig") as handle:
+        actual = json.load(handle)
+except (OSError, ValueError):
+    raise SystemExit(1)
+raise SystemExit(1 if "hooks" in actual else 0)
 PY
 }
 
@@ -153,6 +241,7 @@ if [ "$AGENT" = "codex" ]; then
     done
     remove_file "$DEST/.claude/bin/plan"
     remove_file "$DEST/.claude/bin/plan.cmd"
+    remove_hooks "$DEST"
     if [ -f "$DEST/.claude/settings.json" ]; then
       if settings_is_generated_default "$DEST/.claude/settings.json"; then
         remove_file "$DEST/.claude/settings.json"
@@ -167,15 +256,19 @@ else
       [ -f "$path" ] && remove_file "$path"
     done
   fi
-  mkdir -p "$DEST/.claude/commands" "$DEST/.claude/bin"
+  remove_hooks "$DEST"
+  mkdir -p "$DEST/.claude/commands" "$DEST/.claude/bin" "$DEST/.claude/hooks"
   cp "$SRC"/commands/cs-*.md "$DEST/.claude/commands/"
   cp "$SRC/bin/plan" "$DEST/.claude/bin/plan"
   chmod +x "$DEST/.claude/bin/plan"
   cp "$SRC/bin/plan.cmd" "$DEST/.claude/bin/plan.cmd"
+  for pattern in "${HOOK_PATTERNS[@]}"; do
+    cp "$SRC"/hooks/$pattern "$DEST/.claude/hooks/"
+  done
+  chmod +x "$DEST"/.claude/hooks/cs-guard-*.sh
 
-  SETTINGS="$DEST/.claude/settings.json"
-  if [ ! -f "$SETTINGS" ]; then
-    cat > "$SETTINGS" <<'JSON'
+  write_settings() {
+    cat > "$1" <<'JSON'
 {
   "model": "opusplan",
   "env": {
@@ -187,10 +280,64 @@ else
       "Bash(.claude/bin/plan.cmd:*)",
       "PowerShell(.claude/bin/plan.cmd:*)"
     ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-stage.sh\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-read.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-write.sh\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cs-guard-lint.sh\""
+          }
+        ]
+      }
+    ]
   }
 }
 JSON
+  }
+
+  SETTINGS="$DEST/.claude/settings.json"
+  if [ ! -f "$SETTINGS" ]; then
+    write_settings "$SETTINGS"
     echo "wrote .claude/settings.json"
+  elif settings_is_generated_default "$SETTINGS" && settings_predates_hooks "$SETTINGS"; then
+    # Untouched output of an installer that predates the gates. Rewriting it
+    # is the only way an upgrade delivers them, and there is nothing of the
+    # user's in there to lose.
+    write_settings "$SETTINGS"
+    echo "updated .claude/settings.json with the hook gates"
   else
     echo "kept existing .claude/settings.json"
   fi
@@ -236,7 +383,7 @@ else
 fi
 echo "  agents: $AGENT"
 if [ "$AGENT" != "codex" ]; then
-  echo "  Claude: .claude/commands/cs-* and .claude/bin/plan"
+  echo "  Claude: .claude/commands/cs-*, .claude/bin/plan, .claude/hooks/cs-guard-*"
 fi
 if [ "$AGENT" != "claude" ]; then
   echo "  Codex:  .agents/skills/cs-* and .agents/coldsession/"

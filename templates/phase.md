@@ -48,6 +48,17 @@ Verify: `<exact command>` prints/exits `<exact expected result>`
 
 ## Out of scope
 
+## Policy
+
+<!-- /cs-plan writes here, one line per `policy-*` skill it considered:
+     name | tasks | how it applies
+     tasks: comma-separated task ids, or - when the policy does not apply
+     No pipes inside the prose. `None.` when the project ships no policy skill.
+
+policy-a11y | T2, T4 | contrast and focus order on the new list view
+policy-billing | - | not applicable; this phase touches no pricing surface
+-->
+
 ## Findings
 
 <!-- /cs-review writes here on every review round. One finding per line, seven fields:
