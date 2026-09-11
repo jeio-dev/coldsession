@@ -604,6 +604,176 @@ class PlanRuntimeTest(unittest.TestCase):
         result = self.run_plan("metrics")
         self.assertIn("phases   1 scanned", result.stdout)
 
+    # ------------------------------------------------------- context budget
+
+    def test_brief_reports_approx_context_budget(self):
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        (self.root / "src").mkdir()
+        (self.root / "src" / "a.py").write_text("x" * 400, encoding="utf-8")
+        self.run_plan("start", "T1")
+        out = self.run_plan("brief", "T1").stdout
+        self.assertRegex(
+            out, r"budget  ~[\d,]+ tokens across 3 file\(s\): "
+                 r"~[\d,]+ phase file, ~[\d,]+ task-owned")
+        # AGENTS.md is in every brief's read set but this fixture ships none.
+        self.assertIn("; 1 not yet on disk", out)
+
+    def test_brief_inlines_the_tasks_own_section(self):
+        """A build session should not have to open the whole phase file just
+        to get the one section that is actually its own."""
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        self.run_plan("start", "T1")
+        out = self.run_plan("brief", "T1").stdout
+        self.assertIn("section T1", out)
+        self.assertIn("Goal: test", out)
+        self.assertIn("Verify: `python -V` exits 0", out)
+        self.assertIn("(own section inlined below", out)
+
+    def test_brief_inlines_the_last_handoff_log_entry(self):
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        (self.root / "docs" / "plans" / "01-test.log.md").write_text(
+            "\n## T1\nfirst entry text\n\n## T2\nsecond entry text\n",
+            encoding="utf-8",
+        )
+        self.run_plan("start", "T1")
+        out = self.run_plan("brief", "T1").stdout
+        self.assertIn("last entry inlined below", out)
+        self.assertIn("second entry text", out)
+        self.assertNotIn("first entry text", out)
+
+    def test_brief_does_not_claim_inlining_when_the_log_has_no_entry_yet(self):
+        """A log file can exist with content that predates the `## ...`
+        convention, or none at all; the annotation must not promise an
+        inlined entry brief did not actually print."""
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        (self.root / "docs" / "plans" / "01-test.log.md").write_text(
+            "nothing here yet, no heading\n", encoding="utf-8")
+        self.run_plan("start", "T1")
+        out = self.run_plan("brief", "T1").stdout
+        self.assertNotIn("last entry inlined below", out)
+        self.assertIn("no parseable", out)
+
+    def test_last_log_entry_does_not_let_a_bare_hash_line_swallow_the_next_paragraph(self):
+        """`\\s+` in the heading pattern matches a newline too, so a bare
+        "##" line's match could run through the blank line beneath it and
+        absorb the next paragraph as part of the "heading" -- losing the
+        real, earlier entry in the process. [ \\t]+ must not do that."""
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        (self.root / "docs" / "plans" / "01-test.log.md").write_text(
+            "\n## T1\nfirst entry\n\n##\n\nordinary text that must stay part "
+            "of T1's body\n",
+            encoding="utf-8",
+        )
+        self.run_plan("start", "T1")
+        out = self.run_plan("brief", "T1").stdout
+        self.assertIn("first entry", out)
+        self.assertIn("ordinary text that must stay part of T1's body", out)
+
+    def test_lint_does_not_warn_when_only_the_phase_file_is_large(self):
+        """A long phase file must not make every task in it look
+        over-scoped; only a task's own files are what `files:` narrows."""
+        self.write_phase()
+        text = self.phase.read_text(encoding="utf-8")
+        text = text.replace("## Assumptions\n\nNone.",
+                             "## Assumptions\n\n" + ("x" * 60000))
+        self.phase.write_text(text, encoding="utf-8")
+        result = self.run_plan("lint")
+        self.assertNotIn("W07", result.stdout)
+
+    def test_brief_flags_a_task_over_the_context_budget(self):
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        (self.root / "src").mkdir()
+        (self.root / "src" / "a.py").write_text("x" * 60000, encoding="utf-8")
+        self.run_plan("start", "T1")
+        out = self.run_plan("brief", "T1").stdout
+        self.assertIn("over the 12,000-token soft budget", out)
+
+    def test_lint_warns_when_task_files_exceed_the_context_budget(self):
+        self.write_phase()
+        (self.root / "src").mkdir()
+        (self.root / "src" / "a.py").write_text("x" * 60000, encoding="utf-8")
+        result = self.run_plan("lint")
+        self.assertIn("W07", result.stdout)
+        self.assertIn("T1", result.stdout)
+
+    def test_lint_does_not_warn_when_task_files_are_within_the_context_budget(self):
+        self.write_phase()
+        (self.root / "src").mkdir()
+        (self.root / "src" / "a.py").write_text("small", encoding="utf-8")
+        result = self.run_plan("lint")
+        self.assertNotIn("W07", result.stdout)
+
+    def test_lint_does_not_warn_on_files_a_task_has_not_created_yet(self):
+        """The default fixture's `files:` point at paths nobody has written;
+        a budget check that guessed at their size rather than skipping them
+        would misfire on every freshly planned phase."""
+        self.write_phase()
+        result = self.run_plan("lint")
+        self.assertNotIn("W07", result.stdout)
+
+    def test_metrics_reports_task_context_budget(self):
+        self.write_phase()
+        out = self.run_plan("metrics").stdout
+        self.assertRegex(out, r"task context budget     avg ~[\d,]+ tokens/task")
+        self.assertIn("(0 of 2 over the 12,000-token budget)", out)
+
+    def test_metrics_counts_tasks_over_the_context_budget(self):
+        (self.root / "src").mkdir()
+        (self.root / "src" / "a.py").write_text("x" * 60000, encoding="utf-8")
+        self.write_phase()
+        out = self.run_plan("metrics").stdout
+        self.assertIn("1 of 2 over the 12,000-token budget", out)
+
+    def test_brief_does_not_crash_on_a_non_utf8_handoff_log(self):
+        """A pre-existing log in some other encoding (UTF-16, latin-1) must
+        degrade to "no entry", not crash brief -- read_text() raises
+        UnicodeDecodeError, which is not an OSError."""
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        (self.root / "docs" / "plans" / "01-test.log.md").write_bytes(
+            "## T1\nhello".encode("utf-16"))
+        self.run_plan("start", "T1")
+        out = self.run_plan("brief", "T1").stdout
+        self.assertIn("no parseable", out)
+
+    def test_context_budget_resolves_a_relative_plan_root_without_double_joining(self):
+        """`read_index()` joins ROOT onto the phase path before `read_set()`
+        ever sees it. `_context_budget()` must resolve that path as-is
+        rather than joining ROOT a second time -- which would look for the
+        phase file under ROOT/ROOT and report an existing file as missing
+        under any relative, non-"." PLAN_ROOT."""
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        env = clean_env()
+        env["PLAN_ROOT"] = self.root.name
+        result = subprocess.run(
+            [sys.executable, str(PLAN), "brief", "T1"],
+            text=True, capture_output=True, env=env,
+            cwd=str(self.root.parent), check=False,
+        )
+        self.assertRegex(result.stdout, r"~[1-9][\d,]* phase file", result.stdout)
+
+    def test_context_budget_does_not_double_count_the_phase_file_under_an_alias(self):
+        """A task that lists the phase file under another spelling in its
+        own `files:` must still land the phase file in the phase bucket,
+        not get counted again as task-owned."""
+        self.write_phase(reviewed=1, ready=1, status="approved", tasks={
+            "T1": ([], "in_progress", ["./docs/plans/01-test.md"]),
+        })
+        out = self.run_plan("brief", "T1").stdout
+        self.assertRegex(out, r"~0 task-owned")
+
+    def test_metrics_fails_open_on_a_pathologically_deep_dependency_chain(self):
+        """`read_set()` walks dependencies via one recursive call per task.
+        A long enough chain exceeds Python's recursion limit; CONTRIBUTING.md
+        requires `plan metrics` fail open the same way `plan guard` does, so
+        this must not escape as a traceback."""
+        n = 1500
+        tasks = {f"T{i}": ([f"T{i - 1}"] if i > 1 else [], "pending", [f"src/f{i}.py"])
+                 for i in range(1, n + 1)}
+        self.write_phase(tasks=tasks)
+        result = self.run_plan("metrics")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "")
+        self.assertIn("task context budget", result.stdout)
 
     # ------------------------------------------------------------- guard
 
@@ -1002,12 +1172,17 @@ class WorkflowContractTest(unittest.TestCase):
             self.assertIn(b"\r\n", windows.read_bytes(), f"{windows} must be CRLF")
 
     def test_the_codex_adapter_keeps_the_rule_claude_now_enforces(self):
-        """Enforcement asymmetry, stated once and asserted here: the bounded
-        read rule left cs-build.md when the hook took it over, so the Codex
-        adapter -- which has no hooks -- has to carry it in prose."""
+        """Enforcement asymmetry, stated once and asserted here: Claude Code
+        has a hook that refuses an unlisted read, so the Codex adapter --
+        which has no hooks -- points at the canonical command's Reading
+        rules instead of duplicating them in prose that can drift out of
+        sync."""
         skill = (ROOT / "skills" / "cs-build" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("Read exactly the files the brief lists", skill)
-        self.assertIn("Nothing else.", skill)
+        build_cmd = (ROOT / "commands" / "cs-build.md").read_text(encoding="utf-8")
+        self.assertIn("no read-enforcement hook", skill)
+        self.assertIn("canonical command's Reading", skill)
+        self.assertIn("## Reading", build_cmd)
+        self.assertIn("stop and", build_cmd)
 
     def test_policy_skills_are_host_owned_and_surface_neutral(self):
         """The policy layer is a convention, not shipped content, so the only

@@ -10,7 +10,7 @@ Stdlib only, no install step.
   plan recommend                  one line: the next command to run, and why
   plan lint                       validate graph and findings, exit 1 on error
   plan next [--parallel]          next runnable task ids
-  plan brief T2                   bounded read list + verify line for one task
+  plan brief T2                   bounded read list, token budget, verify line
   plan done T2                    mark a task done
   plan block T2 "reason"          mark a task blocked
   plan findings [--open]          the finding list
@@ -36,13 +36,19 @@ import tempfile
 import time
 from datetime import datetime
 
-TOOL_VERSION = "2.4.0"
+TOOL_VERSION = "2.5.0"
 FORMAT_VERSION = "1.5.0"
 
 ROOT = os.environ.get("PLAN_ROOT", ".")
 INDEX = os.path.join(ROOT, "PLAN.md")
 AGENTS_PATH = os.path.join(ROOT, "AGENTS.md")
 AGENTS_MD_BUDGET = 60
+# Soft budget on one task's bounded read list (AGENTS.md, the phase file, every
+# transitive dependency's files, then the task's own). Purely advisory -- it
+# never changes an exit code -- so raising or lowering it is never a format
+# change. 12,000 tokens is the point past which a "files" list has usually
+# stopped being one task and started being the whole phase.
+BRIEF_TOKEN_BUDGET = 12000
 
 TASK_RE = re.compile(r"^\s{2}(T\d+):\s*\{(.*)\}\s*$")
 HEAD_RE = re.compile(r"^##\s+(.+?)\s*$")
@@ -353,6 +359,13 @@ def lint_issues(phase):
             errs.append(f"E19 {tid} is in_progress but the phase is not approved")
         if not task["files"]:
             errs.append(f"E04 {tid} has an empty files list; build cannot bound its reads")
+        else:
+            tokens, _, _ = _context_budget(read_set(phase, tid), phase["path"])
+            if tokens > BRIEF_TOKEN_BUDGET:
+                warns.append(f"W07 {tid} bounds a build session to ~{tokens:,} tokens of "
+                             f"files (its own plus its dependencies', not counting the "
+                             f"phase file), over the {BRIEF_TOKEN_BUDGET:,}-token soft "
+                             "budget; narrow `files` or split the task")
         for dep in task["deps"]:
             if dep not in t:
                 errs.append(f"E05 {tid} depends on {dep}, which is not in this phase")
@@ -778,6 +791,80 @@ def read_set(phase, tid):
     return ordered
 
 
+def _context_budget(paths, phase_path=None):
+    """Approx (task_tokens, phase_tokens, missing) for a resolved read list.
+
+    Byte size // 4 is the standard rule of thumb for English prose and source
+    code alike -- close enough to flag a bloated `files` list without adding a
+    tokenizer dependency `plan` does not otherwise need. A path that does not
+    exist yet (the task creates it) contributes nothing and is named in
+    `missing` instead of guessed at.
+
+    `phase_path`, when given, is counted separately from everything else.
+    Every task in a phase pays for the whole phase file -- AGENTS.md, the
+    files of its dependencies, and its own files are the part a task's own
+    `files:` list actually controls, and the two must not be summed into one
+    number or a long phase file makes every task in it look over-scoped for
+    a reason no amount of narrowing `files` would fix.
+
+    `phase_path` arrives already joined onto `ROOT` -- `read_index()` does
+    that before `read_set()` ever sees it -- so it is resolved as-is rather
+    than joined again; doing so a second time looks for the phase file under
+    ROOT/ROOT and reports an existing file as missing under any `PLAN_ROOT`
+    that is not "." or absolute. Membership is also decided on the
+    normalized path rather than raw string equality, so a task that lists
+    the phase file under another spelling in its own `files:` (`./docs/...`
+    vs `docs/...`) still lands in the phase bucket instead of being
+    double-counted as task-owned.
+    """
+    def resolve(rel):
+        if phase_path is not None and rel == phase_path:
+            return rel
+        return os.path.join(ROOT, rel)
+
+    def canon(rel):
+        return os.path.normcase(os.path.normpath(resolve(rel)))
+
+    phase_canon = canon(phase_path) if phase_path is not None else None
+    task_tokens, phase_tokens, missing = 0, 0, []
+    for rel in paths:
+        try:
+            size = os.path.getsize(resolve(rel)) // 4
+        except OSError:
+            missing.append(rel)
+            continue
+        if phase_canon is not None and canon(rel) == phase_canon:
+            phase_tokens += size
+        else:
+            task_tokens += size
+    return task_tokens, phase_tokens, missing
+
+
+def _last_log_entry(path):
+    """The most recent `## ...` entry in a handoff log, headed and bodied, or None.
+
+    `plan brief` already tells a build session to read only the last entry;
+    inlining it here bounds that the same way the Verify line already is,
+    rather than trusting the instruction to stop a session short once it has
+    the whole file open.
+    """
+    try:
+        text = read_text(path)
+    except (OSError, UnicodeDecodeError):
+        # A pre-existing log in some other encoding (UTF-16, latin-1 from an
+        # editor that never asked) must not turn "inline the last entry" into
+        # a crash; brief still has a phase and files to report without it.
+        return None
+    # [ \t]+, not \s+: \s matches a newline too, so a bare "##" line with no
+    # text after it would otherwise let the match run on through the blank
+    # line beneath and swallow the next paragraph as part of the "heading".
+    parts = re.split(r"(?m)^(##[ \t]+\S.*)$", text)
+    if len(parts) < 3:
+        return None
+    head, body = parts[-2].strip(), parts[-1].strip()
+    return f"{head}\n{body}" if body else head
+
+
 def cmd_brief(phase, args):
     if not args:
         die("usage: plan brief T2")
@@ -799,13 +886,40 @@ def cmd_brief(phase, args):
         print(f"NOT STARTED {tid} is {task['status']}; run plan start {tid} first")
     if unmet:
         print(f"BLOCKED unmet dependencies: {', '.join(unmet)} - do not start this task")
-    print("read    " + "\n        ".join(ordered))
+    read_lines = []
+    for r in ordered:
+        if r == phase["path"]:
+            read_lines.append(f"{r}  (own section inlined below; open only for "
+                               "Assumptions, Policy, or another task)")
+        else:
+            read_lines.append(r)
+    print("read    " + "\n        ".join(read_lines))
     print("        (nothing else; if you need a file that is not listed, stop and say so)")
+
+    section = phase["sections"].get(tid, "").strip()
+    if section:
+        print(f"section {tid}")
+        print("        " + section.replace("\n", "\n        "))
+
+    task_tokens, phase_tokens, missing = _context_budget(ordered, phase["path"])
+    total = task_tokens + phase_tokens
+    note = f"; {len(missing)} not yet on disk" if missing else ""
+    over = f"  -- task files alone are over the {BRIEF_TOKEN_BUDGET:,}-token soft budget" \
+        if task_tokens > BRIEF_TOKEN_BUDGET else ""
+    print(f"budget  ~{total:,} tokens across {len(ordered)} file(s): "
+          f"~{phase_tokens:,} phase file, ~{task_tokens:,} task-owned{note}{over}")
+
     v = verify_line(phase, tid)
     print(f"verify  {v[len('Verify:'):].strip() if v and v.startswith('Verify:') else v}")
     log = phase["path"].replace(".md", ".log.md")
     if os.path.exists(log):
-        print(f"handoff {log}  (read the last entry only)")
+        entry = _last_log_entry(log)
+        if entry:
+            print(f"handoff {log}  (last entry inlined below; open the file only for more)")
+            print("        " + entry.replace("\n", "\n        "))
+        else:
+            print(f"handoff {log}  (no parseable `## ...` entry yet; read it directly "
+                  "if you need it)")
     return 1 if unmet or status != "approved" or task["status"] != "in_progress" else 0
 
 
@@ -1200,6 +1314,29 @@ def cmd_metrics(_phase, _args):
 
     rounds = [intof(p["meta"].get("rev"), 1) for p in phases]
     print(f"  review rounds           {_fmt_avg(rounds)}")
+
+    task_tokens, over_budget = [], 0
+    for p in phases:
+        for tid in p["order"]:
+            # metrics scans every phase file on disk, including ones this
+            # tool never validated the shape of, so -- like _load_phases()
+            # skipping a phase that doesn't parse -- one task whose
+            # dependency graph is pathological (deep enough to blow the
+            # recursion limit) must not take the rest of the report down.
+            try:
+                tokens, _, _ = _context_budget(read_set(p, tid), p["path"])
+            except Exception:
+                continue
+            task_tokens.append(tokens)
+            if tokens > BRIEF_TOKEN_BUDGET:
+                over_budget += 1
+    if task_tokens:
+        avg = sum(task_tokens) / len(task_tokens)
+        print(f"  task context budget     avg ~{avg:,.0f} tokens/task, own+dep files "
+              f"({over_budget} of {len(task_tokens)} over the "
+              f"{BRIEF_TOKEN_BUDGET:,}-token budget)")
+    else:
+        print("  task context budget     n/a (no tasks found)")
 
     print("\nlagging indicators")
 
