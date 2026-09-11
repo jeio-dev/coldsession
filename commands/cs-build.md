@@ -15,9 +15,10 @@ Then run `.claude/bin/plan brief <task-id>`.
 
 ## Reading
 
-The brief is the read list, in order. If a required file is absent, stop and
-name it; that is a plan finding, not permission to expand context. Locate
-symbols with search and keep only file:line results.
+The brief's `read` block gives the file order, starting with AGENTS.md. Use
+inlined context and follow the phase/handoff annotations. If a required file
+is absent, stop and name it; that is a plan finding, not permission to expand
+context. Locate symbols with search and keep only file:line results.
 
 ## Doing
 

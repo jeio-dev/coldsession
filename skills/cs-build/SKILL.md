@@ -16,11 +16,8 @@ If the command asks for a search subagent but subagents are unavailable or
 not authorized, use a bounded read-only search and retain only the required
 `file:line` result in working context.
 
-Read exactly the files the brief lists, in order, beginning with AGENTS.md.
-Nothing else. On Claude Code a hook enforces this and refuses the read;
-Codex has no hook mechanism, so here the rule holds only because you follow
-it. An unlisted file the task genuinely needs is a finding for the next
-Review, never a reason to open it.
+Codex has no read-enforcement hook, so follow the canonical command's Reading
+rules explicitly.
 
 Translate suggested next steps for Codex users:
 

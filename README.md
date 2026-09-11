@@ -18,7 +18,7 @@ and the temporary clone deletes itself.
 
 ```bash
 cd ~/my-project
-git clone --depth 1 --branch v2.4.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.5.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/install.sh --agent both
 git add .claude .agents templates && git commit -m "chore: coldsession"
 ```
@@ -27,12 +27,12 @@ git add .claude .agents templates && git commit -m "chore: coldsession"
 
 ```powershell
 cd $HOME\my-project
-git clone --depth 1 --branch v2.4.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.5.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .\.coldsession\install.ps1 -Agent both
 git add .claude .agents templates; git commit -m "chore: coldsession"
 ```
 
-`--branch v2.4.0` pins the clone to a tagged release rather than whatever's
+`--branch v2.5.0` pins the clone to a tagged release rather than whatever's
 on `main`, so following this README always gets a tested version; bump it to
 the latest tag from the [releases page](https://github.com/jeio-dev/coldsession/tags)
 if this copy of the README is older than the repo. The clone never outlives
@@ -71,7 +71,7 @@ phase files.
 
 ```bash
 cd ~/my-project
-git clone --depth 1 --branch v2.4.0 https://github.com/jeio-dev/coldsession.git .coldsession
+git clone --depth 1 --branch v2.5.0 https://github.com/jeio-dev/coldsession.git .coldsession
 .coldsession/install.sh --agent both
 git add .claude .agents && git commit -m "chore: update coldsession"
 ```
@@ -452,14 +452,24 @@ belongs in the brief.
 
 ```
 task    T2   status in_progress
+phase   docs/plans/02-offline-sync.md  (phase status approved)
 read    AGENTS.md
-        docs/plans/02-offline-sync.md
+        docs/plans/02-offline-sync.md  (own section inlined below; open only for Assumptions, Policy, or another task)
         src/db/schema.ts
         src/sync/queue.ts
         src/sync/types.ts
         (nothing else; if you need a file that is not listed, stop and say so)
+section T2
+        Goal: ...
+        Acceptance Criteria: ...
+        Verify: `npm test -- queue` exits 0
+budget  ~3,400 tokens across 4 file(s): ~900 phase file, ~2,500 task-owned
 verify  `npm test -- queue` exits 0
-handoff docs/plans/02-offline-sync.log.md  (read the last entry only)
+handoff docs/plans/02-offline-sync.log.md  (last entry inlined below; open the file only for more)
+        ## T1 handoff
+
+        Schema migration landed; queue table has a `sent_at` column T2 can
+        check before retrying.
 ```
 
 Two things follow. A wrong `files` entry surfaces as a session that stops and

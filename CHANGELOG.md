@@ -4,6 +4,66 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
+## [v2.5.0]
+
+### The context budget, made visible
+
+- `plan brief T2` now prints an approximate token count for the bounded read
+  list it just resolved -- AGENTS.md, the phase file, every transitive
+  dependency's files, then the task's own -- rather than leaving a build
+  session to discover the size of its own context by reading it. Byte size
+  divided by four is the whole estimate: close enough to catch a task whose
+  `files` list quietly became a phase's worth of reading, without adding a
+  tokenizer dependency `plan` does not otherwise need. A path the task has not
+  created yet contributes nothing to the total and is named separately rather
+  than guessed at.
+- `plan lint` gets a matching `W07`: a task whose own files (plus its
+  dependencies') cross a 12,000-token soft budget is flagged the same way
+  `W06` already flags an oversized AGENTS.md. It is a warning, never an
+  error -- `plan lint`'s exit code is unchanged, and every hook that gates on
+  it reads only the E-codes, never the warnings, so this ships with no gate
+  anywhere gaining a new way to refuse.
+- `plan metrics` adds a leading indicator: the average context budget per
+  task across every scanned phase -- own and dependency files, not the phase
+  file -- and how many crossed the soft budget. It degrades the same way
+  every other metrics line does -- `n/a` when there is nothing to measure,
+  never a traceback.
+
+### The phase file stops crowding out the task
+
+- Every task's bounded read list has always included the whole phase file --
+  every other task's Goal, Deliverables, Acceptance Criteria, plus
+  Assumptions, Policy, Findings, Changelog -- because a build session
+  legitimately needs some of that and the file has no finer-grained read
+  boundary. On a phase with several tasks this can outweigh the task's own
+  files by an order of magnitude, which both dilutes the one task actually
+  being built and made the new token budget fire on phase length rather than
+  task scope: every task in a long phase looked oversized for a reason no
+  amount of narrowing `files` could fix.
+- `plan brief` now inlines the task's own `## T(n)` section directly, so a
+  build session has its Goal, Deliverables, Acceptance Criteria, and Verify
+  line without opening the phase file at all. The file stays in the read
+  list -- for Assumptions, Policy, or another task's detail -- annotated to
+  say so, and the budget line reports the phase file's share separately from
+  the task's own.
+- `plan brief` also inlines the handoff log's last entry, the same way it
+  already inlines the Verify line, instead of pointing at a file and trusting
+  the instruction "read the last entry only" to stop a session short of the
+  whole thing.
+- `plan guard`'s read gate is untouched: it still allows the whole phase file
+  by path, exactly as before. Only `plan brief`'s advisory output changed,
+  and that output is recomputed fresh on every call rather than stored
+  anywhere, so a task already `in_progress` from before the upgrade -- or a
+  phase file written under 2.4.0 or earlier -- gets the better-scoped brief
+  automatically the next time anyone runs it, with nothing to migrate and
+  nothing newly denied. Confirmed by upgrading a live v2.4.0 install with an
+  in-progress task and a handoff log in place: the claim, the lint result,
+  and every guard decision were unchanged after upgrading, and only the
+  brief's own output improved.
+- Purely additive to the phase format: no new frontmatter field, no
+  `FORMAT_VERSION` bump. Re-running the installer only replaces `bin/plan`
+  itself.
+
 ## [v2.4.0]
 
 ### The cold session, spawned rather than asked for
