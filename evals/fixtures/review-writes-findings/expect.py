@@ -4,8 +4,9 @@ T2's goal text says it builds "on top of the row shape T1 defines", but the
 frontmatter gives T2 `deps: []` and a `files` list that omits
 `src/db/schema.ts` -- exactly the template's own canonical F1 example
 (README.md's Findings section, templates/phase.md). A competent first review
-must catch it. If a reworded cs-review.md quietly stopped writing findings,
-this is what would ship green without this fixture.
+must catch it, persist it, and complete the automatic Revise pass. If a
+reworded cs-review.md quietly stopped writing findings or only recommended
+Revise, this is what would ship green without this fixture.
 """
 
 
@@ -26,7 +27,7 @@ def grade(ctx):
             "`reviewed:` was never recorded; `plan finish review` did not run"
         )
     if "active none" not in status.stdout:
-        failures.append("the active review marker was not cleared")
+        failures.append("the Review or automatic Revise marker was not cleared")
     if "no findings recorded" in findings.stdout:
         failures.append(
             "the review recorded no findings; the T1/T2 ordering gap in the "
@@ -37,5 +38,18 @@ def grade(ctx):
         failures.append("a finding line failed to parse (E12)")
     if "E13" in lint.stdout:
         failures.append("a finding id was reused (E13)")
+    if "  rev 2  " not in status.stdout or "reviewed 1" not in status.stdout:
+        failures.append(
+            "the finding was recorded but /cs-review did not complete the "
+            "automatic Revise pass and leave revision 2 awaiting fresh Review"
+        )
+    if "0 open" not in status.stdout:
+        failures.append("the automatic Revise pass left its concrete finding open")
+    recommendation = ctx.plan("recommend")
+    if not recommendation.stdout.startswith("/cs-review"):
+        failures.append(
+            "the revised phase is not waiting for /cs-review in a fresh session: "
+            f"{recommendation.stdout}"
+        )
 
     return failures

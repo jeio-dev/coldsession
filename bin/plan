@@ -16,7 +16,7 @@ Stdlib only, no install step.
   plan findings [--open]          the finding list
   plan resolve F1 STATE "note"    set a finding state, log it to the changelog
   plan begin STAGE [--resume]      claim review/revise/approve/close
-  plan finish STAGE [--pass|--fail] complete a claimed stage
+  plan finish STAGE [--pass|--fail|--accept-only] complete a claimed stage
   plan start T2 [--resume]         claim one approved build task
   plan verify T2 [--attest TEXT]  run checks and record matching evidence
   plan replan [--recover-claims]  preserve history and return unfinished work to draft
@@ -48,7 +48,7 @@ import shlex
 from pathlib import Path
 from datetime import datetime
 
-TOOL_VERSION = "3.0.0"
+TOOL_VERSION = "3.1.0"
 FORMAT_VERSION = "2.0.0"
 
 ROOT = os.path.realpath(os.environ.get("PLAN_ROOT", "."))
@@ -1043,9 +1043,32 @@ def cmd_findings(phase, args):
               f"{','.join(f['tasks']) or '-':<10} {f['category']}")
         print(f"     {f['desc']}")
         print(f"     fix: {f['fix']}")
+        reopens = finding_reopens(phase, fid)
+        if reopens:
+            print(f"     reopened {reopens} time(s)")
+        if reopens >= 2 and f['status'] == 'open':
+            print("     escalation: previous settlements did not stick; compare the exact "
+                  "requested edit with the prior notes before doing more verification")
+            notes = [c for c in phase['changelog'] if c['fid'] == fid]
+            for entry in notes[-3:]:
+                print(f"       rev {entry['rev']} {entry['state']}: {entry['note']}")
     opened = open_findings(phase)
     print(f"{len(phase['forder'])} findings, {len(opened)} open")
     return 0
+
+
+def finding_reopens(phase, fid):
+    """Count settlement -> open transitions, not duplicate open log entries."""
+    settled, count = False, 0
+    for entry in phase['changelog']:
+        if entry['fid'] != fid:
+            continue
+        if entry['state'] in ('resolved', 'accepted'):
+            settled = True
+        elif entry['state'] == 'open' and settled:
+            count += 1
+            settled = False
+    return count
 
 
 def cmd_resolve(phase, args):
@@ -1060,14 +1083,29 @@ def cmd_resolve(phase, args):
     if state != "open" and not note:
         die(f"{fid} -> {state} needs a note naming the task or plan line that "
             "carries the fix")
+    if any(char in note for char in ('|', '\n', '\r')):
+        die('finding notes must be one line with no pipe characters')
+    note = redact(note)
+    finding = phase['findings'][fid]
+    if state == 'accepted' and finding['severity'] in ('Critical', 'High'):
+        die('Critical and High findings must be resolved, not accepted')
 
     active = phase["meta"].get("active")
     fmt = phase["meta"].get("workflow-rev", "1.0.0")
-    modern = intof(fmt.split(".")[1] if "." in fmt else 0) >= 4
+    modern = strict(phase) or intof(fmt.split(".")[1] if "." in fmt else 0) >= 4
     expected = "review" if state == "open" else "revise"
     if modern and active != expected:
         die(f"{fid} -> {state} is only valid during an active {expected} pass; "
             f"run /cs-{expected} first")
+    if strict(phase) and state != 'open':
+        rev = intof(phase['meta'].get('rev'), 1)
+        base = intof(phase['meta'].get('active-rev'), rev)
+        if rev == base and not (state == 'accepted' and finding['severity'] == 'Low'):
+            die('run plan bump before resolving a finding or accepting a Medium')
+    if state == 'resolved' and finding_reopens(phase, fid) >= 2:
+        print(f'warning: {fid} has reopened at least twice; the settlement should name '
+              'the exact target and quote the changed line (redact sensitive values). '
+              'Accept a Low or Medium with a concrete reason when appropriate.', file=sys.stderr)
 
     pat = re.compile(r"^(\s*[-*]?\s*%s\s*\|[^|]*\|[^|]*\|[^|]*\|\s*)([A-Za-z_-]+)" % fid, re.M)
     text, hit = sub_outside_comments(pat, lambda m: m.group(1) + state, phase["text"])
@@ -1103,6 +1141,8 @@ def cmd_begin(phase, args):
 
     if active:
         if active == stage and resume:
+            if stage == "revise" and _owner_id():
+                _session_record(_owner_id(), "cs-revise")
             print(f"resume {stage} at rev {meta.get('active-rev', rev)}")
             return 0
         if active == stage:
@@ -1133,7 +1173,29 @@ def cmd_begin(phase, args):
     text = set_metas(phase["text"], {"active": stage, "active-rev": rev})
     if strict(phase):
         text = set_meta(text, 'active-spec', specification(phase))
+        if stage == 'revise':
+            # Bind acceptance-only completion to this pass, including resume.
+            # Hash the expected ledger instead of retaining finding prose/PII.
+            expected_findings = {fid: dict(f) for fid, f in phase['findings'].items()}
+            for f in expected_findings.values():
+                if f['status'] == 'open' and f['severity'] == 'Low':
+                    f['status'] = 'accepted'
+            snapshot = {'rev': rev, 'findings': json_digest(expected_findings),
+                        'tasks': json_digest(phase['tasks']),
+                        'implementation': phase_working_fingerprint(phase),
+                        'index': digest(read_text(INDEX).encode()),
+                        'count': len(phase['changelog']),
+                        'history': json_digest(phase['changelog']),
+                        'open': opened}
+            transaction({revise_snapshot_path(phase): json.dumps(snapshot) + '\n',
+                         phase['path']: text})
+            if _owner_id():
+                _session_record(_owner_id(), "cs-revise")
+            print(f"begin {stage} at rev {rev}")
+            return 0
     write_phase(phase, text)
+    if stage == "revise" and _owner_id():
+        _session_record(_owner_id(), "cs-revise")
     print(f"begin {stage} at rev {rev}")
     return 0
 
@@ -1161,10 +1223,17 @@ def _tick_current_phase(phase):
 
 def cmd_finish(phase, args):
     if not args:
-        die(f"usage: plan finish <{'|'.join(STAGES)}> [--pass|--fail]")
+        die(f"usage: plan finish <{'|'.join(STAGES)}> [--pass|--fail|--accept-only]")
     stage = args[0].lower()
     if stage not in STAGES:
         die(f"stage must be one of {', '.join(STAGES)}")
+    options = args[1:]
+    allowed = ({'--accept-only'} if stage == 'revise' else
+               {'--pass', '--fail'} if stage in ('approve', 'close') else set())
+    if len(options) != len(set(options)) or any(option not in allowed for option in options):
+        expected = ('--accept-only' if stage == 'revise' else
+                    '--pass or --fail' if stage in ('approve', 'close') else 'no flags')
+        die(f"finish {stage} accepts {expected}")
     _require_active(phase, stage)
 
     rev = intof(phase["meta"].get("rev"), 1)
@@ -1180,7 +1249,32 @@ def cmd_finish(phase, args):
                 die('specification changed during review; run plan replan')
             text = set_meta(text, 'reviewed-spec', specification(phase))
     elif stage == "revise":
-        if rev != active_rev + 1:
+        if '--accept-only' in args[1:]:
+            meta = phase['meta']
+            snapshot = load_json(revise_snapshot_path(phase), {})
+            count = snapshot.get('count', len(phase['changelog']))
+            settlements = phase['changelog'][count:]
+            only_lows = bool(settlements) and all(
+                c['rev'] == rev and c['state'] == 'accepted' and c['note'] and
+                phase['findings'].get(c['fid'], {}).get('severity') == 'Low' and
+                phase['findings'][c['fid']]['status'] == 'accepted'
+                for c in settlements)
+            if (not strict(phase) or rev != active_rev or
+                    snapshot.get('rev') != rev or
+                    snapshot.get('findings') != json_digest(phase['findings']) or
+                    snapshot.get('tasks') != json_digest(phase['tasks']) or
+                    snapshot.get('implementation') != phase_working_fingerprint(phase) or
+                    snapshot.get('index') != digest(read_text(INDEX).encode()) or
+                    snapshot.get('history') != json_digest(phase['changelog'][:count]) or
+                    set(snapshot.get('open', [])) != {c['fid'] for c in settlements} or
+                    intof(meta.get('reviewed'), 0) != rev or
+                    meta.get('active-spec') != specification(phase) or
+                    meta.get('reviewed-spec') != specification(phase) or
+                    open_findings(phase) or not only_lows):
+                die('accept-only requires format 2, no bump, an unchanged reviewed '
+                    'specification and implementation, only reasoned Low acceptances '
+                    'during this pass, and no open findings; otherwise bump and finish revise')
+        elif rev != active_rev + 1:
             die("finish revise requires exactly one successful plan bump")
     elif stage in ("approve", "close"):
         passed = "--pass" in args[1:]
@@ -1217,7 +1311,16 @@ def cmd_finish(phase, args):
 
     text = del_meta(text, "active", "active-rev", "active-spec")
     write_phase(phase, text)
-    outcome = " --pass" if "--pass" in args else " --fail" if "--fail" in args else ""
+    if stage == 'revise' and strict(phase):
+        snapshot_path = revise_snapshot_path(phase)
+        try:
+            if os.path.exists(snapshot_path):
+                os.unlink(snapshot_path)
+        except OSError as exc:
+            print(f'warning: revise finished but temporary snapshot cleanup failed: {exc}',
+                  file=sys.stderr)
+    outcome = (" --pass" if "--pass" in args else " --fail" if "--fail" in args
+               else " --accept-only" if "--accept-only" in args else "")
     print(f"finish {stage}{outcome} at rev {rev}")
     return 0
 
@@ -1478,8 +1581,11 @@ def cmd_metrics(_phase, _args):
     else:
         print("  findings by severity    none recorded")
 
-    reopened = sum(1 for p in closed for c in p["changelog"] if c["state"] == "open")
+    reopened = sum(finding_reopens(p, fid) for p in closed for fid in p['forder'])
     print(f"  findings reopened       {reopened} (across {len(closed)} closed phase(s))")
+    repeated = [f"{p['meta'].get('phase', '?')}/{fid} ({finding_reopens(p, fid)})"
+                for p in phases for fid in open_findings(p) if finding_reopens(p, fid) >= 2]
+    print(f"  repeated open findings  {', '.join(repeated) if repeated else 'none'}")
 
     resolved = sum(1 for p in phases for f in p["findings"].values()
                    if f["status"] == "resolved")
@@ -1489,6 +1595,11 @@ def cmd_metrics(_phase, _args):
         share = 100.0 * resolved / (resolved + accepted)
         print(f"  resolved vs accepted    {resolved} resolved, {accepted} accepted "
               f"({share:.0f}% resolved)")
+        low_resolved = sum(1 for p in phases for f in p['findings'].values()
+                           if f['severity'] == 'Low' and f['status'] == 'resolved')
+        if not accepted and low_resolved:
+            print('  acceptance use          no acceptances despite resolved Lows; inspect '
+                  'for avoidable prose churn (there is no target acceptance rate)')
     else:
         print("  resolved vs accepted    n/a (no closed findings yet)")
 
@@ -2220,6 +2331,15 @@ def state_path(name):
     return os.path.join(ROOT, '.coldsession-state', name)
 
 
+def json_digest(value):
+    return digest(json.dumps(value, sort_keys=True, ensure_ascii=True).encode())
+
+
+def revise_snapshot_path(phase):
+    key = os.path.relpath(phase['path'], ROOT).replace(os.sep, '/')
+    return state_path('revise-' + digest(key.encode()) + '.json')
+
+
 def load_json(path, default=None):
     if not os.path.exists(path):
         return default
@@ -2307,6 +2427,11 @@ def working_fingerprint(phase, tid):
             value = 'missing'
         values.append((entry, os.path.relpath(path, ROOT).replace(os.sep, '/'), value))
     return digest(json.dumps(values).encode())
+
+
+def phase_working_fingerprint(phase):
+    """Fingerprint every declared implementation input for the current phase."""
+    return json_digest({tid: working_fingerprint(phase, tid) for tid in phase['order']})
 
 
 def task_conflict(phase, left, right):

@@ -29,7 +29,9 @@ class ReliabilityTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        # Match bin/plan startup: Windows CI may return an 8.3 temp path that
+        # a resumed subprocess expands, which must not change snapshot keys.
+        self.root = Path(os.path.realpath(self.tmp.name))
         self.test_path = os.environ.get('PATH', '')
         if os.name != 'nt':
             tool_dir = self.root / 'test-bin'
@@ -106,6 +108,194 @@ class ReliabilityTest(unittest.TestCase):
         self.run_plan('begin', 'review')
         self.edit('Goal: test', 'Goal: changed')
         self.run_plan('finish', 'review', ok=False)
+
+    def start_low_revision(self):
+        self.write(findings='F1 | Low | Wording | T1 | open | Practice is correct; description is dated | Update description')
+        self.run_plan('begin', 'review')
+        self.run_plan('finish', 'review')
+        self.run_plan('begin', 'revise')
+
+    def test_low_acceptance_preserves_review_but_still_requires_human_approval(self):
+        self.start_low_revision()
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 already meets the criterion; stale description has no behavioral consequence')
+        self.run_plan('begin', 'revise', '--resume')
+        self.run_plan('finish', 'revise', '--accept-only')
+        self.assertFalse(Path(self.rt.revise_snapshot_path(self.p())).exists())
+        self.assertEqual(self.p()['meta']['rev'], '1')
+        self.assertEqual(self.p()['meta']['reviewed'], '1')
+        self.assertTrue(self.run_plan('recommend').stdout.startswith('/cs-approve'))
+        self.run_plan('begin', 'approve')
+        self.run_plan('finish', 'approve', '--pass')
+        self.assertEqual(self.p()['meta']['status'], 'draft')
+        self.assertIn('set status: approved', self.run_plan('recommend').stdout)
+        self.run_plan('start', 'T1', ok=False)
+
+    def test_accept_only_rejects_changed_contract_and_can_fall_back_to_review(self):
+        self.start_low_revision()
+        self.run_plan('resolve', 'F1', 'accepted', 'Description is cosmetic; T1 behavior already meets the criterion')
+        self.edit('Acceptance Criteria: observable', 'Acceptance Criteria: a new requirement')
+        self.run_plan('finish', 'revise', '--accept-only', ok=False)
+        self.run_plan('bump')
+        self.run_plan('finish', 'revise')
+        self.assertTrue(self.run_plan('recommend').stdout.startswith('/cs-review'))
+        self.run_plan('begin', 'approve', ok=False)
+
+    def test_accept_only_rejects_open_findings_and_bumped_revision(self):
+        self.start_low_revision()
+        self.run_plan('finish', 'revise', '--accept-only', ok=False)
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 behavior is already correct')
+        self.run_plan('bump')
+        self.run_plan('finish', 'revise', '--accept-only', ok=False)
+        self.run_plan('finish', 'revise')
+        self.assertTrue(self.run_plan('recommend').stdout.startswith('/cs-review'))
+
+    def test_non_low_settlement_requires_bump_and_review(self):
+        self.write(findings='F1 | Medium | Risk | T1 | open | A consequence | Fix T1')
+        self.run_plan('begin', 'review')
+        self.run_plan('finish', 'review')
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 risk is bounded', ok=False)
+        self.run_plan('begin', 'revise')
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 risk is bounded', ok=False)
+        self.run_plan('resolve', 'F1', 'resolved', 'T1 now handles the case', ok=False)
+        self.run_plan('bump')
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 risk is bounded by the documented constraint')
+        self.run_plan('finish', 'revise')
+        self.assertTrue(self.run_plan('recommend').stdout.startswith('/cs-review'))
+
+    def test_accept_only_requires_logged_low_acceptance(self):
+        self.start_low_revision()
+        self.edit('| open |', '| accepted |')
+        self.run_plan('finish', 'revise', '--accept-only', ok=False)
+
+    def test_finish_rejects_flags_that_do_not_belong_to_the_active_stage(self):
+        self.write(findings='F1 | Low | Wording | T1 | open | Practice is correct | Reword description')
+        self.run_plan('begin', 'review')
+        self.run_plan('finish', 'review', '--accept-only', ok=False)
+        self.run_plan('finish', 'review')
+        self.run_plan('begin', 'revise')
+        self.run_plan('finish', 'revise', '--pass', ok=False)
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 practice is already correct')
+        self.run_plan('finish', 'revise', '--accept-only', '--accept-only', ok=False)
+        self.run_plan('finish', 'revise', '--accept-only')
+
+    def test_low_after_substantive_revision_can_converge_at_same_revision(self):
+        self.write(findings='F1 | High | Requirement | T1 | open | Missing requirement | Add the requirement')
+        self.run_plan('begin', 'review')
+        self.run_plan('finish', 'review')
+        self.run_plan('begin', 'revise')
+        self.run_plan('bump')
+        self.edit('Acceptance Criteria: observable', 'Acceptance Criteria: exact observable requirement')
+        self.run_plan('resolve', 'F1', 'resolved', 'T1 criterion now names the exact requirement')
+        self.run_plan('finish', 'revise')
+        self.run_plan('begin', 'review')
+        self.edit('## Findings', '## Findings\n\nF2 | Low | Wording | T1 | open | Practice is correct | Reword description')
+        self.run_plan('finish', 'review')
+        self.run_plan('begin', 'revise')
+        self.run_plan('resolve', 'F2', 'accepted', 'T1 practice is already correct; rewording adds no behavior')
+        self.run_plan('finish', 'revise', '--accept-only')
+        self.assertEqual(self.p()['meta']['rev'], '2')
+        self.assertTrue(self.run_plan('recommend').stdout.startswith('/cs-approve'))
+
+    def test_accept_only_cannot_rewrite_history_or_change_finding_severity(self):
+        self.start_low_revision()
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 behavior is correct')
+        self.edit('| Low |', '| Medium |')
+        self.run_plan('finish', 'revise', '--accept-only', ok=False)
+        self.edit('| Medium |', '| Low |')
+        self.edit('## Changelog', '## Changelog\n\nrev 1 | F2 | resolved | fabricated history')
+        self.run_plan('finish', 'revise', '--accept-only', ok=False)
+
+    def test_accept_only_cannot_hide_a_medium_or_change_task_completion(self):
+        self.write(findings='F1 | Medium | Risk | T1 | open | Real consequence | Fix T1')
+        self.run_plan('begin', 'review')
+        self.run_plan('finish', 'review')
+        self.run_plan('begin', 'revise')
+        self.edit('| Medium |', '| Low |')
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 risk is bounded')
+        self.run_plan('finish', 'revise', '--accept-only', ok=False)
+        self.start_low_revision()
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 behavior is correct')
+        self.edit('status: pending', 'status: done')
+        self.run_plan('finish', 'revise', '--accept-only', ok=False)
+
+    def test_accept_only_rejects_a_scoped_implementation_change(self):
+        self.start_low_revision()
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 wording has no behavioral consequence')
+        (self.root / 'src/a.py').write_text('a = 2\n', encoding='utf-8')
+        refused = self.run_plan('finish', 'revise', '--accept-only', ok=False)
+        self.assertIn('unchanged reviewed specification and implementation', refused.stderr)
+        self.run_plan('bump')
+        self.run_plan('finish', 'revise')
+        self.assertTrue(self.run_plan('recommend').stdout.startswith('/cs-review'))
+
+    def test_accept_only_refuses_missing_snapshot_and_changed_index(self):
+        self.start_low_revision()
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 behavior is correct')
+        index = self.root / 'PLAN.md'
+        original = index.read_text(encoding='utf-8')
+        index.write_text(original + '\nChanged phase ordering.\n', encoding='utf-8')
+        self.run_plan('finish', 'revise', '--accept-only', ok=False)
+        index.write_text(original, encoding='utf-8')
+        Path(self.rt.revise_snapshot_path(self.p())).unlink()
+        self.run_plan('finish', 'revise', '--accept-only', ok=False)
+        self.run_plan('bump')
+        self.run_plan('finish', 'revise')
+        self.assertTrue(self.run_plan('recommend').stdout.startswith('/cs-review'))
+
+    def test_interrupted_revise_entry_recovers_snapshot_and_claim_together(self):
+        self.write(findings='F1 | Low | Wording | T1 | open | Practice is correct | Reword description')
+        self.run_plan('begin', 'review')
+        self.run_plan('finish', 'review')
+        original = self.rt.atomic_write
+        def fail_phase_write(path, text):
+            if Path(path).resolve() == self.phase.resolve():
+                raise OSError('interrupted after snapshot')
+            original(path, text)
+        with mock.patch.object(self.rt, 'atomic_write', side_effect=fail_phase_write):
+            with self.assertRaises(OSError):
+                self.rt.cmd_begin(self.p(), ['revise'])
+        self.assertNotIn('active', self.p()['meta'])
+        self.run_plan('recover')
+        self.run_plan('recover')
+        self.run_plan('begin', 'revise', '--resume')
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 meets the criterion; wording has no consequence')
+        self.run_plan('finish', 'revise', '--accept-only')
+        self.assertTrue(self.run_plan('recommend').stdout.startswith('/cs-approve'))
+
+    def test_high_cannot_be_accepted_and_notes_cannot_corrupt_ledger(self):
+        self.start_low_revision()
+        for note in ('', 'reason | fake field', 'reason\nrev 1 | F1 | accepted | fake'):
+            self.run_plan('resolve', 'F1', 'accepted', note, ok=False)
+        secret = 'api_key=abcdefghijklmnop'
+        self.run_plan('resolve', 'F1', 'accepted', secret)
+        persisted = self.phase.read_text(encoding='utf-8')
+        self.assertNotIn(secret, persisted)
+        self.assertIn('api_key=[REDACTED]', persisted)
+        self.edit('| Low |', '| High |')
+        self.run_plan('bump')
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 risk is tolerable', ok=False)
+
+    def test_reopens_show_history_warn_on_third_settlement_and_reach_metrics(self):
+        self.start_low_revision()
+        for attempt in range(2):
+            self.run_plan('bump')
+            self.run_plan('resolve', 'F1', 'resolved', f'T1 settlement attempt {attempt + 1}')
+            self.run_plan('finish', 'revise')
+            self.run_plan('begin', 'review')
+            self.run_plan('resolve', 'F1', 'open', 'T1 historical record still contains the target')
+            if attempt == 0:
+                # An already-open log entry is not another reopen.
+                self.run_plan('resolve', 'F1', 'open', 'T1 same remaining edit')
+            self.run_plan('finish', 'review')
+            self.run_plan('begin', 'revise')
+        report = self.run_plan('findings', '--open').stdout
+        self.assertIn('reopened 2 time(s)', report)
+        self.assertIn('escalation:', report)
+        self.assertIn('settlement attempt 2', report)
+        self.assertIn('01-test/F1 (2)', self.run_plan('metrics').stdout)
+        self.run_plan('bump')
+        result = self.run_plan('resolve', 'F1', 'resolved', 'T1 historical record now reads: user ID and role only')
+        self.assertIn('warning: F1', result.stderr)
 
     def test_completion_requires_current_successful_evidence(self):
         self.approve()
