@@ -29,7 +29,9 @@ class ReliabilityTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        # Match bin/plan startup: Windows CI may return an 8.3 temp path that
+        # a resumed subprocess expands, which must not change snapshot keys.
+        self.root = Path(os.path.realpath(self.tmp.name))
         self.test_path = os.environ.get('PATH', '')
         if os.name != 'nt':
             tool_dir = self.root / 'test-bin'
