@@ -24,21 +24,19 @@ stops. Otherwise set `active: plan` before substantive planning. Copy its
 ### PLAN.md exists
 
 Do not open, search, quote, or otherwise read `OBJECTIVE.md`, even on
-`--resume`. Product scope has already been reduced to the phase index.
+`--resume`. Durable product constraints must be carried in PLAN.md and phase Constraints.
 
 - If the current phase is not closed, stop before source inspection, run
   `.claude/bin/plan recommend`, and print it. Never rewrite an active phase.
-- If the current phase is closed and has `active: plan`, require `--resume`.
-- Otherwise set `active: plan` on that closed phase before substantive work.
+- If PLAN.md has `active: plan`, require `--resume`.
+- Otherwise set `active: plan` in PLAN.md before substantive work. Keep closed phase history unchanged.
 - Plan the first unticked phase, or the phase named by `current:` when no
-  later line exists. Read its PLAN.md line, the closed phase and only the last
-  log entry, AGENTS.md, and docs/architecture.md if present. Use targeted
+  later line exists. Read its PLAN.md line, the closed phase Constraints and relevant dependency handoffs, AGENTS.md, and docs/architecture.md if present. Use targeted
   repository search and read only files needed to make task paths exact.
 
 A one-line phase is an intention, not a specification. Ask all material
 questions before writing, as one numbered round: every question asked together,
-each with its recommended answer, then stop and wait. Find facts yourself with a
-search subagent rather than asking me for anything discoverable.
+each with its recommended answer, then stop and wait. Find discoverable facts with bounded read-only search. Use one agent by default.
 
 Normally one round, at most two. Phase scope is not product scope and Plan is
 not a second Define. Needing a third round means the phase is too large; split
@@ -90,7 +88,8 @@ The task graph uses exactly:
 
 - At most eight tasks; split the phase rather than add a ninth.
 - Dependencies are real prerequisites in this phase and form an acyclic graph.
-- `files` is the complete, minimal set the task may read or write, including
+- `files` is the complete, minimal writable scope; optional `reads` lists supporting
+  context. Include writable
   tests, configuration, generated definitions, and new files. Missing paths
   stall Build; broad paths waste context.
 - Keep concurrently runnable tasks from sharing files where practical.
@@ -109,24 +108,27 @@ the phase spends and does not get back.
 
 Each matching `## T(n)` contains Goal, concrete Deliverables, observable
 Acceptance Criteria, and `Verify:` with an exact runnable command and exact
-passing output or exit status. For a genuinely visual-only result, name the
-screen, action, and visible result. Never use "manually confirm it works".
+zero exit status, using `Verify: ` followed by a backtick-quoted command and
+`exits 0`. Use one Verify line per check. For manual or visual results, use
+`Verify: manual: action and expected result` or `Verify: visual: screen, action,
+and expected result`. Never use "manually confirm it works".
 
 Resolve blocking questions before writing. Record confirmed non-blocking
 assumptions, `## Open questions` as `None.`, explicit out-of-scope items, and
-`## Policy` as above.
+`## Policy` as above. Copy applicable durable product constraints into
+`## Constraints`; retain them in later phases. Write `None.` only when none apply.
 Leave Findings and Changelog empty and omit `reviewed:`, `ready:`, and active
 stage metadata from a new phase.
 
 ## Atomic handoff
 
 Write and lint the new phase before moving `current:`. At a boundary, remove
-`active: plan` from the closed phase in the same final edit that creates the
-new phase and moves the pointer. On initial planning, remove `active: plan`
+`active: plan` from PLAN.md when the new phase exists and the pointer moves.
+Do not write metadata into historical closed phases. On initial planning, remove `active: plan`
 from OBJECTIVE.md only after both PLAN.md and the phase file exist.
 
 Then:
 
-1. `.claude/bin/plan lint` — fix every error and warning attributable to the plan.
+1. `.claude/bin/plan lint` — fix errors; assess warnings without manufacturing findings.
 2. `.claude/bin/plan recommend` — print it.
 3. Stop and tell me to run `/cs-review` in a new session.

@@ -4,6 +4,15 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
+## [v3.0.0]
+
+- W07 measures direct task context, reporting shared prose, inherited legacy files, and generated package-manager lockfiles separately. Explicit lockfile reads still count. File scope and verification stay intact; aliases count once, completed work is quiet, and whole-file estimates remain advisory. README installation examples fetch the latest default-branch code.
+- Format 2: fingerprinted review/readiness, recorded automated verification and explicit attestations, separate writable files and optional reads.
+- Atomic locked mutations, recoverable close, explicit replan/claim recovery, relevant structured handoffs, doctor diagnostics.
+- Optional Orca, Codex, and Claude team contracts with coordinator-owned assignments and stale-result rejection.
+- Shared installer preview/apply, ownership checksums, explicit versioned migrations, backups, rollback, and reconciliation without running project commands.
+- Isolated, bounded opt-in evaluations; no quality or token improvement claim without live comparative evidence.
+
 ## [v2.5.0]
 
 ### The context budget, made visible

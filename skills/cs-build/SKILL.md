@@ -16,8 +16,8 @@ If the command asks for a search subagent but subagents are unavailable or
 not authorized, use a bounded read-only search and retain only the required
 `file:line` result in working context.
 
-Codex has no read-enforcement hook, so follow the canonical command's Reading
-rules explicitly.
+Follow the canonical command's Reading rules. Run doctor to inspect configured
+hook coverage; configuration does not prove native hook trust in this session.
 
 Translate suggested next steps for Codex users:
 

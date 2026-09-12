@@ -18,10 +18,17 @@ Stdlib only, no install step.
   plan begin STAGE [--resume]      claim review/revise/approve/close
   plan finish STAGE [--pass|--fail] complete a claimed stage
   plan start T2 [--resume]         claim one approved build task
+  plan verify T2 [--attest TEXT]  run checks and record matching evidence
+  plan replan [--recover-claims]  preserve history and return unfinished work to draft
+  plan doctor [--json]             runtime, adapters, hooks, trust, and gaps
+  plan recover                    replay an interrupted workflow transaction
+  plan assign BACKEND [--max N]   coordinator claims one approved worker group
+  plan integrate RESULT.json      accept a current verified worker result
+  plan handoff T2 JSON|--stdin    record a bounded structured handoff
   plan bump                       bump the phase rev, at the start of a revise
   plan reviewed                   record that this rev has had a review pass
   plan metrics                    deterministic workflow metrics across every phase
-  plan guard KIND [target]        deterministic hook gate; always fails open
+  plan guard KIND [target]        shared hook checks; quiet for unrelated projects
   plan version                    print the coldsession release version
 """
 
@@ -34,21 +41,28 @@ import subprocess
 import sys
 import tempfile
 import time
+import shutil
+import threading
+import uuid
+import shlex
+from pathlib import Path
 from datetime import datetime
 
-TOOL_VERSION = "2.5.0"
-FORMAT_VERSION = "1.5.0"
+TOOL_VERSION = "3.0.0"
+FORMAT_VERSION = "2.0.0"
 
-ROOT = os.environ.get("PLAN_ROOT", ".")
+ROOT = os.path.realpath(os.environ.get("PLAN_ROOT", "."))
 INDEX = os.path.join(ROOT, "PLAN.md")
 AGENTS_PATH = os.path.join(ROOT, "AGENTS.md")
 AGENTS_MD_BUDGET = 60
-# Soft budget on one task's bounded read list (AGENTS.md, the phase file, every
-# transitive dependency's files, then the task's own). Purely advisory -- it
-# never changes an exit code -- so raising or lowering it is never a format
-# change. 12,000 tokens is the point past which a "files" list has usually
-# stopped being one task and started being the whole phase.
+# Soft budget on direct task context. Shared prose, inherited legacy scope,
+# and package-manager lockfiles are reported separately. This is advisory.
 BRIEF_TOKEN_BUDGET = 12000
+LOCKFILE_NAMES = frozenset((
+    'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml',
+    'bun.lock', 'bun.lockb', 'Cargo.lock', 'poetry.lock', 'uv.lock', 'Pipfile.lock',
+    'composer.lock', 'Gemfile.lock',
+))
 
 TASK_RE = re.compile(r"^\s{2}(T\d+):\s*\{(.*)\}\s*$")
 HEAD_RE = re.compile(r"^##\s+(.+?)\s*$")
@@ -67,7 +81,8 @@ PSTATUSES = ("draft", "approved", "closed")
 FSTATUSES = ("open", "resolved", "accepted")
 SEVERITIES = ("Critical", "High", "Medium", "Low")
 META_KEYS = ("phase", "rev", "status", "reviewed", "ready", "active",
-             "active-rev", "workflow-rev")
+             "active-rev", "workflow-rev", "ready-spec", "reviewed-spec",
+             "active-spec", "reconciliation")
 STAGES = ("review", "revise", "approve", "close")
 
 
@@ -84,7 +99,8 @@ def read_text(path):
     split_frontmatter sees no frontmatter at all, so the phase reads as
     having no tasks. Files are always written back without one.
     """
-    return open(path, encoding="utf-8-sig").read()
+    with open(path, encoding="utf-8-sig") as handle:
+        return handle.read()
 
 
 def split_frontmatter(text):
@@ -118,7 +134,7 @@ def read_index():
     m = re.search(r"^current:\s*(\S+)", fm, re.M)
     if not m:
         die("PLAN.md frontmatter has no `current:` pointer.")
-    path = os.path.join(ROOT, m.group(1))
+    path = phase_path(m.group(1))
     if not os.path.exists(path):
         die(f"PLAN.md points at {m.group(1)}, which does not exist.\n"
             "  A phase was probably closed and the next one not planned yet.\n"
@@ -146,6 +162,14 @@ def parse_tasks(fm):
                 malformed.append(line.rstrip())
                 continue
             tid, inner = m.group(1), m.group(2)
+            if tid in tasks:
+                malformed.append(f"duplicate task ID {tid}: {line}")
+                continue
+            fields = re.findall(r'(?:^|,)\s*([\w-]+)\s*:', inner)
+            if (len(fields) != len(set(fields)) or set(fields) - {'deps', 'status', 'files', 'reads', 'owner'}
+                    or not {'deps', 'status', 'files'}.issubset(fields)):
+                malformed.append(f'invalid or duplicate task fields: {line}')
+                continue
             deps = LIST_RE("deps").search(inner)
             files = LIST_RE("files").search(inner)
             status = WORD_RE("status").search(inner)
@@ -153,6 +177,7 @@ def parse_tasks(fm):
             tasks[tid] = {
                 "deps": csv(deps.group(1)) if deps else [],
                 "files": csv(files.group(1)) if files else [],
+                "reads": csv(LIST_RE("reads").search(inner).group(1)) if LIST_RE("reads").search(inner) else [],
                 "status": status.group(1) if status else "?",
                 # Absent on every phase file written before format 1.5, and
                 # absent again the moment the task stops being in progress.
@@ -250,6 +275,12 @@ def read_phase(path):
             meta[key] = m.group(1).strip()
 
     tasks, order, malformed = parse_tasks(fm)
+    meta_fields = re.findall(r'^([\w-]+):', fm, re.M)
+    if len(meta_fields) != len(set(meta_fields)):
+        malformed.append('duplicate frontmatter keys')
+    task_heads = re.findall(r'^##\s+(T\d+)\b', COMMENT_RE.sub('', body), re.M)
+    if len(task_heads) != len(set(task_heads)):
+        malformed.append('duplicate task body sections')
     blocks = parse_blocks(body)
 
     sections = {}
@@ -336,7 +367,7 @@ def lint_issues(phase):
     if fmt is None:
         warns.append("W03 phase file has no workflow-rev; it was written by an "
                      "older coldsession and may not match this tool")
-    elif fmt.split(".")[0] != FORMAT_VERSION.split(".")[0]:
+    elif fmt.split(".")[0] not in ("1", "2"):
         errs.append(f"E11 phase file is format {fmt}, supported format is {FORMAT_VERSION}; "
                     "major versions differ and the shapes are not compatible")
 
@@ -359,13 +390,16 @@ def lint_issues(phase):
             errs.append(f"E19 {tid} is in_progress but the phase is not approved")
         if not task["files"]:
             errs.append(f"E04 {tid} has an empty files list; build cannot bound its reads")
-        else:
-            tokens, _, _ = _context_budget(read_set(phase, tid), phase["path"])
+        elif task["status"] != "done" and phase["meta"].get("status") != "closed":
+            tokens = _context_budget(phase, tid)['task']
             if tokens > BRIEF_TOKEN_BUDGET:
-                warns.append(f"W07 {tid} bounds a build session to ~{tokens:,} tokens of "
-                             f"files (its own plus its dependencies', not counting the "
-                             f"phase file), over the {BRIEF_TOKEN_BUDGET:,}-token soft "
-                             "budget; narrow `files` or split the task")
+                warns.append(f"W07 {tid} file context is ~{tokens:,} tokens "
+                             "(whole-file estimate, bytes/4; direct task context, "
+                             "excluding shared/inherited files and implicit lockfile reads), over the "
+                             f"{BRIEF_TOKEN_BUDGET:,}-token soft budget; advisory only. "
+                             "Large existing files can trigger this for a small edit; "
+                             f"inspect `plan brief {tid}` and use targeted reads. "
+                             "Keep required files in scope; split only if the work is too broad.")
         for dep in task["deps"]:
             if dep not in t:
                 errs.append(f"E05 {tid} depends on {dep}, which is not in this phase")
@@ -433,6 +467,33 @@ def lint_issues(phase):
                          f"{AGENTS_MD_BUDGET}-line budget; a build session re-reads it "
                          "every task, trim it before adding more")
 
+    if strict(phase):
+        for tid, task in t.items():
+            section = phase['sections'].get(tid, '')
+            for field in ('Goal', 'Deliverables', 'Acceptance Criteria'):
+                match = re.search(r'^' + field + r':(.*?)(?=^(?:Goal|Deliverables|Acceptance Criteria|Verify):|\Z)', section, re.M | re.S)
+                if not match or not match.group(1).strip():
+                    errs.append(f'E35 {tid} requires concrete {field}')
+            for entry in task['files'] + task['reads']:
+                try:
+                    scope_path(entry)
+                    if sensitive(entry):
+                        raise ValueError(f'sensitive path cannot be task scope: {entry}')
+                except ValueError as exc:
+                    errs.append(f"E26 {tid}: {exc}")
+            try:
+                verification_checks(phase, tid)
+            except ValueError as exc:
+                errs.append(f"E27 {tid}: {exc}")
+        if not block(phase['blocks'], 'Constraints').strip():
+            errs.append('E28 missing durable Constraints (write None. if none apply)')
+        spec = specification(phase)
+        if phase['meta'].get('ready') and phase['meta'].get('ready-spec') != spec:
+            errs.append('E29 readiness is stale; run plan replan')
+        if phase['meta'].get('status') == 'approved' and (
+                ready != rev or phase['meta'].get('ready-spec') != spec or
+                phase['meta'].get('reviewed-spec') != spec):
+            errs.append('E30 approval does not match the reviewed specification; run plan replan')
     return errs, warns
 
 
@@ -449,12 +510,26 @@ def recommend(phase):
     reviewed = intof(meta.get("reviewed"), 0) if meta.get("reviewed") else 0
     status = meta.get("status", "draft")
     opened = open_findings(phase)
+    if strict(phase) and status != 'closed':
+        if (any(t['status'] == 'blocked' for t in phase['tasks'].values()) or
+                (meta.get('ready') and meta.get('ready-spec') != specification(phase))):
+            return ('plan replan', 'blocked work or changed specification requires renewed review; settle active claims first')
+        errs, _ = lint_issues(phase)
+        if errs:
+            return ('plan lint', 'repair the reported document errors, then run plan replan if approval is stale')
+        if status == 'approved':
+            for tid in phase['order']:
+                if phase['tasks'][tid]['status'] == 'done' and not evidence_valid(phase, tid):
+                    return (f'plan verify {tid}', 'historical completion requires current verification before close')
 
     active = meta.get("active")
     if active:
         return (f"/cs-{active} --resume",
                 f"{active} is already active for rev {meta.get('active-rev', rev)}; "
                 "a plain rerun is refused")
+
+    if strict(phase) and load_json(assignment_path(phase), {}):
+        return ('plan status', 'worker assignments remain; wait for results or explicitly recover settled claims, never replace quiet workers')
 
     in_progress = [x for x in phase["order"]
                    if phase["tasks"][x]["status"] == "in_progress"]
@@ -471,7 +546,7 @@ def recommend(phase):
 
     if status == "draft":
         if rev >= 3 and open_findings(phase, ("Critical",)):
-            return ("/cs-plan",
+            return ("plan replan",
                     f"rev {rev} still has an open Critical "
                     f"({', '.join(open_findings(phase, ('Critical',)))}); split this phase "
                     "and re-plan rather than revising a fourth time")
@@ -487,7 +562,7 @@ def recommend(phase):
             return ("/cs-revise",
                     f"{len(opened)} open finding(s) ({sev}): {', '.join(opened)}")
         if errs:
-            return ("(fix the linter first)",
+            return ("plan lint",
                     f"plan lint reports {len(errs)} error(s); nothing downstream can trust "
                     "this file until they are fixed")
         if intof(meta.get("ready"), 0) == rev:
@@ -498,7 +573,7 @@ def recommend(phase):
                 "evidence, then you set `status: approved` yourself")
 
     if errs:
-        return ("(fix the linter first)",
+        return ("plan lint",
                 f"plan lint reports {len(errs)} error(s); nothing downstream can trust "
                 "this file until they are fixed")
 
@@ -521,16 +596,16 @@ def recommend(phase):
                 unmet = [d for d in phase["tasks"][tid]["deps"]
                          if phase["tasks"].get(d, {}).get("status") != "done"]
                 waiting.append(f"{tid} waits on {', '.join(unmet) or 'nothing runnable'}")
-            return ("(nothing runnable)", "; ".join(waiting))
+            return ("plan replan", "; ".join(waiting))
         return ("/cs-close", "every task is done")
 
-    return ("(fix phase status)", f"unsupported phase status {status!r}")
+    return ("plan lint", f"unsupported phase status {status!r}")
 
 
 # ---------------------------------------------------------------- writing
 
 def write_phase(phase, text):
-    open(phase["path"], "w", encoding="utf-8").write(text)
+    atomic_write(phase["path"], text)
 
 
 def sub_outside_comments(pat, repl, text):
@@ -610,12 +685,13 @@ def _owner_id():
 
     Orca's terminal handle first: it outlives a restarted agent session and
     names a terminal that a coordinator can address, so a resumed build keeps
-    the claim it started with. Claude Code's session id is the fallback and is
-    what a plain install has; Codex supplies neither, and an unstamped claim
-    simply behaves the way every claim did before format 1.5.
+    the claim it started with. Claude and Codex session/thread IDs are fallbacks.
+    Anonymous single-task execution stays scoped; teams require stable identity.
     """
     return (os.environ.get("ORCA_TERMINAL_HANDLE")
-            or os.environ.get("CLAUDE_CODE_SESSION_ID") or None)
+            or os.environ.get("CLAUDE_CODE_SESSION_ID")
+            or os.environ.get("CODEX_THREAD_ID")
+            or os.environ.get("CODEX_SESSION_ID") or None)
 
 
 def _set_owner(text, tid, owner):
@@ -717,8 +793,17 @@ def cmd_lint(phase, _args):
 
 
 def cmd_next(phase, args):
+    if strict(phase):
+        validate_transition(phase, 'assign', [])
     nxt = runnable(phase)
+    if strict(phase):
+        nxt = [tid for tid in nxt if not any(
+            other != tid and task['status'] == 'in_progress' and task_conflict(phase, tid, other)
+            for other, task in phase['tasks'].items())]
     if not nxt:
+        if strict(phase):
+            print_recommend(phase)
+            return 0
         pending = [x for x in phase["order"] if phase["tasks"][x]["status"] == "pending"]
         if phase["meta"].get("status") == "closed":
             print("this phase is closed: run /cs-plan for the next one")
@@ -738,9 +823,12 @@ def cmd_next(phase, args):
 
     groups = []
     for tid in nxt:
-        files = set(phase["tasks"][tid]["files"])
+        files = {_guard_norm(p) for p in phase["tasks"][tid]["files"]}
+        running = {_guard_norm(p) for t in phase['tasks'].values() if t['status'] == 'in_progress' for p in t['files']}
+        if files & running:
+            continue
         for g in groups:
-            if not files & g["files"]:
+            if not files & g["files"] and not (strict(phase) and any(task_conflict(phase, tid, other) for other in g['ids'])):
                 g["ids"].append(tid)
                 g["files"] |= files
                 break
@@ -779,8 +867,10 @@ def read_set(phase, tid):
     both call this rather than rebuilding the traversal.
     """
     reads = ["AGENTS.md", phase["path"]]
-    for dep in _transitive_deps(phase, tid):
-        reads += phase["tasks"].get(dep, {}).get("files", [])
+    if not strict(phase):
+        for dep in _transitive_deps(phase, tid):
+            reads += phase["tasks"].get(dep, {}).get("files", [])
+    reads += phase['tasks'].get(tid, {}).get('reads', [])
     reads += phase["tasks"].get(tid, {}).get("files", [])
 
     seen, ordered = set(), []
@@ -791,53 +881,58 @@ def read_set(phase, tid):
     return ordered
 
 
-def _context_budget(paths, phase_path=None):
-    """Approx (task_tokens, phase_tokens, missing) for a resolved read list.
+def _context_budget(phase, tid, include_inherited=False):
+    """Whole-file bytes/4 inventory, separated from direct task context.
 
-    Byte size // 4 is the standard rule of thumb for English prose and source
-    code alike -- close enough to flag a bloated `files` list without adding a
-    tokenizer dependency `plan` does not otherwise need. A path that does not
-    exist yet (the task creates it) contributes nothing and is named in
-    `missing` instead of guessed at.
-
-    `phase_path`, when given, is counted separately from everything else.
-    Every task in a phase pays for the whole phase file -- AGENTS.md, the
-    files of its dependencies, and its own files are the part a task's own
-    `files:` list actually controls, and the two must not be summed into one
-    number or a long phase file makes every task in it look over-scoped for
-    a reason no amount of narrowing `files` would fix.
-
-    `phase_path` arrives already joined onto `ROOT` -- `read_index()` does
-    that before `read_set()` ever sees it -- so it is resolved as-is rather
-    than joined again; doing so a second time looks for the phase file under
-    ROOT/ROOT and reports an existing file as missing under any `PLAN_ROOT`
-    that is not "." or absolute. Membership is also decided on the
-    normalized path rather than raw string equality, so a task that lists
-    the phase file under another spelling in its own `files:` (`./docs/...`
-    vs `docs/...`) still lands in the phase bucket instead of being
-    double-counted as task-owned.
+    Legacy read authorization inherits dependency files; that is not an
+    instruction to load them all. Lockfiles are usually generated outputs;
+    count them toward W07 only when explicitly requested in `reads`.
+    Neither distinction changes read/write authorization or fingerprints.
+    Other source/doc files still use their full size, not guessed excerpts.
+    Resolve aliases once and keep missing files visible without guessing size.
     """
+    phase_path = phase['path']
+
     def resolve(rel):
-        if phase_path is not None and rel == phase_path:
+        if rel == phase_path:
             return rel
         return os.path.join(ROOT, rel)
 
     def canon(rel):
-        return os.path.normcase(os.path.normpath(resolve(rel)))
+        return os.path.normcase(os.path.realpath(resolve(rel)))
 
-    phase_canon = canon(phase_path) if phase_path is not None else None
-    task_tokens, phase_tokens, missing = 0, 0, []
+    phase_canon = canon(phase_path)
+    agents_canon = canon("AGENTS.md")
+    task = phase['tasks'].get(tid, {})
+    explicit_reads = {canon(p) for p in task.get('reads', [])}
+    direct = explicit_reads | {canon(p) for p in task.get('files', [])}
+    lockfile_names = {os.path.normcase(n) for n in LOCKFILE_NAMES}
+    budget = dict(task=0, phase=0, agents=0, inherited=0, lockfiles=0, missing=[])
+    seen = set()
+    paths = (read_set(phase, tid) if include_inherited else
+             ['AGENTS.md', phase_path] + task.get('reads', []) + task.get('files', []))
     for rel in paths:
+        path = canon(rel)
+        if path in seen:
+            continue
+        seen.add(path)
         try:
             size = os.path.getsize(resolve(rel)) // 4
         except OSError:
-            missing.append(rel)
+            budget['missing'].append(rel)
             continue
-        if phase_canon is not None and canon(rel) == phase_canon:
-            phase_tokens += size
+        if path == phase_canon:
+            bucket = 'phase'
+        elif path == agents_canon:
+            bucket = 'agents'
+        elif os.path.basename(path) in lockfile_names and path not in explicit_reads:
+            bucket = 'lockfiles'
+        elif path not in direct:
+            bucket = 'inherited'
         else:
-            task_tokens += size
-    return task_tokens, phase_tokens, missing
+            bucket = 'task'
+        budget[bucket] += size
+    return budget
 
 
 def _last_log_entry(path):
@@ -894,25 +989,36 @@ def cmd_brief(phase, args):
         else:
             read_lines.append(r)
     print("read    " + "\n        ".join(read_lines))
-    print("        (nothing else; if you need a file that is not listed, stop and say so)")
+    print("write   " + ', '.join(task['files']))
+    print("        (bounded read-only discovery is allowed; correct an insufficient brief before implementation)")
+    if strict(phase):
+        print('spec    ' + specification(phase))
+        for name in ('Constraints', 'Assumptions', 'Policy', 'Out of scope'):
+            print(name.lower() + ' ' + block(phase['blocks'], name))
+        for entry in relevant_handoffs(phase, tid):
+            print('handoff ' + json.dumps(entry, ensure_ascii=True))
 
     section = phase["sections"].get(tid, "").strip()
     if section:
         print(f"section {tid}")
         print("        " + section.replace("\n", "\n        "))
 
-    task_tokens, phase_tokens, missing = _context_budget(ordered, phase["path"])
-    total = task_tokens + phase_tokens
-    note = f"; {len(missing)} not yet on disk" if missing else ""
-    over = f"  -- task files alone are over the {BRIEF_TOKEN_BUDGET:,}-token soft budget" \
-        if task_tokens > BRIEF_TOKEN_BUDGET else ""
-    print(f"budget  ~{total:,} tokens across {len(ordered)} file(s): "
-          f"~{phase_tokens:,} phase file, ~{task_tokens:,} task-owned{note}{over}")
+    budget = _context_budget(phase, tid, include_inherited=True)
+    total = sum(budget[key] for key in ('task', 'phase', 'agents', 'inherited', 'lockfiles'))
+    note = f"; {len(budget['missing'])} not yet on disk" if budget['missing'] else ""
+    over = f"  -- direct task context is over the {BRIEF_TOKEN_BUDGET:,}-token soft budget (advisory)" \
+        if budget['task'] > BRIEF_TOKEN_BUDGET else ""
+    print(f"budget  ~{total:,} tokens (estimate, bytes/4) across {len(ordered)} file(s): "
+          f"~{budget['phase']:,} phase file, ~{budget['task']:,} task files/supporting reads, "
+          f"~{budget['agents']:,} shared AGENTS.md, ~{budget['inherited']:,} inherited files, "
+          f"~{budget['lockfiles']:,} generated lockfiles{note}{over}")
+    print("        (file inventory, not measured prompt usage; inherited files need only targeted reads; "
+          "lockfiles count toward W07 only when explicitly listed in reads)")
 
     v = verify_line(phase, tid)
     print(f"verify  {v[len('Verify:'):].strip() if v and v.startswith('Verify:') else v}")
     log = phase["path"].replace(".md", ".log.md")
-    if os.path.exists(log):
+    if os.path.exists(log) and not strict(phase):
         entry = _last_log_entry(log)
         if entry:
             print(f"handoff {log}  (last entry inlined below; open the file only for more)")
@@ -1025,6 +1131,8 @@ def cmd_begin(phase, args):
             _stage_refusal(phase, "this phase is not ready to close")
 
     text = set_metas(phase["text"], {"active": stage, "active-rev": rev})
+    if strict(phase):
+        text = set_meta(text, 'active-spec', specification(phase))
     write_phase(phase, text)
     print(f"begin {stage} at rev {rev}")
     return 0
@@ -1067,6 +1175,10 @@ def cmd_finish(phase, args):
         if rev != active_rev:
             die(f"review claimed rev {active_rev}, but phase is now rev {rev}")
         text = set_meta(text, "reviewed", rev)
+        if strict(phase):
+            if phase['meta'].get('active-spec') != specification(phase):
+                die('specification changed during review; run plan replan')
+            text = set_meta(text, 'reviewed-spec', specification(phase))
     elif stage == "revise":
         if rev != active_rev + 1:
             die("finish revise requires exactly one successful plan bump")
@@ -1084,6 +1196,10 @@ def cmd_finish(phase, args):
             if intof(phase["meta"].get("reviewed"), 0) != rev:
                 die(f"cannot mark rev {rev} ready; it has not been reviewed")
             text = set_meta(text, "ready", rev)
+            if strict(phase):
+                if phase['meta'].get('reviewed-spec') != specification(phase):
+                    die('review is stale; run plan replan')
+                text = set_meta(text, 'ready-spec', specification(phase))
         if stage == "close" and passed:
             if phase["meta"].get("status") != "approved":
                 die("only an approved phase can close")
@@ -1092,15 +1208,14 @@ def cmd_finish(phase, args):
             index_text = _tick_current_phase(phase)
             text = set_meta(text, "status", "closed")
             text = del_meta(text, "active", "active-rev")
-            open(INDEX, "w", encoding="utf-8").write(index_text)
-            write_phase(phase, text)
+            transaction({INDEX: index_text, phase['path']: del_meta(text, 'active-spec')})
             print(f"finish close --pass; {phase['meta'].get('phase', '?')} -> closed")
             return 0
         if stage == "close" and failed:
             text = set_meta(text, "status", "draft")
             text = del_meta(text, "ready")
 
-    text = del_meta(text, "active", "active-rev")
+    text = del_meta(text, "active", "active-rev", "active-spec")
     write_phase(phase, text)
     outcome = " --pass" if "--pass" in args else " --fail" if "--fail" in args else ""
     print(f"finish {stage}{outcome} at rev {rev}")
@@ -1195,6 +1310,18 @@ def cmd_block(phase, args):
         die(f"{tid} is not in this phase")
     if task["status"] != "in_progress":
         die(f"{tid} must be in_progress before it can be blocked")
+    if strict(phase):
+        reason = redact(' '.join(args[1:]) or 'unspecified blocker')[:4096].replace('|', '/')
+        text = re.sub(r'^(  ' + tid + r':.*?status:\s*)in_progress', r'\g<1>blocked', phase['text'], flags=re.M)
+        text = _set_owner(text, tid, None)
+        text = set_metas(text, {'status': 'draft'}, remove=('ready', 'ready-spec'))
+        fid = 'F' + str(max([num(f) for f in phase['forder']] or [0]) + 1)
+        text = append_to_block(text, 'Findings', f'{fid} | High | Blocker | {tid} | open | {reason} | settle workers and replan the blocked contract')
+        log = phase['path'][:-3] + '.log.md'
+        previous = read_text(log) if os.path.exists(log) else ''
+        transaction({phase['path']: text, log: previous + f'\n## {tid} blocked\n{reason}\n'})
+        print(f'{tid} -> blocked; phase -> draft; readiness cleared; run plan replan after workers settle')
+        return 0
     _set_status(phase, tid, "blocked", " ".join(args[1:]) or "no reason given")
     text = read_text(phase["path"])
     text = set_meta(text, "status", "draft")
@@ -1324,7 +1451,7 @@ def cmd_metrics(_phase, _args):
             # dependency graph is pathological (deep enough to blow the
             # recursion limit) must not take the rest of the report down.
             try:
-                tokens, _, _ = _context_budget(read_set(p, tid), p["path"])
+                tokens = _context_budget(p, tid)['task']
             except Exception:
                 continue
             task_tokens.append(tokens)
@@ -1332,7 +1459,7 @@ def cmd_metrics(_phase, _args):
                 over_budget += 1
     if task_tokens:
         avg = sum(task_tokens) / len(task_tokens)
-        print(f"  task context budget     avg ~{avg:,.0f} tokens/task, own+dep files "
+        print(f"  task context budget     avg ~{avg:,.0f} tokens/task, task files/supporting reads "
               f"({over_budget} of {len(task_tokens)} over the "
               f"{BRIEF_TOKEN_BUDGET:,}-token budget)")
     else:
@@ -1420,7 +1547,10 @@ def _guard_phase():
         m = re.search(r"^current:\s*(\S+)", fm, re.M)
         if not m:
             return None
-        path = os.path.join(ROOT, m.group(1))
+        path = scope_path(m.group(1))
+        plans = os.path.normcase(os.path.realpath(os.path.join(ROOT, 'docs', 'plans')))
+        if not path.startswith(plans + os.sep) or not path.endswith('.md') or path.endswith('.log.md'):
+            return None
         if not os.path.exists(path):
             return None
         return read_phase(path)
@@ -1465,10 +1595,10 @@ def _guard_norm(path):
     if not path or not isinstance(path, str):
         return None
     try:
-        p = os.path.expanduser(path)
+        p = os.path.expanduser(path.replace('\\', os.sep))
         if not os.path.isabs(p):
             p = os.path.join(ROOT, p)
-        return os.path.normcase(os.path.abspath(p))
+        return os.path.normcase(os.path.realpath(p))
     except Exception:
         return None
 
@@ -1746,6 +1876,17 @@ def cmd_guard(_phase, args):
         needs_stdin = not rest or kind == "write"
     payload = _guard_payload() if needs_stdin else {}
 
+    if kind != 'stage':
+        normalized = normalize_event(payload)
+        phase = _guard_phase()
+        if phase and strict(phase):
+            try:
+                return strict_guard(phase, kind, rest, normalized)
+            except (OSError, ValueError, TypeError, KeyError, AttributeError):
+                return _guard_deny('E31', 'cannot validate hook payload or workflow state', 'run plan doctor and repair state before mutation')
+        if phase is None and os.path.exists(INDEX) and kind == 'write':
+            return _guard_deny('E31', 'cannot validate current workflow state', 'run plan doctor; repair PLAN.md before mutations')
+
     if kind == "stage":
         try:
             return _guard_stage(rest, payload)
@@ -1807,7 +1948,7 @@ def _lock_path(phase_path):
     Hashed and kept out of the repository: a lock is per-machine and
     ephemeral, so it has no business being a file the project can commit.
     """
-    key = hashlib.sha256(os.path.abspath(phase_path).encode("utf-8")).hexdigest()
+    key = hashlib.sha256(os.path.normcase(os.path.realpath(phase_path)).encode("utf-8")).hexdigest()
     return os.path.join(_lock_dir(), key[:32] + ".lock")
 
 
@@ -1841,23 +1982,22 @@ def _lock_acquire(phase_path):
     O_EXCL is the portable primitive: atomic on both platforms, no third-party
     file locking, and it leaves the holder's pid on disk for the error message.
 
-    Returns the lock path, or None when locking is simply unavailable. An
-    unwritable temp directory is a reason to run unlocked, not to refuse to
-    work -- the single-session case, which is most of them, is unaffected.
+    Returns the lock path. Unavailable locking refuses mutation. Locks never
+    expire by age; interrupted processes require explicit operator recovery.
     """
     path = _lock_path(phase_path)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-    except OSError:
-        return None
+    except OSError as exc:
+        die(f'cannot establish mutation lock: {exc}')
     deadline = time.monotonic() + LOCK_TIMEOUT
     while True:
         try:
             fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
             pass
-        except OSError:
-            return None
+        except OSError as exc:
+            die(f'cannot establish mutation lock: {exc}')
         else:
             try:
                 os.write(fd, f"{os.getpid()} {time.time():.0f}".encode("utf-8"))
@@ -1865,17 +2005,6 @@ def _lock_acquire(phase_path):
                 os.close(fd)
             return path
 
-        age = _lock_age(path)
-        if age is not None and age > LOCK_STALE:
-            # The holder died without releasing. Breaking the lock can only
-            # lose a write a dead process was never going to make, and the
-            # alternative is a workflow that stays wedged until a human runs
-            # rm on a path they have to be told about.
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
-            continue
         if time.monotonic() >= deadline:
             die(f"another plan command is holding this phase "
                 f"(pid {_lock_pid(path) or '?'}).\n"
@@ -1904,6 +2033,668 @@ def _lock_release(path):
             time.sleep(0.01)
 
 
+# -------------------------------------------------------- version 2 contract
+
+def strict(phase):
+    return phase['meta'].get('workflow-rev', '1').split('.')[0] == '2'
+
+
+def normalize_event(payload):
+    data = payload.get('tool_input', payload.get('input', payload.get('arguments', {})))
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except ValueError:
+            data = {'patch': data}
+    if not isinstance(data, dict):
+        data = {}
+    return {'tool_name': payload.get('tool_name', payload.get('name', '')),
+            'tool_input': data, 'session_id': payload.get('session_id', payload.get('thread_id'))}
+
+
+def sensitive(path):
+    parts = path.replace('\\', '/').lower().split('/')
+    leaf = parts[-1]
+    return ('.git' in parts or '.ssh' in parts or leaf == '.env' or
+            (leaf.startswith('.env.') and leaf not in ('.env.example', '.env.sample')) or
+            leaf.endswith(('.pem', '.key', '.p12')) or leaf in ('credentials', 'credentials.json'))
+
+
+def strict_guard(phase, kind, args, payload):
+    data = payload['tool_input']
+    if kind == 'lint':
+        return _guard_lint(args[0] if args else data.get('file_path', data.get('path')))
+    paths = [args[0]] if args else [data.get('file_path', data.get('path'))]
+    patch = data.get('patch', data.get('input', ''))
+    if isinstance(patch, str) and '*** Begin Patch' in patch:
+        paths = re.findall(r'^\*\*\* (?:Update File|Add File|Delete File|Move to): (.+)$', patch, re.M)
+        if re.search(r'^\+status:\s*approved\s*$', patch, re.M):
+            return _guard_deny('E24', 'an agent may not approve a phase', 'human approval is required')
+    tasks = [tid for tid, t in phase['tasks'].items() if t['status'] == 'in_progress']
+    if tasks and kind == 'write' and phase['meta'].get('ready-spec') != specification(phase):
+        return _guard_deny('E29', 'approved specification changed, including resolved scope paths', 'settle work and run plan replan')
+    owner = os.environ.get('CS_WORKER_ASSIGNMENT') or _owner_id() or payload.get('session_id')
+    if owner:
+        assignments = load_json(assignment_path(phase), {})
+        mine = [tid for tid in tasks if phase['tasks'][tid].get('owner') == owner or
+                owner in (assignments.get(tid, {}).get('assignment'), assignments.get(tid, {}).get('worker'))]
+        if mine:
+            tasks = mine
+        elif tasks and not (len(tasks) == 1 and not phase['tasks'][tasks[0]].get('owner')) and not any(
+                a.get('coordinator') == owner for a in assignments.values()):
+            return _guard_deny('E32', 'session does not own an active task', 'use the coordinator or explicitly resume the correct claim')
+    command = data.get('command', data.get('cmd'))
+    if isinstance(command, list):
+        command = ' '.join(shlex.quote(str(word)) for word in command)
+    if command and kind == 'write':
+        # Arbitrary shell is a language, not a safely parseable list of paths.
+        # Permit the validated runtime and filename-only discovery. Native
+        # permissions remain authoritative for all other execution.
+        if sensitive(command):
+            return _guard_deny('E33', 'shell references sensitive files', 'use project-approved secret handling')
+        if tasks:
+            safe = safe_runtime_command(command)
+            discovery = command.strip() == 'rg --files'
+            if not safe and not discovery:
+                return _guard_deny('E34', 'shell payload cannot be proven within task scope',
+                                   'use scoped file tools, filename discovery, or plan verify; retain native permissions')
+        elif re.search(r'approved|PLAN\.md|docs[/\\]plans', command, re.I):
+            return _guard_deny('E24', 'shell mutation of workflow documents cannot be validated', 'use scoped edit tools and plan commands')
+        return 0
+    if kind == 'write' and not any(paths):
+        return _guard_deny('E31', 'write payload has no verifiable paths', 'use a supported scoped file tool')
+    for path in filter(None, paths):
+        if sensitive(path):
+            return _guard_deny('E33', 'sensitive file access is restricted', 'use project-approved secret handling')
+        target = _guard_norm(path)
+        root = os.path.normcase(ROOT)
+        if not target or not target.startswith(root + os.sep):
+            return _guard_deny('E26', 'path escapes repository after resolving links', 'use repository file paths')
+        if kind == 'write':
+            denied = _guard_write(phase, path, payload)
+            if denied:
+                return denied
+        if tasks:
+            allowed = set()
+            for tid in tasks:
+                entries = phase['tasks'][tid]['files'] if kind == 'write' else read_set(phase, tid)
+                allowed.update(_guard_norm(p) for p in entries)
+            if kind == 'read':
+                allowed.add(_guard_norm(INDEX))
+            if target not in allowed:
+                return _guard_deny('E23', f'{kind} outside task scope: {path}',
+                                   'correct an insufficient brief through replan before implementation')
+    return 0
+
+
+def safe_runtime_command(command):
+    if re.search(r'[;&|<>`$%\r\n]', command):
+        return False
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    if words and words[0] in ('python', 'python3', 'py'):
+        words = words[1:]
+    executables = {prefix + suffix for prefix in ('.claude/bin/plan', '.agents/coldsession/bin/plan')
+                   for suffix in ('', '.cmd')}
+    return bool(len(words) >= 2 and words[0] in executables and words[1] in
+                ('status', 'lint', 'brief', 'next', 'recommend', 'verify', 'done', 'block', 'handoff', 'integrate', 'assign'))
+
+
+def scope_path(value):
+    """Exact repository file, with links/junctions resolved before authorization."""
+    value = value.replace('\\', '/')
+    if (not value or value.startswith('/') or re.match(r'^[A-Za-z]:', value)
+            or any(p in ('..', '.', '') for p in value.split('/'))
+            or any(c in value for c in '*?[]:')):
+        raise ValueError(f'invalid repository file path {value!r}')
+    path = os.path.normcase(os.path.realpath(os.path.join(ROOT, value)))
+    root = os.path.normcase(os.path.realpath(ROOT))
+    if not path.startswith(root + os.sep):
+        raise ValueError(f'path escapes repository: {value}')
+    if os.path.isdir(path):
+        raise ValueError(f'scope must name a file, not a directory: {value}')
+    return path
+
+
+def phase_path(value):
+    try:
+        path = scope_path(value)
+        plans = os.path.normcase(os.path.realpath(os.path.join(ROOT, 'docs', 'plans')))
+        if not path.startswith(plans + os.sep) or not path.endswith('.md') or path.endswith('.log.md'):
+            raise ValueError('current must name a phase .md file under docs/plans')
+        return path
+    except ValueError as exc:
+        die(str(exc))
+
+
+def digest(value):
+    return hashlib.sha256(value).hexdigest()
+
+
+def specification(phase):
+    """Hash requirements, including headings and unknown prose, excluding bookkeeping."""
+    fm, body = split_frontmatter(phase['text'])
+    chunks = re.split(r'(?=^##\s)', COMMENT_RE.sub('', body), flags=re.M)
+    prose = []
+    for chunk in chunks:
+        head = chunk.splitlines()[0].strip() if chunk.splitlines() else ''
+        if head.lower() in ('## findings', '## changelog', '## migration', '## history'):
+            continue
+        prose.append('\n'.join(line.rstrip() for line in chunk.strip().splitlines()))
+    def canonical(key, values):
+        if key == 'deps':
+            return sorted(values)
+        result = []
+        for value in values:
+            try:
+                result.append(os.path.relpath(scope_path(value), ROOT).replace(os.sep, '/'))
+            except ValueError:
+                result.append('invalid:' + value)
+        return sorted(result)
+    contract = {'phase': phase['meta'].get('phase'), 'prose': prose,
+                'tasks': {tid: {key: canonical(key, task.get(key, [])) for key in ('deps', 'files', 'reads')}
+                          for tid, task in phase['tasks'].items()}}
+    return digest(json.dumps(contract, sort_keys=True, ensure_ascii=True).encode())
+
+
+def atomic_write(path, text):
+    path = os.path.abspath(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix='.cs-', dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if os.path.exists(path):
+            os.chmod(temporary, os.stat(path).st_mode)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def state_path(name):
+    return os.path.join(ROOT, '.coldsession-state', name)
+
+
+def load_json(path, default=None):
+    if not os.path.exists(path):
+        return default
+    return json.loads(read_text(path))
+
+
+def save_json(path, value):
+    atomic_write(path, json.dumps(value, sort_keys=True, indent=2) + '\n')
+
+
+def json_input(value):
+    """Accept a JSON object, stdin, or an existing file without forcing scratch writes."""
+    if value == '--stdin':
+        return json.loads(sys.stdin.read(16385))
+    if value.lstrip().startswith('{'):
+        if len(value) > 16384:
+            die('JSON input exceeds 16384 characters')
+        return json.loads(value)
+    return load_json(scope_path(value))
+
+
+def transaction(changes):
+    journal = state_path('transaction.json')
+    entries = [{'path': os.path.relpath(path, ROOT).replace(os.sep, '/'),
+                'before': read_text(path) if os.path.exists(path) else None, 'after': text}
+               for path, text in changes.items()]
+    save_json(journal, entries)
+    recover_transaction()
+
+
+def recover_transaction():
+    journal = state_path('transaction.json')
+    entries = load_json(journal)
+    if entries is None:
+        return
+    # Validate all inputs before writing any; replay is safe after any prefix.
+    for entry in entries:
+        path = scope_path(entry['path'])
+        current = read_text(path) if os.path.exists(path) else None
+        if current not in (entry['before'], entry['after']):
+            die(f'incomplete transaction conflicts with {entry["path"]}; preserve changes and recover from {journal}')
+    for entry in entries:
+        atomic_write(scope_path(entry['path']), entry['after'])
+    os.unlink(journal)
+
+
+def evidence_path(phase):
+    return phase['path'][:-3] + '.evidence.json'
+
+
+def verification_checks(phase, tid):
+    checks = []
+    for line in phase['sections'].get(tid, '').splitlines():
+        line = line.strip().lstrip('-* ').strip()
+        if not line.startswith('Verify:'):
+            continue
+        raw = line[7:].strip()
+        match = re.fullmatch(r'`([^`\n]+)`(?: exits 0)?', raw)
+        if match:
+            checks.append({'kind': 'automated', 'command': match.group(1)})
+        elif re.match(r'^(manual|visual):\s*\S', raw):
+            kind, description = raw.split(':', 1)
+            checks.append({'kind': kind, 'command': description.strip()})
+        else:
+            raise ValueError('Verify must be `exact command` exits 0, manual: action, or visual: action; one per line')
+    if not checks:
+        raise ValueError('no declared verification')
+    return checks
+
+
+def working_fingerprint(phase, tid):
+    paths = set(phase['tasks'][tid]['files'] + phase['tasks'][tid].get('reads', []))
+    for dep in _transitive_deps(phase, tid):
+        paths.update(phase['tasks'][dep]['files'])
+    values = []
+    for entry in sorted(paths):
+        path = scope_path(entry)
+        if os.path.exists(path):
+            with open(path, 'rb') as handle:
+                h = hashlib.sha256()
+                for chunk in iter(lambda: handle.read(65536), b''):
+                    h.update(chunk)
+            value = h.hexdigest()
+        else:
+            value = 'missing'
+        values.append((entry, os.path.relpath(path, ROOT).replace(os.sep, '/'), value))
+    return digest(json.dumps(values).encode())
+
+
+def task_conflict(phase, left, right):
+    a, b = phase['tasks'][left], phase['tasks'][right]
+    aw = {scope_path(p) for p in a['files']}
+    bw = {scope_path(p) for p in b['files']}
+    ar = {scope_path(p) for p in a.get('reads', [])}
+    br = {scope_path(p) for p in b.get('reads', [])}
+    return bool(aw & (bw | br) or bw & ar)
+
+
+def evidence_valid(phase, tid):
+    record = (load_json(evidence_path(phase), {}) or {}).get(tid, {})
+    return (record.get('spec') == specification(phase) and
+            record.get('files') == working_fingerprint(phase, tid) and
+            record.get('checks-hash') == digest(json.dumps(verification_checks(phase, tid), sort_keys=True).encode()) and
+            record.get('success') is True)
+
+
+def redact(text):
+    text = re.sub(r'-----BEGIN [^-]*PRIVATE KEY-----.*?(?:-----END [^-]*PRIVATE KEY-----|\Z)',
+                  '[REDACTED PRIVATE KEY]', text, flags=re.S)
+    text = re.sub(r'(?i)\b(authorization|api[_-]?key|token|secret|password)\s*[:=]\s*[^\r\n]+',
+                  r'\1=[REDACTED]', text)
+    return re.sub(r'\b(?:sk-[\w-]{12,}|gh[pousr]_[\w]{15,}|AKIA[A-Z0-9]{16})\b', '[REDACTED]', text)
+
+
+def bounded_run(command, timeout=300, env=None, shell=True):
+    """Drain continuously with bounded memory. Never persist an environment dump."""
+    output = bytearray()
+    total = [0]
+    try:
+        process = subprocess.Popen(command, cwd=ROOT, shell=shell, env=env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   start_new_session=os.name != 'nt')
+    except OSError as exc:
+        return {'exit': 127, 'output': redact(str(exc)), 'truncated': False, 'timeout': False}
+    def drain():
+        while True:
+            chunk = process.stdout.read(4096)
+            if not chunk:
+                break
+            total[0] += len(chunk)
+            output.extend(chunk[:max(0, 16384 - len(output))])
+    reader = threading.Thread(target=drain, daemon=True)
+    reader.start()
+    timed_out = False
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        if os.name == 'nt':
+            subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            import signal
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+    reader.join(timeout=2)
+    if not reader.is_alive():
+        process.stdout.close()
+    return {'exit': process.returncode, 'output': redact(output.decode('utf-8', 'replace')),
+            'truncated': total[0] > len(output) or reader.is_alive(), 'timeout': timed_out}
+
+
+def validate_transition(phase, name, args):
+    """Single entry gate for the strict workflow, including resume and completion."""
+    if phase['malformed']:
+        die('invalid task graph; run plan lint and repair duplicate/malformed IDs')
+    if not strict(phase):
+        return
+    if phase['meta'].get('status') == 'closed':
+        die('historical closed phase is read-only; run /cs-plan')
+    assignments = load_json(assignment_path(phase), {})
+    actor = _owner_id() or 'local operator'
+    if assignments and any(a.get('coordinator') != actor for a in assignments.values()):
+        die('shared workflow state belongs to the assignment coordinator')
+    if name == 'done' and args and args[0].upper() in assignments:
+        die('assigned tasks must complete through plan integrate with the current result receipt')
+    if name in ('replan', 'block', 'resolve', 'bump', 'handoff'):
+        return
+    if name == 'finish' and '--fail' in args:
+        return  # cmd_finish requires a persisted finding/error and the matching claim
+    errs, _ = lint_issues(phase)
+    if errs:
+        die('workflow state is invalid: ' + '; '.join(errs) + '; run plan replan for recovery')
+    if phase['meta'].get('status') == 'closed':
+        die('historical closed phase is read-only; run /cs-plan')
+    if name in ('start', 'done', 'verify', 'assign', 'integrate'):
+        if phase['meta'].get('status') != 'approved' or phase['meta'].get('active'):
+            die('execution requires an approved phase with no active review stage')
+        if open_findings(phase):
+            die('open findings prevent execution; run plan replan')
+        if name in ('start', 'done', 'verify'):
+            tid = args[0].upper() if args else ''
+            if tid not in phase['tasks']:
+                die('supply a valid task ID')
+            task = phase['tasks'][tid]
+            if any(phase['tasks'][d]['status'] != 'done' for d in task['deps']):
+                die(f'{tid} has unfinished dependencies')
+            for dep in task['deps']:
+                if not evidence_valid(phase, dep):
+                    die(f'{tid} dependency evidence is missing or stale; run plan verify {dep}')
+            if name == 'start':
+                for other, candidate in phase['tasks'].items():
+                    if other != tid and candidate['status'] == 'in_progress' and task_conflict(phase, tid, other):
+                        die(f'{tid} conflicts with running task {other}')
+            elif task['status'] not in (('in_progress', 'done') if name == 'verify' else ('in_progress',)):
+                die(f'{tid} must be in_progress before {name}')
+            if name == 'done' and not evidence_valid(phase, tid):
+                die(f'{tid} needs matching successful evidence; run plan verify {tid}')
+    if name in ('begin', 'finish') and args and args[0] == 'close':
+        for tid in phase['order']:
+            if not evidence_valid(phase, tid):
+                die(f'{tid} completion is historical or verification is stale; run plan verify {tid}')
+    if name == 'begin' and args and args[0] in ('review', 'approve'):
+        if any(t['status'] == 'in_progress' for t in phase['tasks'].values()):
+            die('running work must settle before review')
+        if args[0] == 'approve' and phase['meta'].get('reviewed-spec') != specification(phase):
+            die('reviewed specification changed; run plan replan')
+
+
+def cmd_verify(phase, args):
+    if not args or args[0].upper() not in phase['tasks']:
+        die('usage: plan verify T1 [--attest "observed result"] [--timeout SECONDS]')
+    tid = args[0].upper()
+    checks = verification_checks(phase, tid)
+    attest = args[args.index('--attest') + 1] if '--attest' in args and args.index('--attest') + 1 < len(args) else ''
+    timeout = intof(args[args.index('--timeout') + 1], 300) if '--timeout' in args else 300
+    if timeout < 1 or timeout > 3600:
+        die('verification timeout must be between 1 and 3600 seconds')
+    spec, before = specification(phase), working_fingerprint(phase, tid)
+    records = load_json(evidence_path(phase), {})
+    records[tid] = {'spec': spec, 'files': before, 'success': False,
+                    'state': 'running', 'at': datetime.now().isoformat()}
+    save_json(evidence_path(phase), records)
+    results = []
+    for check in checks:
+        if check['kind'] == 'automated':
+            result = bounded_run(check['command'], timeout=timeout)
+        else:
+            result = {'exit': 0 if attest.strip() else None, 'attestation': redact(attest)[:4096],
+                      'actor': _owner_id() or 'local operator', 'truncated': len(attest) > 4096}
+        results.append(result)
+    fresh = read_phase(phase['path'])
+    after = working_fingerprint(fresh, tid)
+    success = (before == after and spec == specification(fresh) and
+               all(r['exit'] == 0 and not r.get('timeout') for r in results))
+    records = load_json(evidence_path(phase), {})
+    records[tid] = {'spec': spec, 'files': before,
+                    'checks': [{**check, 'command': redact(check['command'])} for check in checks],
+                    'checks-hash': digest(json.dumps(checks, sort_keys=True).encode()), 'results': results,
+                    'success': success, 'at': datetime.now().isoformat()}
+    save_json(evidence_path(phase), records)
+    print(json.dumps(records[tid], indent=2))
+    if not success:
+        print('verification failed, lacked an attestation, or inputs changed; rerun before done', file=sys.stderr)
+    return 0 if success else 1
+
+
+def cmd_replan(phase, args):
+    if phase['meta'].get('status') == 'closed':
+        die('closed history cannot be replanned; run /cs-plan for a new phase')
+    active = phase['meta'].get('active') or any(t['status'] == 'in_progress' for t in phase['tasks'].values())
+    if active and '--recover-claims' not in args:
+        die('claims remain; settle workers, then explicitly run plan replan --recover-claims; age alone is not abandonment')
+    text = phase['text']
+    for tid, task in phase['tasks'].items():
+        if task['status'] != 'done':
+            text = re.sub(r'^(  ' + tid + r':.*?status:\s*)\w+', r'\g<1>pending', text, flags=re.M)
+            text = _set_owner(text, tid, None)
+    text = set_metas(text, {'status': 'draft', 'rev': intof(phase['meta'].get('rev'), 1) + 1},
+                     remove=('ready', 'ready-spec', 'reviewed', 'reviewed-spec', 'active', 'active-rev', 'active-spec'))
+    text = append_to_block(text, 'History', f"Replan from rev {phase['meta'].get('rev')}; completed work and findings retained.")
+    transaction({phase['path']: text, assignment_path(phase): '{}\n'})
+    print('unfinished work -> draft; findings and completion history retained; next /cs-review in a fresh session')
+
+
+def relevant_handoffs(phase, tid):
+    records = load_json(phase['path'][:-3] + '.handoffs.json', [])
+    superseded = {key for entry in records for key in entry.get('supersedes', [])}
+    log = phase['path'][:-3] + '.log.md'
+    legacy = []
+    if os.path.exists(log):
+        for heading, content in parse_blocks(read_text(log)).items():
+            tasks = re.findall(r'\bT\d+\b', heading)
+            if tasks:
+                legacy.append({'id': 'legacy-' + digest((heading + content).encode())[:16],
+                                   'task': tasks[0], 'affects': tasks, 'decisions': redact(content)[:2048],
+                                   'provenance': os.path.relpath(log, ROOT) + '#' + heading,
+                                   'limitations': 'Legacy narrative; not automated verification evidence.'})
+    records = legacy + records
+    relevant = set(_transitive_deps(phase, tid) + [tid])
+    return [e for e in records if e['id'] not in superseded and
+            (e.get('task') in relevant or tid in e.get('affects', []))][-8:]
+
+
+def cmd_handoff(phase, args):
+    if len(args) != 2 or args[0] not in phase['tasks']:
+        die('usage: plan handoff T1 <JSON-file> (decisions, evidence, limitations, affects, provenance, supersedes)')
+    entry = json_input(args[1])
+    required = ('decisions', 'evidence', 'limitations', 'affects', 'provenance', 'supersedes')
+    if not isinstance(entry, dict) or any(key not in entry for key in required):
+        die('handoff is missing required fields')
+    if len(json.dumps(entry)) > 4096:
+        die('handoff exceeds 4096 characters')
+    if not isinstance(entry['affects'], list) or any(t not in phase['tasks'] for t in entry['affects']):
+        die('handoff affects must contain known task IDs')
+    path = phase['path'][:-3] + '.handoffs.json'
+    entries = load_json(path, [])
+    known = {e['id'] for e in entries}
+    known.update(e['id'] for tid in phase['order'] for e in relevant_handoffs(phase, tid))
+    if not isinstance(entry['supersedes'], list) or any(key not in known for key in entry['supersedes']):
+        die('supersedes must name existing handoff IDs')
+    entry = {key: redact(value) if isinstance(value, str) else value for key, value in entry.items()}
+    entry.update(id=uuid.uuid4().hex, task=args[0], spec=specification(phase), at=datetime.now().isoformat())
+    entries.append(entry)
+    save_json(path, entries)
+    print(entry['id'])
+
+
+def assignment_path(phase):
+    return phase['path'][:-3] + '.assignments.json'
+
+
+def cmd_assign(phase, args):
+    if not strict(phase):
+        die('team assignments require an explicit format 2 upgrade')
+    if len(args) == 3 and args[0] == '--bind':
+        tid, worker = args[1].upper(), args[2]
+        records = load_json(assignment_path(phase), {})
+        if tid not in records or records[tid]['spec'] != specification(phase):
+            die('cannot bind an unknown or superseded assignment')
+        if records[tid].get('worker') not in (None, worker):
+            die('assignment is already bound; settle the worker and explicitly recover claims before replacement')
+        if not re.fullmatch(r'[A-Za-z0-9_./:-]+', worker):
+            die('worker session identity contains unsupported characters')
+        if any(record.get('worker') == worker for key, record in records.items() if key != tid):
+            die('worker session already owns another assignment')
+        records[tid]['worker'] = worker
+        transaction({phase['path']: _set_owner(phase['text'], tid, worker),
+                     assignment_path(phase): json.dumps(records, indent=2) + '\n'})
+        print(f'{tid} bound to worker session {worker}; assignment ID unchanged')
+        return 0
+    if not args or args[0] not in ('orca', 'codex', 'claude'):
+        die('usage: plan assign orca|codex|claude [--max N], or plan assign --bind T1 WORKER_SESSION')
+    if not _owner_id():
+        die('team coordination requires a stable harness session identity; use manual builds if none is exported')
+    if os.environ.get('CS_WORKER_ASSIGNMENT'):
+        die('nested fanout is prohibited')
+    maximum = intof(args[args.index('--max') + 1], 2) if '--max' in args else 2
+    if maximum < 1 or maximum > 8:
+        die('--max must be between 1 and 8')
+    records = load_json(assignment_path(phase), {})
+    if records:
+        die('an assignment group still exists; integrate it or explicitly recover claims before dispatch')
+    occupied = {scope_path(p) for t in phase['tasks'].values() if t['status'] == 'in_progress' for p in t['files']}
+    text = phase['text']
+    for tid in runnable(phase):
+        paths = {scope_path(p) for p in phase['tasks'][tid]['files']}
+        if paths & occupied or any(task_conflict(phase, tid, other) for other in
+                                   list(records) + [t for t, value in phase['tasks'].items() if value['status'] == 'in_progress']):
+            continue
+        if any(not evidence_valid(phase, dep) for dep in phase['tasks'][tid]['deps']):
+            continue
+        assignment = uuid.uuid4().hex
+        records[tid] = {'task': tid, 'spec': specification(phase), 'assignment': assignment,
+                        'backend': args[0], 'coordinator': _owner_id() or 'local operator',
+                        'files': phase['tasks'][tid]['files'], 'reads': phase['tasks'][tid]['reads'],
+                        'verify': verification_checks(phase, tid),
+                        'expected': 'return task, spec, assignment, outcome, decisions, evidence, limitations; no state writes or commits'}
+        text = re.sub(r'^(  ' + tid + r':.*?status:\s*)pending', r'\g<1>in_progress', text, flags=re.M)
+        text = _set_owner(text, tid, assignment)
+        occupied.update(paths)
+        if len(records) >= maximum:
+            break
+    if not records:
+        die('no approved nonconflicting tasks; run plan recommend')
+    transaction({phase['path']: text, assignment_path(phase): json.dumps(records, indent=2) + '\n'})
+    print(json.dumps(records, indent=2))
+
+
+def cmd_integrate(phase, args):
+    if len(args) != 1:
+        die('usage: plan integrate <worker-result.json>')
+    result = json_input(args[0])
+    records = load_json(assignment_path(phase), {})
+    tid = result.get('task')
+    assignment = records.get(tid)
+    if not assignment or any(result.get(key) != assignment[key] for key in ('spec', 'assignment')):
+        die('superseded or unknown worker result; preserve source changes and inspect current assignments')
+    if result['spec'] != specification(phase):
+        die('phase changed during execution; stop integration and run plan replan after workers settle')
+    if result.get('outcome') != 'success':
+        return cmd_block(phase, [tid, 'worker blocker: ' + str(result.get('limitations', 'unspecified'))])
+    if not evidence_valid(phase, tid):
+        die(f'coordinator must run plan verify {tid} before integration')
+    del records[tid]
+    text = re.sub(r'^(  ' + tid + r':.*?status:\s*)in_progress', r'\g<1>done', phase['text'], flags=re.M)
+    text = _set_owner(text, tid, None)
+    transaction({phase['path']: text, assignment_path(phase): json.dumps(records, indent=2) + '\n'})
+    print(f'{tid} integrated; coordinator may record handoff and commit')
+
+
+def cmd_doctor(_phase, args):
+    report = {'release': TOOL_VERSION, 'format': FORMAT_VERSION,
+              'python': sys.version.split()[0], 'runtime_compatible': sys.version_info >= (3, 9),
+              'adapters': {}, 'hooks': {}, 'trust': 'unknown: confirm in each harness',
+              'gaps': ['Hooks do not replace native sandbox, permissions, or hook trust.',
+                       'Arbitrary shell/program execution and MCP tools cannot be fully analyzed.',
+                       'Codex hook registration depends on installed harness support; inspect its configuration.',
+                       'Native team tools must be available in the current session; CLI presence is insufficient.']}
+    def diagnostic_json(path):
+        try:
+            value = load_json(path, {})
+            if not isinstance(value, dict):
+                raise ValueError('expected an object')
+            return value
+        except (OSError, ValueError):
+            report.setdefault('diagnostic_errors', []).append('unreadable or invalid JSON: ' + os.path.relpath(path, ROOT))
+            return {}
+    for name, relative in (('claude', '.claude/bin/plan'), ('codex', '.agents/coldsession/bin/plan')):
+        report['adapters'][name] = {'installed': os.path.isfile(os.path.join(ROOT, relative)),
+                                   'cli_detected': bool(shutil.which(name))}
+        if shutil.which(name):
+            report['adapters'][name]['version'] = bounded_run([shutil.which(name), '--version'], timeout=5, shell=False)
+    settings = diagnostic_json(os.path.join(ROOT, '.claude', 'settings.json'))
+    report['hooks']['claude_disabled'] = settings.get('disableAllHooks', False)
+    report['hooks']['claude_events'] = sorted(settings.get('hooks', {}).keys())
+    report['hooks']['claude_managed'] = 'cs-guard-' in json.dumps(settings.get('hooks', {}))
+    report['hooks']['codex_config_present'] = os.path.exists(os.path.join(ROOT, '.codex', 'config.toml'))
+    if report['hooks']['codex_config_present']:
+        config = read_text(os.path.join(ROOT, '.codex', 'config.toml'))
+        report['hooks']['codex_managed'] = '# BEGIN coldsession managed hooks' in config
+        try:
+            import tomllib
+        except ImportError:
+            report['gaps'].append('Python <3.11: no stdlib TOML parser; Codex configuration validity is unknown.')
+        else:
+            try:
+                parsed = tomllib.loads(config)
+                report['hooks']['codex_events'] = sorted(parsed.get('hooks', {}))
+                report['hooks']['codex_config_valid'] = True
+            except ValueError:
+                report['hooks']['codex_config_valid'] = False
+    ownership = diagnostic_json(state_path('installed.json'))
+    inconsistent = []
+    for relative, expected in ownership.get('files', {}).items():
+        try:
+            path = scope_path(relative)
+            with open(path, 'rb') as handle:
+                actual = digest(handle.read())
+        except (OSError, ValueError):
+            actual = None
+        if actual != expected:
+            inconsistent.append(relative)
+    report['installed_file_changes'] = inconsistent
+    report['session_identity_detected'] = bool(_owner_id())
+    report['codex_recorded_trust'] = 'unknown'
+    try:
+        import tomllib
+        user_config = os.path.join(os.environ.get('CODEX_HOME', os.path.join(os.path.expanduser('~'), '.codex')), 'config.toml')
+        if os.path.isfile(user_config):
+            projects = tomllib.loads(read_text(user_config)).get('projects', {})
+            for project, entry in projects.items():
+                if _guard_norm(project) == _guard_norm(ROOT):
+                    trust = entry.get('trust_level')
+                    if trust in ('trusted', 'untrusted'):
+                        report['codex_recorded_trust'] = trust
+    except (ImportError, OSError, ValueError, AttributeError):
+        pass  # Recorded trust is a diagnostic hint, never a permission grant.
+    report['upgrade'] = diagnostic_json(state_path('upgrade.json')).get('status', 'none')
+    report['workflow_transaction_pending'] = os.path.exists(state_path('transaction.json'))
+    try:
+        if os.path.exists(INDEX):
+            phase = read_phase(read_index())
+            report['workflow_errors'], report['workflow_warnings'] = lint_issues(phase)
+            report['next'] = ' '.join(recommend(phase))
+    except (OSError, ValueError, SystemExit):
+        report['workflow_errors'] = ['invalid PLAN.md/current phase; repair the pointer or document']
+    if '--json' in args:
+        print(json.dumps(report, indent=2))
+    else:
+        for key, value in report.items():
+            print(f'{key}: {json.dumps(value) if isinstance(value, (dict, list)) else value}')
+    return 0
+
+
 # ------------------------------------------------------------------- orca
 
 # Orca is an editor that runs each checkout as a tracked workspace with a
@@ -1916,7 +2707,7 @@ def _lock_release(path):
 ORCA_TIMEOUT = 5
 ORCA_STATUS = {"draft": "todo", "approved": "in-progress", "closed": "completed"}
 MUTATING = ("start", "done", "block", "begin", "finish", "resolve", "bump",
-            "reviewed")
+            "reviewed", "verify", "replan", "handoff", "assign", "integrate", "recover")
 
 
 def _orca_cli():
@@ -2000,7 +2791,10 @@ COMMANDS = {"version": cmd_version, "status": cmd_status, "lint": cmd_lint,
             "finish": cmd_finish,
             "findings": cmd_findings, "resolve": cmd_resolve, "bump": cmd_bump,
             "reviewed": cmd_reviewed, "recommend": cmd_recommend,
-            "metrics": cmd_metrics, "guard": cmd_guard}
+            "metrics": cmd_metrics, "guard": cmd_guard,
+            "verify": cmd_verify, "replan": cmd_replan, "doctor": cmd_doctor,
+            "handoff": cmd_handoff, "assign": cmd_assign, "integrate": cmd_integrate,
+            "recover": None}
 
 
 def main():
@@ -2011,7 +2805,7 @@ def main():
     name = argv[0]
     if name not in COMMANDS:
         die(f"unknown command {name!r}. Try: {', '.join(COMMANDS)}")
-    if name in ("version", "metrics", "guard"):
+    if name in ("version", "metrics", "guard", "doctor"):
         # None of the three answer from a `current:` phase: version needs no
         # phase file at all, metrics scans every phase file itself, and guard
         # reads plan state defensively because it runs from a hook in
@@ -2019,15 +2813,27 @@ def main():
         # read_phase(read_index()) -- that dies on a repo with no PLAN.md
         # yet, which is exactly the case both must fail open on.
         return COMMANDS[name](None, argv[1:])
-    path = read_index()
     if name not in MUTATING:
+        path = read_index()
         return COMMANDS[name](read_phase(path), argv[1:]) or 0
 
     # The lock spans the read as well as the write: a command that parsed the
     # file before another finished writing it would overwrite that write.
-    lock = _lock_acquire(path)
+    lock = _lock_acquire(INDEX)
     try:
-        rc = COMMANDS[name](read_phase(path), argv[1:]) or 0
+        upgrade = load_json(state_path('upgrade.json'), {})
+        if upgrade.get('status') not in (None, 'complete', 'rolled-back'):
+            die('installation update is incomplete; run installer --recover before workflow mutations')
+        if os.environ.get('CS_WORKER_ASSIGNMENT'):
+            die('workers cannot mutate shared workflow state; return results to the coordinator')
+        recover_transaction()
+        if name == 'recover':
+            print('workflow transaction recovery complete')
+            return 0
+        path = read_index()
+        phase = read_phase(path)
+        validate_transition(phase, name, argv[1:])
+        rc = COMMANDS[name](phase, argv[1:]) or 0
     finally:
         _lock_release(lock)
     if rc == 0:
@@ -2036,4 +2842,7 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except (OSError, ValueError, KeyError, TypeError, IndexError, AttributeError) as exc:
+        die(f'cannot validate workflow state: {exc}; run plan doctor and repair the reported file')

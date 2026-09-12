@@ -15,6 +15,8 @@ import shutil
 import sys
 import tempfile
 import unittest
+import os
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,6 +85,26 @@ class EvalHarnessTest(unittest.TestCase):
             "plan-does-not-reread-objective",
         ):
             self.assertIn(expected, names)
+
+    def test_evaluation_isolates_session_plugins_and_orchestration(self):
+        with mock.patch.dict(os.environ, {'ORCA_WORKTREE_ID': 'real-workspace',
+                                          'CLAUDE_CODE_SESSION_ID': 'real-session',
+                                          'CLAUDE_PLUGIN_ROOT': 'inherited-plugin',
+                                          'CODEX_THREAD_ID': 'real-thread',
+                                          'CS_WORKER_ASSIGNMENT': 'worker'}):
+            env = evals_lib.isolated_env(self.tmp)
+        for key in ('ORCA_WORKTREE_ID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_PLUGIN_ROOT',
+                    'CODEX_THREAD_ID', 'CS_WORKER_ASSIGNMENT'):
+            self.assertNotIn(key, env)
+        self.assertTrue(Path(env['CLAUDE_CONFIG_DIR']).is_relative_to(self.tmp))
+
+    def test_evaluation_redacts_credentials_but_keeps_token_counts(self):
+        record = evals_lib.redact({'api_key': 'secret-value', 'usage': {'input_tokens': 42},
+                                  'output': 'token=private-token'})
+        self.assertNotIn('secret-value', str(record))
+        self.assertNotIn('private-token', str(record))
+        self.assertEqual(record['usage']['input_tokens'], 42)
+        self.assertEqual(evals_lib.redact({'tokens': {'input_tokens': 42}})['tokens']['input_tokens'], 42)
 
     def test_every_fixture_has_a_loadable_expect(self):
         """Nothing runs evals/run.py automatically, so a fixture broken by a

@@ -17,12 +17,13 @@ quoted plan line as evidence. "Looks fine" is a FAIL.
 - `.claude/bin/plan findings --open` prints nothing.
 - Every Critical and High has a changelog entry and the named plan line carries
   the fix.
-- Every task has acceptance criteria and a runnable Verify line.
-- Every task's `files` list can bound a complete Build session.
+- Every task has acceptance criteria and exact automated commands or named manual/visual checks.
+- Every task's `files` list gives exact writable scope and optional `reads` supplies sufficient supporting context.
 - Every remaining Medium or Low is explicitly accepted with a real reason.
 - The phase ends in a runnable state.
 
-For the single highest residual risk, report one line containing all four:
+If a concrete material residual risk remains, report one line containing all four;
+a clean checklist may state that none was identified:
 
   Risk — impact — mitigation with task/line evidence — exact remaining action
 
@@ -43,6 +44,6 @@ and tell me to run Revise followed by Review in a new session.
 
 If every line passes, run `.claude/bin/plan finish approve --pass`. This writes
 `ready: <rev>` and clears the marker; it does not approve. Tell me to set
-`status: approved` myself. Run `.claude/bin/plan next`, name the first ID, and
-tell me to use `/cs-build T(n)` in a new session. A repeated Approve stops at
+`status: approved` myself. Print `.claude/bin/plan recommend` and stop at
+the human approval step. Build begins only after that edit. A repeated Approve stops at
 the ready marker while waiting for the human edit.

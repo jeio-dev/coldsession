@@ -13,6 +13,9 @@ import os
 import shutil
 import subprocess
 import sys
+import time
+import threading
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -46,6 +49,7 @@ class EvalContext:
         result = subprocess.run(
             [sys.executable, str(self.tmp / ".claude" / "bin" / "plan"), *args],
             cwd=self.tmp, text=True, capture_output=True, check=False,
+            env=isolated_env(self.tmp),
         )
         if ok and result.returncode != 0:
             raise AssertionError(
@@ -110,11 +114,16 @@ def setup_project(name, tmp):
                str(ROOT / "install.ps1"), "-Target", str(tmp), "-Agent", "claude"]
     else:
         cmd = [str(ROOT / "install.sh"), str(tmp), "--agent", "claude"]
-    result = subprocess.run(cmd, text=True, capture_output=True, check=False)
+    result = subprocess.run(cmd, text=True, capture_output=True, check=False, env=isolated_env(tmp))
     if result.returncode != 0:
         raise FixtureError(
             f"install failed for fixture {name}:\n{result.stdout}{result.stderr}"
         )
+    preview = json.loads(result.stdout)['preview']
+    result = subprocess.run(cmd + (['-Apply', preview] if os.name == 'nt' else ['--apply', preview]),
+                            text=True, capture_output=True, check=False, env=isolated_env(tmp))
+    if result.returncode:
+        raise FixtureError('install apply failed: ' + result.stderr)
 
     src = FIXTURES / name / "project"
     if not src.exists():
@@ -127,25 +136,88 @@ def setup_project(name, tmp):
         shutil.copyfile(item, dest)
 
 
-def run_claude(tmp, prompt, max_budget_usd=DEFAULT_MAX_BUDGET_USD):
-    """Invoke the real cs-* command headlessly; return (events, CompletedProcess).
+def isolated_env(tmp):
+    """Allowlist process essentials/auth; never inherit plugins or session identity."""
+    allowed = {'PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP',
+               'LANG', 'LC_ALL', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
+               'ANTHROPIC_API_KEY', 'SSL_CERT_FILE', 'SSL_CERT_DIR'}
+    env = {k: v for k, v in os.environ.items() if k.upper() in allowed}
+    config = Path(tmp) / '.eval-config'
+    config.mkdir(exist_ok=True)
+    env['CLAUDE_CONFIG_DIR'] = str(config)
+    return env
 
-    Runs with --permission-mode bypassPermissions: safe here because `tmp` is
-    a throwaway directory this harness created for one fixture, never the
-    working repo.
-    """
+
+def redact(value):
+    if isinstance(value, dict):
+        return {k: '[REDACTED]' if re.search(r'(?i)(?:^|_)(?:token|secret|password|api.?key|authorization)$', k)
+                and not isinstance(v, (int, float)) else redact(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact(v) for v in value]
+    if isinstance(value, str):
+        value = re.sub(r'(?i)\b(token|secret|password|api[_-]?key|authorization)\s*[:=]\s*[^\r\n]+', r'\1=[REDACTED]', value)
+        return re.sub(r'\b(?:sk-[\w-]{12,}|gh[pousr]_[\w]{15,}|AKIA[A-Z0-9]{16})\b', '[REDACTED]', value)
+    return value
+
+
+def run_claude(tmp, prompt, max_budget_usd=DEFAULT_MAX_BUDGET_USD, timeout=600):
+    """Bounded isolated invocation. Native permissions remain active; failures count."""
+    if float(max_budget_usd) <= 0:
+        raise FixtureError('budget must be positive')
     cmd = ["claude", "-p", prompt,
            "--output-format", "stream-json", "--verbose",
-           "--permission-mode", "bypassPermissions",
+           "--setting-sources", "project", "--strict-mcp-config",
+           "--mcp-config", '{"mcpServers":{}}',
            "--max-budget-usd", str(max_budget_usd)]
-    result = subprocess.run(cmd, cwd=tmp, text=True, capture_output=True, check=False)
     events = []
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            events.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
+    output, retained, truncated = [], [0], [False]
+    started = time.monotonic()
+    try:
+        process = subprocess.Popen(cmd, cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   env=isolated_env(tmp), start_new_session=os.name != 'nt')
+    except OSError as exc:
+        raise FixtureError(str(exc)) from exc
+    def drain():
+        while True:
+            raw = process.stdout.readline(65537)
+            if not raw:
+                break
+            if len(raw) > 65536:
+                truncated[0] = True
+                while raw and not raw.endswith(b'\n'):
+                    raw = process.stdout.readline(65537)
+                continue
+            text = raw.decode('utf-8', 'replace')
+            try:
+                event = redact(json.loads(text))
+            except ValueError:
+                if sum(map(len, output)) < 16384:
+                    output.append(redact(text)[:4096])
+                continue
+            if retained[0] + len(raw) <= 4 * 1024 * 1024 or event.get('type') == 'result':
+                events.append(event)
+                retained[0] += len(raw)
+            else:
+                truncated[0] = True
+    reader = threading.Thread(target=drain, daemon=True)
+    reader.start()
+    timed_out = False
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        if os.name == 'nt':
+            subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            import signal
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+    reader.join(timeout=2)
+    if not reader.is_alive():
+        process.stdout.close()
+    result = subprocess.CompletedProcess(cmd, process.returncode, ''.join(output)[:16384], '')
+    result.elapsed_seconds = time.monotonic() - started
+    result.truncated = truncated[0] or reader.is_alive()
+    result.timed_out = timed_out
     return events, result
