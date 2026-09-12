@@ -182,14 +182,19 @@ class ReliabilityTest(unittest.TestCase):
 
     def test_interrupted_close_transaction_can_replay_twice(self):
         other = str(self.root / 'PLAN.md')
+        phase_before = self.phase.read_text()
         original = self.rt.atomic_write
         def fail_second(path, text):
-            if os.path.normcase(path) == os.path.normcase(str(self.phase)):
+            # Windows runner temp paths can use short aliases; recovery resolves
+            # them before writing, so compare resolved paths on both sides.
+            if Path(path).resolve() == self.phase.resolve():
                 raise OSError('power loss')
             original(path, text)
         with mock.patch.object(self.rt, 'atomic_write', side_effect=fail_second):
             with self.assertRaises(OSError):
                 self.rt.transaction({other: 'index closed', str(self.phase): 'phase closed'})
+        self.assertEqual(Path(other).read_text(), 'index closed')
+        self.assertEqual(self.phase.read_text(), phase_before)
         self.rt.recover_transaction()
         self.rt.recover_transaction()
         self.assertEqual(self.phase.read_text(), 'phase closed')
