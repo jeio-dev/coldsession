@@ -88,6 +88,13 @@ names are retained, including the deprecated explicit `cs-recheck` alias.
 Commands provide instructions; they do not select the active model or guarantee
 a new session. Use a fresh session for independent review and close.
 
+`cs-review` is the single entry point for a review round. It records the
+independent review and, when `plan recommend` returns `cs-revise`, immediately
+runs one Revise pass in the same session. A clean review stops at Approve; a
+substantive revision stops at Review, which must run in a new session. The
+standalone `cs-revise` command remains available for explicit recovery and
+resume.
+
 `cs-define` records the product objective. `cs-plan` creates one bounded phase.
 Carry durable product constraints into PLAN.md and each phase's Constraints
 section so later phases retain requirements without rereading the objective.
@@ -103,6 +110,31 @@ Reviewers receive neutral requirements and artifacts, record independent
 findings before author discussion, and may produce a clean review. Each finding
 must identify a concrete defect or unnecessary complexity and its consequence.
 Linter warnings are advisory; they do not automatically become blocking findings.
+
+When only cosmetic Low findings remain, `cs-revise` can record reasoned
+acceptances without changing the specification. In format 2, it does not bump
+the revision and ends with `plan finish revise --accept-only`; the runtime
+requires the existing review fingerprint to match, logged Low acceptances,
+and no open findings. The next step is the independent approval checklist,
+then human approval. Substantive edits, Medium settlements, bumped revisions,
+and legacy phases still require a revision review. A document-only change can
+alter the contract, so the number of document-only commits never waives review.
+Revise keeps a temporary hashed snapshot in `.coldsession-state/` to distinguish
+this pass's settlements from earlier fixes, verify scoped implementation files
+did not change, and support resume; successful finish removes it. Missing or
+stale snapshot evidence requires the normal bump/review path.
+
+`plan findings --open` surfaces repeated reopens and recent settlement notes.
+After two reopens, resolve the exact stated ask and cite the changed target;
+repeating verification is insufficient for a requested text edit. Reasoned
+acceptances stand unless contradicted by evidence or an unaddressed material
+consequence. Settlement notes reject multiline/pipe-delimited content and
+redact likely credentials. There is no target acceptance rate.
+
+Revise and Close commit their authorized changes after stage finish writes the
+workflow documents, preserving unrelated work. Explicit project/user commit
+restrictions take precedence. Required CI evidence identifies a run, tested
+commit, and job conclusions; a local result or branch push alone is insufficient.
 
 `cs-approve` records readiness, never human approval. After a clean check, the
 human edits the phase to `status: approved`. Teammate plan approval does not

@@ -4,6 +4,27 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
+## [v3.1.0]
+
+- Format-2 Revise can settle only Low acceptances without a revision bump when
+  the reviewed specification and scoped implementation files are unchanged.
+  Readiness checking and human approval remain mandatory; substantive revisions
+  still return to Review.
+- Findings surface repeated reopens and recent notes; resolution warns after
+  two reopens. Metrics expose active repeated findings and unused acceptances
+  without prescribing an acceptance quota.
+- Fix format-2 finding mutations bypassing active-stage checks. Reject High
+  or Critical acceptances, reject notes that would break the changelog format,
+  and redact likely credentials before persisting settlement notes.
+- Review distinguishes acceptance from resolution, requires precise text-edit
+  targets, and checks new verification heuristics. Revise and Close include
+  commits after finish; Review, Approve, and Close distinguish required CI
+  evidence from local checks. Live behavioral improvement remains unmeasured.
+- Review now automatically runs one Revise pass when it records open findings,
+  so a review round needs one user command. The runtime records that internal
+  transition as authoring and still requires the resulting Review to run in a
+  fresh session.
+
 ## [v3.0.0]
 
 - W07 measures direct task context, reporting shared prose, inherited legacy files, and generated package-manager lockfiles separately. Explicit lockfile reads still count. File scope and verification stay intact; aliases count once, completed work is quiet, and whole-file estimates remain advisory. README installation examples fetch the latest default-branch code.

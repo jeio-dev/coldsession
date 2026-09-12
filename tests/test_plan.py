@@ -210,6 +210,21 @@ class PlanRuntimeTest(unittest.TestCase):
         self.assertTrue(recommendation.startswith("/cs-review"), recommendation)
         self.assertIn("rev: 2", self.phase.read_text(encoding="utf-8"))
 
+    def test_legacy_acceptance_still_requires_revision_review(self):
+        self.write_phase(reviewed=1, findings='F1 | Low | Wording | T1 | open | Stale description | Update it')
+        self.run_plan('begin', 'revise')
+        self.run_plan('resolve', 'F1', 'accepted', 'T1 behavior is already correct')
+        self.run_plan('finish', 'revise', '--accept-only', ok=False)
+        self.run_plan('bump')
+        self.run_plan('finish', 'revise')
+        self.assertTrue(self.run_plan('recommend').stdout.startswith('/cs-review'))
+
+    def test_metrics_suggests_inspecting_unused_acceptances_without_a_quota(self):
+        self.write_phase(findings='F1 | Low | Wording | T1 | resolved | Stale description | Update it')
+        out = self.run_plan('metrics').stdout
+        self.assertIn('no acceptances despite resolved Lows', out)
+        self.assertIn('no target acceptance rate', out)
+
     def test_approve_ready_marker_blocks_duplicate_check(self):
         self.write_phase(reviewed=1)
         self.run_plan("begin", "approve")
@@ -1036,6 +1051,40 @@ class PlanRuntimeTest(unittest.TestCase):
         self.assertEqual(
             self.run_guard("stage", "/cs-review --resume", "--session", "B").returncode, 0)
 
+    def test_begin_revise_marks_automatic_transition_as_authoring(self):
+        self.write_phase(
+            reviewed=1,
+            findings="F1 | High | Risk | T1 | open | concrete gap | change T1",
+        )
+        sessions = self.root / ".sessions"
+        identity = {"CLAUDE_CODE_SESSION_ID": "review-session",
+                    "PLAN_SESSION_DIR": str(sessions)}
+
+        self.run_plan("begin", "revise", env_extra=identity)
+
+        blocked = self.run_guard("stage", "/cs-review", "--session", "review-session",
+                                 session_dir=sessions)
+        self.assertEqual(blocked.returncode, 2, blocked.stderr)
+        self.assertIn("E25", blocked.stderr)
+        self.assertIn("cs-revise", blocked.stderr)
+
+    def test_resumed_revise_also_marks_the_recovering_session_as_authoring(self):
+        self.write_phase(
+            reviewed=1,
+            findings="F1 | High | Risk | T1 | open | concrete gap | change T1",
+        )
+        self.run_plan("begin", "revise")
+        sessions = self.root / ".sessions"
+        identity = {"CODEX_THREAD_ID": "recovering-session",
+                    "PLAN_SESSION_DIR": str(sessions)}
+
+        self.run_plan("begin", "revise", "--resume", env_extra=identity)
+
+        blocked = self.run_guard("stage", "$cs-review", "--session", "recovering-session",
+                                 session_dir=sessions)
+        self.assertEqual(blocked.returncode, 2, blocked.stderr)
+        self.assertIn("cs-revise", blocked.stderr)
+
     def test_guard_stage_still_bites_when_cs_plan_created_the_plan_state(self):
         """The fail-open cases must not be bought by neutering the gate.
 
@@ -1230,6 +1279,19 @@ class PlanRuntimeTest(unittest.TestCase):
 
 
 class WorkflowContractTest(unittest.TestCase):
+    def test_review_automatically_runs_one_revise_pass(self):
+        review = (ROOT / "commands" / "cs-review.md").read_text(encoding="utf-8")
+        adapter = (ROOT / "skills" / "cs-review" / "SKILL.md").read_text(encoding="utf-8")
+        alias = (ROOT / "skills" / "cs-recheck" / "SKILL.md").read_text(encoding="utf-8")
+        guide = (ROOT / "docs" / "universal-planning-workflow.html").read_text(encoding="utf-8")
+
+        self.assertIn("recommendation is not `/cs-revise`", review)
+        self.assertIn("follow it\ncompletely with no arguments", review)
+        self.assertIn("requires Review in a new session", review)
+        self.assertIn("automatic Revise starts without forwarding that flag", adapter)
+        self.assertIn("without forwarding that flag", alias)
+        self.assertIn("plan finish revise --accept-only", guide)
+
     def test_objective_template_is_planning_ready(self):
         text = (ROOT / "templates" / "OBJECTIVE.md").read_text(encoding="utf-8")
         for heading in (
@@ -1344,6 +1406,12 @@ class WorkflowContractTest(unittest.TestCase):
             self.assertTrue(pins, f"{name} documents no install pin")
             self.assertEqual(pins, {f"v{version}"},
                              f"{name} pins a release that is not this one")
+
+        guide = pinned["docs/universal-planning-workflow.html"]
+        self.assertIn("--preview", guide)
+        self.assertIn("--apply &lt;preview-id&gt;", guide)
+        self.assertIn("-Preview", guide)
+        self.assertIn("-Apply &lt;preview-id&gt;", guide)
 
     def test_the_phase_format_version_matches_the_shipped_template(self):
         """workflow-rev is the other version, and it moves on its own

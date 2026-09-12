@@ -13,7 +13,8 @@ Treat this as `$cs-review`, not as a separate workflow stage. Show
 `$cs-review` as the canonical command in every next step.
 
 Treat accompanying flags as the review command's `$ARGUMENTS` and preserve
-`--resume` exactly.
+`--resume` exactly for the Review claim. When Review automatically continues
+to Revise, follow the canonical command without forwarding that flag.
 
 Translate suggested next steps for Codex users:
 

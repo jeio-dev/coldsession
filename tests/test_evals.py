@@ -141,6 +141,17 @@ class EvalHarnessTest(unittest.TestCase):
         )
         phase.write_text(text, encoding="utf-8")
         ctx.plan("finish", "review", ok=True)
+        ctx.plan("begin", "revise", ok=True)
+        ctx.plan("bump", ok=True)
+        text = phase.read_text(encoding="utf-8")
+        text = text.replace(
+            "T2: {deps: [], status: pending, files: [src/sync/queue.ts]}",
+            "T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/db/schema.ts]}",
+        )
+        phase.write_text(text, encoding="utf-8")
+        ctx.plan("resolve", "F1", "resolved",
+                 "T2 now depends on T1 and includes src/db/schema.ts", ok=True)
+        ctx.plan("finish", "revise", ok=True)
 
         grade = evals_lib.load_expect("review-writes-findings")
         self.assertEqual(grade(ctx), [])
@@ -157,6 +168,23 @@ class EvalHarnessTest(unittest.TestCase):
         failures = grade(ctx)
         self.assertTrue(failures)
         self.assertTrue(any("no findings" in f.lower() for f in failures), failures)
+
+    def test_review_fixture_catches_a_review_that_only_recommends_revise(self):
+        _lay_down_fixture("review-writes-findings", self.tmp)
+        ctx = evals_lib.EvalContext(tmp=self.tmp)
+        ctx.plan("begin", "review", ok=True)
+        phase = self.tmp / "docs" / "plans" / "01-sync.md"
+        text = phase.read_text(encoding="utf-8")
+        text = text.replace(
+            "## Findings",
+            "## Findings\n\nF1 | Critical | Task ordering | T2 | open | "
+            "T2 needs T1 | add T1 to T2 deps",
+        )
+        phase.write_text(text, encoding="utf-8")
+        ctx.plan("finish", "review", ok=True)
+
+        failures = evals_lib.load_expect("review-writes-findings")(ctx)
+        self.assertTrue(any("automatic Revise" in failure for failure in failures), failures)
 
     def test_approve_fixture_grades_a_compliant_pass_clean(self):
         _lay_down_fixture("approve-refuses-to-set-status", self.tmp)
