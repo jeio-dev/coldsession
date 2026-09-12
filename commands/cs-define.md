@@ -52,7 +52,7 @@ My answers reshape the tree: settled decisions push the frontier outward and
 unblock what depended on them. Recompute the frontier and ask the next round.
 
 Finding facts is your job, never mine. When a frontier question needs a fact
-from the repository or the environment, dispatch a search subagent and keep only
+from the repository or the environment, use bounded read-only search and keep only
 the result. Do not block the round on it; a running search is an unsettled
 prerequisite for its own question alone, so ask the rest of the frontier now.
 

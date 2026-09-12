@@ -1,0 +1,13 @@
+{
+  "task": "Fix totals.total so refunded items are excluded. Preserve integer arithmetic and existing non-refunded behavior. Make the smallest verified change.",
+  "acceptance": "Empty input returns 0; non-refunded positive and negative amounts are summed; refunded amounts are excluded; missing refunded flag means false.",
+  "writable": ["totals.py"],
+  "files": {
+    "totals.py": "def total(items):\n    return sum(item['amount'] for item in items)\n"
+  },
+  "verify": ["python -c \"from totals import total; assert total([]) == 0; assert total([{'amount': 10}, {'amount': 4, 'refunded': True}]) == 10\""],
+  "checks": [
+    "from totals import total; assert total([]) == 0; assert total([{'amount': 100}, {'amount': -20}]) == 80",
+    "from totals import total; assert total([{'amount': 100, 'refunded': True}, {'amount': -20, 'refunded': False}]) == -20; assert total([{'amount': 10**30}]) == 10**30"
+  ]
+}

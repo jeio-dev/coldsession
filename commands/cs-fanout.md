@@ -1,119 +1,76 @@
 ---
-description: Build one file-disjoint group of approved tasks in supervised parallel sessions
-argument-hint: [--max N]
+description: Dispatch one approved group through an explicitly selected team backend
+argument-hint: [--backend orca|codex|claude] [--max N]
 ---
 
-`plan next --parallel` already partitions the runnable tasks into groups that
-share no files. A group is therefore safe to build at once; until now it was
-printed and the terminals were opened by hand, which caps the useful width at
-about two. This command dispatches the group instead, and supervises it.
+Run only on explicit user invocation. One agent is the default. Parse
+`--backend orca|codex|claude` (default: the active harness, or Orca in an Orca
+workspace) and `--max N` (default 2). Dispatch exactly one approved group.
 
-You are the coordinator. You do not build any task yourself.
+You are the coordinator and sole writer of phase state, handoffs, and Git
+commits. Phase Markdown is authoritative; harness task lists and messages
+only arrange execution. A worker may never fan out or take over coordination.
 
-## Resolve the CLI and check the preconditions
+Run `.claude/bin/plan doctor --json`, `.claude/bin/plan status`, and
+`.claude/bin/plan next --parallel`. Check capability and `session_identity_detected` before claiming tasks.
+If the coordinator has no stable harness identity, retain manual builds:
 
-Use `$ORCA_CLI_COMMAND` when set, `orca-dev` when `$ORCA_DEV_REPO_ROOT` is set,
-`orca-ide` on Linux outside an Orca terminal, and `orca` otherwise. Below,
-`ORCA` means the one you resolved. Never fall through to bare `orca` on Linux
-outside an Orca terminal; there it is the GNOME screen reader.
+- Orca: resolve the CLI from the current workspace and run its status and
+  orchestration capability checks. Use the installed Orca orchestration skill
+  and its actual CLI schemas. Missing orchestration is unavailable, not a
+  reason to install a plugin or change permissions.
+- Codex: require native spawn, message, and wait tools in this session. Use
+  those tools directly, with a fresh bounded assignment; do not launch nested
+  Codex shells or assume CLI presence means subagent tools are available.
+- Claude: require enabled agent-team creation, teammate messaging, and task
+  tools. Agent teams can be disabled even when Claude is installed. Do not
+  enable them or switch permissions implicitly.
 
-Run `ORCA status --json`. If the CLI is missing or the runtime is unreachable,
-say so, print `.claude/bin/plan next --parallel`, and stop — the groups are
-still useful as a readout, and the user can open the sessions by hand.
+If unavailable, report the exact missing capability, print the parallel group
+readout, and retain manual `/cs-build <id>` execution. Do not claim tasks.
 
-Orchestration is behind Settings → Experimental in Orca. If a command reports
-it is unavailable, say exactly that and stop; it is a switch only the user can
-throw.
+Run `.claude/bin/plan assign <backend> --max <N>`. Its atomic receipt includes
+each task ID, specification fingerprint, unique assignment ID, writable files,
+supporting reads, verification instructions, and expected result fields.
+It accounts for running tasks and normalized paths. Do not dispatch a second
+group in this invocation. Include `.claude/bin/plan brief <id>` output with
+each assignment, including constraints and relevant dependency handoffs.
 
-If this session is itself a dispatched worker, `worker-start` refuses with
-`nested_worker_depth_exceeded`. Report it and stop rather than routing around
-it: a worker that fans out again is a coordinator nobody is watching.
+Create one worker per receipt using the selected backend. Instruct workers to
+wait for your ready message before accessing files. Bind the stable worker
+session/terminal ID from each dispatch receipt with
+`.claude/bin/plan assign --bind <task-id> <worker-session-id>`, then send ready.
+If the backend exposes no usable worker identity, report that enforcement gap
+and keep workers stopped; settle claims explicitly before manual execution.
+Tell every worker:
 
-## Choose the group
+    Implement only the assigned source files. Understand affected behavior and
+    reuse existing capabilities. Preserve correctness, security, data integrity,
+    and accessibility. Use bounded read-only discovery; if the brief is
+    insufficient, report a blocker before expanding implementation scope.
+    Do not run plan start/done/verify, edit shared workflow files, commit,
+    launch teammates, or perform operations on shared resources. Return task,
+    spec, assignment, outcome (success or blocked), decisions, evidence,
+    limitations, and changed file references. Carry all receipt IDs exactly.
 
-Run `.claude/bin/plan status` and `.claude/bin/plan next --parallel`.
+Where the backend supports per-worker environment, set
+`CS_WORKER_ASSIGNMENT=<assignment-id>`. Otherwise include it as an explicit
+worker contract; doctor cannot attest enforcement of per-worker environment.
 
-Stop and print the output unchanged unless the phase is `approved` and at least
-one group is runnable. Take the **first** group only; later groups overlap it
-on files and must run after it. With `--max N`, take the first N ids of that
-group and leave the rest for the next run.
+Wait for all workers. A quiet worker remains assigned. Never replace, restart,
+or release one solely because of elapsed time. Answer only questions settled
+by the approved phase. For a blocker that invalidates the phase, stop
+integration, preserve worker changes, settle outstanding workers, and require
+`.claude/bin/plan replan --recover-claims` followed by fresh review and human
+approval. Teammate plan approval cannot replace human phase approval.
 
-A group of one is not worth a coordinator. Say so and recommend
-`/cs-build <id>` in this session instead.
+Validate returned task/spec/assignment against the receipt. Pass each result as a literal JSON argument to the runtime; no scratch file
+outside task scope is required.
+For each success, serialize `.claude/bin/plan verify <id>`, then
+`.claude/bin/plan integrate <literal-result-JSON>`. Record a bounded handoff with
+`.claude/bin/plan handoff <id> <literal-handoff-JSON>` and commit only after integration.
+Reject superseded results. Serialize verification and all shared-resource work.
 
-## Dispatch
-
-    ORCA orchestration run-create --objective "<phase>: <ids>" --json
-    ORCA orchestration task-create --spec '<spec, below>' --json      # once per id
-    ORCA orchestration worker-start --task <task_id> --worktree current \
-        --agent claude --model sonnet --effort medium --json          # once per id
-
-Create every task first, then start every worker, then wait once. Starting and
-waiting one at a time serialises the thing you came here to parallelise.
-
-`--worktree current` is deliberate: the group shares no files by construction
-and every task belongs to the branch being built, so a fresh agent terminal in
-this worktree is the right isolation. Do not create a worktree per task.
-
-`--model sonnet --effort medium` is the build row of the workflow's model
-routing, made explicit because a worker terminal does not inherit this
-session's settings.
-
-Each task's spec is the build command plus the one thing a worker cannot infer:
-
-    Run /cs-build <id> and follow it exactly, including its bounded read list.
-    You are a supervised worker. Where the command tells you to exit the
-    session, send worker_done instead and stop. If the brief is wrong or a
-    file it omits is genuinely needed, do not widen your reads: use
-    `orca orchestration ask` and wait for the answer.
-
-Quote that spec literally with single quotes when you run `task-create`
-yourself, on both POSIX shells and PowerShell. The Codex form of the build
-command is `$cs-build <id>` (see the adapter), and inside a double-quoted
-argument a shell expands `$cs` — usually unset — to nothing, so
-`"$cs-build 3"` arrives as `-build 3`. Single quotes keep it literal.
-
-Read each worker's dispatch id from its `worker-start` receipt. A receipt that
-is not `ready` exits non-zero — report its `stage` and `effects` and do not
-silently retry.
-
-## Supervise
-
-    ORCA orchestration check --wait --types worker_done,escalation,question \
-        --timeout-ms 900000 --json
-
-Parse stdout only. While `--wait` blocks it also writes keepalive lines to
-stderr, and merging the streams breaks the parse.
-
-Process every message in the batch before acknowledging it:
-
-- `question` — answer it yourself only if the phase file already settles it.
-  Otherwise put it to the user and wait. Reply with
-  `ORCA orchestration reply --id <msg_id> --body "<answer>" --json`.
-- `worker_done` — record the outcome, then
-  `ORCA orchestration worker-release --dispatch <dispatch_id> --json`.
-- `escalation` — surface it to the user with the worker's own words. Do not
-  take over the task.
-
-Then acknowledge and keep waiting until every dispatch has settled:
-
-    ORCA orchestration check --ack <delivery_id> --wait \
-        --types worker_done,escalation,question --timeout-ms 900000 --json
-
-A timeout or an empty batch is a checkpoint, not a failure. Build tasks run for
-tens of minutes, and heartbeats and terminal output mean alive, not finished.
-Do not stop, release, or restart a worker that has not reported.
-
-## Close out
-
-Run `.claude/bin/plan status` and `.claude/bin/plan lint`.
-
-A worker reporting `--outcome failed` has already marked its task failed; leave
-the phase alone and report it. Do not mark a task done on a worker's behalf:
-`/cs-build` runs `plan done` itself, and a task still `in_progress` after its
-worker settled means the build did not finish, which is a fact the user needs
-rather than one to paper over.
-
-Print, in order: each task id with its outcome, anything a worker asked or
-escalated, and `.claude/bin/plan recommend`. If more groups remain, say so and
-name this command again.
+Report task outcomes, unresolved limitations, and
+`.claude/bin/plan recommend`. Cold review remains a separate fresh-session
+handoff containing neutral requirements and artifacts, without author advocacy.

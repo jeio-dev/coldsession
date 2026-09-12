@@ -1,96 +1,54 @@
 # Contributing
 
-The commands are the product. `docs/universal-planning-workflow.html`
-explains them; if you change a command, change the doc in the same PR.
-The Codex skills are adapters around those commands, not a second copy of the
-workflow. Keep each `skills/cs-*/SKILL.md` focused on argument and
-invocation differences.
+Run `python -m unittest discover -s tests -q` on Windows and Linux before release.
+The CI matrix covers both operating systems and supported Python versions.
+There are no third-party runtime dependencies. Bash installer tests on Windows
+use Git Bash and forward-slash script paths, not the WSL launcher.
 
-Before opening a PR:
+`bin/plan` owns document parsing, state transitions, scope checks, and evidence.
+`bin/cs_install.py` owns both installers' preview, ownership, migration, apply,
+validation, and rollback behavior. Keep the shell/PowerShell entry points thin.
+Do not introduce application-code changes or execute project verification from
+an installer. Stage first, back up all affected paths, recheck preview inputs,
+and retain the upgrade journal until validation or restoration completes.
 
-```bash
-python3 -c "import ast; ast.parse(open('bin/plan').read())"
-python3 -m unittest discover -s tests -v
-rm -rf /tmp/coldsession-check && mkdir -p /tmp/coldsession-check
-./install.sh /tmp/coldsession-check --agent both
-cd /tmp/coldsession-check \
-  && cp templates/PLAN.md . \
-  && sed -i 's|docs/plans/01-<slug>.md|docs/plans/01-x.md|' PLAN.md \
-  && cp templates/phase.md docs/plans/01-x.md \
-  && .claude/bin/plan lint \
-  && .agents/coldsession/bin/plan lint
-```
+The repository lock spans the read and write and is shared with upgrades.
+Unavailable locks refuse mutation. Never break a lock based only on age.
+Workflow claims and process locks are distinct and need explicit recovery.
+Use atomic replacements and journaled transactions for shared multi-file state.
+Tests should exercise interrupted writes, recovery replay, and conflicting edits.
 
-Also validate every Codex skill with the `quick_validate.py` shipped by
-Codex's `skill-creator` skill, and confirm an install contains eleven
-canonical `cs-*` skills and commands plus the explicit-only `cs-recheck`
-compatibility alias on both surfaces. Confirm the shared templates include `OBJECTIVE.md`,
-`PLAN.md`, and `phase.md`.
+`plan guard` is quiet for unrelated projects and has no mandatory PLAN.md.
+Format-2 mutations in a workflow must fail with actionable errors if state
+cannot be validated. `plan metrics` is human-invoked and reports an empty
+repository. These output contracts serve different callers.
 
-The shipped phase template must pass its own linter. Runtime state transitions
-belong in the standard-library unittest suite; keep it dependency-free.
+Hook configuration is not proof of active hook trust. Preserve native sandbox,
+permissions, models, unrelated hooks, and user settings. Document unsupported
+paths in doctor and README. The normalized guard handles Claude and Codex
+payloads; retain parity tests for files, patches, shells, traversal, symlinks,
+and Windows junctions. Never dump environments or persist unbounded raw output.
 
-`plan guard` and `plan metrics` must fail open. They run outside a
-coldsession project — guard on every prompt and file tool call — so absent,
-unreadable, or ambiguous plan state exits 0, and neither may go through
-`read_phase(read_index())` in `main()` the way every other subcommand does.
+Project policy skills belong to the host project. No installer may create or
+remove `policy-*` skills. Commands must identify both harnesses' policy locations.
+Canonical command names and Codex skill adapters remain in parity.
 
-Failing open means exiting 0. It does not mean saying nothing, and the two
-commands part company there. `plan guard` is hook-invoked and has no other
-caller, so it is silent as well: its stderr is fed back to the model
-mid-turn, in whatever the user was actually doing, so a bare or misspelled
-invocation prints nothing at all and the usage lives in `plan --help`.
-`plan metrics` is human-invoked, so it reports what it found — a run that
-printed nothing would read as a broken command rather than an empty
-repository. Do not make either one match the other.
+For a document-format change, register an explicit migration and preserve
+historical closed phases. Do not merely bump workflow-rev. Never reinterpret
+legacy readable scope as writable authorization or fabricate verification for
+completed tasks. Preserve semantically unchanged approval. Changes to scope,
+criteria, dependencies, constraints, or verification require renewed review.
 
-If you touch either, re-run the fail-open tests and every hook wrapper in a
-directory with no `PLAN.md`. A false positive on the happy path is worse
-than a missing gate.
+The release version, phase format, templates, changelog, and installation pins
+are tested separately. Existing project-local installations change only through
+explicit preview/apply. Keep customizations and report conflicts.
 
-Every hook ships as an `.sh`/`.cmd` pair, ASCII-only, LF for the `.sh` and
-CRLF for the `.cmd` per `.gitattributes`. A gate with only one half is a gate
-that silently does not exist on the other install path. Changing the
-generated `.claude/settings.json` means updating
-`settings_is_generated_default` in both installers, which also decides
-whether an uninstall may delete the file: it has to keep recognising every
-earlier generated default so an upgrading user is never warned about a file
-they did not touch.
+Prompt wording needs behavioral validation. Use the opt-in, budgeted runners in
+`evals/README.md`; include failed runs and unknown measurements. Deterministic
+tests do not establish that a prompt saves tokens or improves quality. Never
+claim improvements without live comparison evidence.
 
-Policy skills belong to the host project. coldsession ships no `policy-*`
-skill and neither installer may ever create, list, or remove one: the removal
-lists are `cs-*` and legacy `coldsession-*` only, and that is what makes the
-convention safe to adopt. `commands/cs-plan.md` and `commands/cs-review.md`
-are copied to Codex with only the runtime path patched, so anything they say
-about where policy skills live has to name both `.claude/skills/` and
-`.agents/skills/` rather than assume the Claude one.
-
-`tests/test_plan.py` only exercises `bin/plan`; it cannot tell you whether a
-reworded `commands/*.md` still does what it claims. If you change the prose
-in `commands/`, `skills/`, or `templates/`, run `python evals/run.py` (needs
-the `claude` CLI and live credentials -- see `evals/README.md`) against the
-fixtures relevant to what you changed, in addition to the checklist above.
-Run only the fixture matching what you changed, e.g.
-`python evals/run.py review-writes-findings`; a full sweep of every fixture
-is capped near $6 (`--max-budget-usd`, default $2.00 per fixture).
-
-Orca is optional and must stay that way. Every call into it goes through
-`_orca`, which returns immediately unless `ORCA_WORKTREE_ID` is set, swallows
-every failure, prints nothing, and is never allowed to change an exit code --
-the same reasoning as guard failing open. A test asserting that no subprocess
-is spawned outside Orca is not optional. The test harness scrubs `ORCA_*` and
-`CLAUDE_CODE_SESSION_ID` from the child environment; a new helper that builds
-its own environment must use `clean_env`, or a suite run from inside either
-tool will mirror onto the developer's real workspace card and let one live
-session id satisfy the ownership tests by accident.
-
-The phase lock spans a whole mutating command, not `write_phase`, because the
-stale read happens first. Read-only commands take no lock and `guard` must
-never take one. Do not read the lock file to decide staleness: on Windows,
-opening it for reading denies the holder's own `unlink`, which orphans the
-lock. Use `os.stat`.
-
-Changing the shape of the `tasks:` frontmatter is a phase-format change. Bump
-`FORMAT_VERSION`, teach the linter exactly which older majors remain readable,
-and document it in CHANGELOG.md. `TOOL_VERSION` tracks product releases and
-can advance independently.
+One agent is the default. Teams require explicit invocation. Coordinators own
+shared state and commits; workers return assignment-bound results. Quiet workers
+are never automatically replaced. Orca remains optional, and tests strip all
+ambient session and orchestration identities before invoking it.

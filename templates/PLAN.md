@@ -11,3 +11,7 @@ files, never here.
 
 - [ ] Phase 01 — <name> — docs/plans/01-<slug>.md
 - [ ] Phase 02 — <name> — docs/plans/02-<slug>.md
+
+## Constraints
+
+<Durable product requirements to carry into every applicable phase.>

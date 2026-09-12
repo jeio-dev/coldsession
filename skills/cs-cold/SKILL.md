@@ -30,7 +30,6 @@ Two substitutions for the Codex surface:
   goes into `--title`/`--text`: unquoted or double-quoted, a shell expands
   `$cs` to nothing and leaves `-review`, not `$cs-review`.
 
-The independence this buys is real on both surfaces, but only Claude Code
-enforces it. Codex has no hook to refuse a judging command in the session that
-authored the plan, so here the rule holds because you follow it: having spawned
-the new session, stop. Do not also run the step in this one.
+Use a fresh session on both surfaces. Hook enforcement depends on installed
+coverage and native trust; doctor reports detectable configuration and gaps.
+After spawning the new session, stop. Do not also run the step in this one.

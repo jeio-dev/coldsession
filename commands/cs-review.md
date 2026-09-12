@@ -20,7 +20,9 @@ existing findings before recording more and do not duplicate the same issue.
 ## First review
 
 Read PLAN.md, the current phase, AGENTS.md, and the codebase using targeted
-search. Treat every linter E-code as Critical and W-code as at least Medium.
+search. Repair structural linter errors before proceeding. Warnings are advisory and do not
+automatically become blocking findings. A finding must identify a concrete defect
+or unnecessary complexity and its consequence. A clean review is valid.
 
 For every issue record: ID, severity, category, affected task IDs, description,
 and concrete recommended fix. Check especially:
@@ -46,8 +48,9 @@ and concrete recommended fix. Check especially:
   deviation is usually Medium. A project with no `policy-*` skill has no policy
   layer, and its absence is never a finding.
 
-Do not inflate severity. If nothing exceeds Medium, say so and name the two
-most likely failure points.
+Do not inflate severity or invent failure points. Record independent findings
+before discussing them with the author. Use neutral requirements and artifacts,
+without author advocacy or prior discussion. If the review is clean, say so.
 
 ## Revision review
 

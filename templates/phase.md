@@ -2,10 +2,10 @@
 phase: 02-<slug>
 rev: 1
 status: draft
-workflow-rev: 1.5.0
+workflow-rev: 2.0.0
 tasks:
   T1: {deps: [], status: pending, files: [src/db/schema.ts]}
-  T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts]}
+  T2: {deps: [T1], status: pending, files: [src/sync/queue.ts, src/sync/types.ts], reads: [src/db/schema.ts]}
   T3: {deps: [T1], status: pending, files: [src/sync/worker.ts]}
   T4: {deps: [T2, T3], status: pending, files: [src/sync/index.ts]}
 ---
@@ -19,28 +19,32 @@ tasks:
 Goal:
 Deliverables:
 Acceptance Criteria:
-Verify: `<exact command>` prints/exits `<exact expected result>`
+Verify: `<exact command>` exits 0
 
 ## T2 — <name>
 
 Goal:
 Deliverables:
 Acceptance Criteria:
-Verify: `<exact command>` prints/exits `<exact expected result>`
+Verify: `<exact command>` exits 0
 
 ## T3 — <name>
 
 Goal:
 Deliverables:
 Acceptance Criteria:
-Verify: `<exact command>` prints/exits `<exact expected result>`
+Verify: `<exact command>` exits 0
 
 ## T4 — <name>
 
 Goal:
 Deliverables:
 Acceptance Criteria:
-Verify: `<exact command>` prints/exits `<exact expected result>`
+Verify: `<exact command>` exits 0
+
+## Constraints
+
+<Durable product, security, data integrity, and accessibility requirements. Copy applicable constraints forward to later phases. Write None. only when none apply.>
 
 ## Assumptions
 

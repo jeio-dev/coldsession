@@ -14,8 +14,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PLAN = ROOT / "bin" / "plan"
-BASH = shutil.which("bash")
-SH = shutil.which("sh") or BASH
+# Prefer Git Bash on Windows. System32/bash is a WSL launcher, not a
+# Windows-path-compatible shell. Use forward slashes for its script argument.
+_git_bash = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git/bin/bash.exe"
+BASH = str(_git_bash) if os.name == "nt" and _git_bash.exists() else shutil.which("bash")
+SH = BASH if os.name == "nt" else shutil.which("sh") or BASH
 POWERSHELL = shutil.which("powershell") or shutil.which("pwsh")
 
 
@@ -35,7 +38,8 @@ def clean_env(**extra):
     the ownership tests agree by accident.
     """
     env = {k: v for k, v in os.environ.items()
-           if not k.startswith("ORCA_") and k != "CLAUDE_CODE_SESSION_ID"}
+           if not k.startswith("ORCA_") and k not in
+           ('CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'CS_WORKER_ASSIGNMENT')}
     env.update(extra)
     return env
 
@@ -328,7 +332,7 @@ class PlanRuntimeTest(unittest.TestCase):
         symlinks and the two strings agree on every platform.
         """
         key = hashlib.sha256(
-            os.path.abspath(str(self.phase)).encode("utf-8")).hexdigest()
+            os.path.normcase(os.path.realpath(str(self.root / "PLAN.md"))).encode("utf-8")).hexdigest()
         return self.lock_dir() / (key[:32] + ".lock")
 
     def test_concurrent_task_completions_all_land(self):
@@ -386,8 +390,8 @@ class PlanRuntimeTest(unittest.TestCase):
         self.assertIn("424242", result.stderr)
         self.assertIn("status: pending", self.phase.read_text(encoding="utf-8"))
 
-    def test_a_stale_lock_is_broken_rather_than_wedging_the_phase(self):
-        """A holder that died without releasing must not need a human with rm."""
+    def test_lock_age_alone_does_not_establish_abandonment(self):
+        """A long verification run must never lose its lock because of age."""
         self.write_phase(reviewed=1, ready=1, status="approved")
         lock = self.lock_file()
         lock.parent.mkdir(parents=True, exist_ok=True)
@@ -397,9 +401,9 @@ class PlanRuntimeTest(unittest.TestCase):
         # on Windows.
         old = time.time() - 3600
         os.utime(lock, (old, old))
-        self.run_plan("start", "T1", env_extra={"PLAN_LOCK_DIR": str(self.lock_dir())})
-        self.assertIn("status: in_progress", self.phase.read_text(encoding="utf-8"))
-        self.assertFalse(lock.exists(), "the lock outlived the command that took it")
+        self.run_plan("start", "T1", ok=False, env_extra={"PLAN_LOCK_DIR": str(self.lock_dir())})
+        self.assertIn("status: pending", self.phase.read_text(encoding="utf-8"))
+        self.assertTrue(lock.exists(), "a live lock was removed based only on its age")
 
     # ------------------------------------------------------- orca mirroring
 
@@ -613,8 +617,8 @@ class PlanRuntimeTest(unittest.TestCase):
         self.run_plan("start", "T1")
         out = self.run_plan("brief", "T1").stdout
         self.assertRegex(
-            out, r"budget  ~[\d,]+ tokens across 3 file\(s\): "
-                 r"~[\d,]+ phase file, ~[\d,]+ task-owned")
+            out, r"budget  ~[\d,]+ tokens \(estimate, bytes/4\) across 3 file\(s\): "
+                 r"~[\d,]+ phase file, ~[\d,]+ task files/supporting reads")
         # AGENTS.md is in every brief's read set but this fixture ships none.
         self.assertIn("; 1 not yet on disk", out)
 
@@ -695,6 +699,95 @@ class PlanRuntimeTest(unittest.TestCase):
         result = self.run_plan("lint")
         self.assertIn("W07", result.stdout)
         self.assertIn("T1", result.stdout)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("advisory only", result.stdout)
+        self.assertIn("Large existing files", result.stdout)
+
+    def test_shared_agents_is_reported_separately_without_w07(self):
+        self.write_phase(reviewed=1, ready=1, status="approved")
+        (self.root / "AGENTS.md").write_text("x" * 60000, encoding="utf-8")
+        self.assertNotIn("W07", self.run_plan("lint").stdout)
+        self.run_plan("start", "T1")
+        out = self.run_plan("brief", "T1").stdout
+        self.assertIn("~15,000 shared AGENTS.md", out)
+        self.assertIn("~0 task files/supporting reads", out)
+        self.assertNotIn("over the", out)
+        self.assertIn("avg ~0 tokens/task", self.run_plan("metrics").stdout)
+
+    def test_lint_skips_completed_work_but_metrics_keeps_history(self):
+        (self.root / "src").mkdir()
+        (self.root / "src/a.py").write_text("x" * 60000, encoding="utf-8")
+        for status in ("draft", "closed"):
+            with self.subTest(status=status):
+                self.write_phase(status=status, tasks={
+                    "T1": ([], "done", ["src/a.py"]),
+                })
+                self.assertNotIn("W07", self.run_plan("lint").stdout)
+                self.assertIn("1 of 1 over", self.run_plan("metrics").stdout)
+
+    def test_lint_counts_legacy_dependency_files_once_under_aliases(self):
+        self.write_phase(tasks={
+            "T1": ([], "done", ["src/a.py"]),
+            "T2": (["T1"], "pending", ["./src/a.py"]),
+        })
+        (self.root / "src").mkdir()
+        source = self.root / "src/a.py"
+        source.write_text("x" * 30000, encoding="utf-8")
+        self.assertNotIn("W07", self.run_plan("lint").stdout)
+        source.write_text("x" * 60000, encoding="utf-8")
+        out = self.run_plan("lint").stdout
+        self.assertIn("W07 T2 file context is ~15,000", out)
+        self.assertNotIn("W07 T1", out)
+
+    def test_format_two_budget_counts_explicit_reads_without_implicit_dependencies(self):
+        self.write_phase(workflow="2.0.0", tasks={
+            "T1": ([], "done", ["src/a.py"]),
+            "T2": (["T1"], "pending", ["src/b.py"]),
+        })
+        with self.phase.open("a", encoding="utf-8") as phase_file:
+            phase_file.write("\n## Constraints\n\nNone.\n")
+        (self.root / "src").mkdir()
+        (self.root / "src/a.py").write_text("x" * 60000, encoding="utf-8")
+        self.assertNotIn("W07", self.run_plan("lint").stdout)
+        text = self.phase.read_text(encoding="utf-8").replace(
+            "files: [src/b.py]", "files: [src/b.py], reads: [src/a.py]")
+        self.phase.write_text(text, encoding="utf-8")
+        self.assertIn("W07 T2 file context is ~15,000", self.run_plan("lint").stdout)
+
+    def test_legacy_dependency_chain_does_not_charge_inherited_context_to_w07(self):
+        self.write_phase(reviewed=1, ready=1, status="approved", tasks={
+            "T1": ([], "done", ["src/a.py"]),
+            "T2": (["T1"], "done", ["src/b.py"]),
+            "T3": (["T2"], "in_progress", ["src/c.py"]),
+        })
+        (self.root / "src").mkdir()
+        (self.root / "src/a.py").write_text("x" * 60000, encoding="utf-8")
+        self.assertNotIn("W07", self.run_plan("lint").stdout)
+        out = self.run_plan("brief", "T3").stdout
+        self.assertIn("~15,000 inherited files", out)
+        self.assertIn("src/a.py", out)
+        self.assertIn("~0 task files/supporting reads", out)
+        self.assertEqual(self.run_guard("read", "src/a.py").returncode, 0)
+
+    def test_lockfile_output_stays_in_scope_without_inflating_context_budget(self):
+        self.write_phase(reviewed=1, ready=1, status="approved", tasks={
+            "T1": ([], "in_progress", ["package-lock.json"]),
+            "T2": (["T1"], "pending", ["src/b.py"]),
+        })
+        (self.root / "package-lock.json").write_text("x" * 300000, encoding="utf-8")
+        self.assertNotIn("W07", self.run_plan("lint").stdout)
+        out = self.run_plan("brief", "T1").stdout
+        self.assertIn("write   package-lock.json", out)
+        self.assertIn("~75,000 generated lockfiles", out)
+        self.assertIn("~0 task files/supporting reads", out)
+        self.assertIn("avg ~0 tokens/task", self.run_plan("metrics").stdout)
+        self.assertEqual(self.run_guard("write", "package-lock.json").returncode, 0)
+        text = self.phase.read_text(encoding="utf-8").replace(
+            "files: [package-lock.json]", "files: [package-lock.json], reads: [package-lock.json]")
+        self.phase.write_text(text, encoding="utf-8")
+        out = self.run_plan("lint").stdout
+        self.assertIn("W07 T1 file context is ~75,000", out)
+        self.assertNotIn("W07 T2", out)
 
     def test_lint_does_not_warn_when_task_files_are_within_the_context_budget(self):
         self.write_phase()
@@ -759,7 +852,7 @@ class PlanRuntimeTest(unittest.TestCase):
             "T1": ([], "in_progress", ["./docs/plans/01-test.md"]),
         })
         out = self.run_plan("brief", "T1").stdout
-        self.assertRegex(out, r"~0 task-owned")
+        self.assertRegex(out, r"~0 task files/supporting reads")
 
     def test_metrics_fails_open_on_a_pathologically_deep_dependency_chain(self):
         """`read_set()` walks dependencies via one recursive call per task.
@@ -1120,12 +1213,16 @@ class PlanRuntimeTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, f"{name}: {result.stderr}")
             self.assertEqual(result.stderr, "", name)
 
-    def test_shipped_phase_template_lints_clean(self):
-        """CONTRIBUTING's rule, checked instead of remembered: the template a
-        phase is written from has to pass the linter that judges it, so a new
-        prose section can never quietly break a fresh plan."""
+    def test_completed_phase_template_lints_clean(self):
+        """A blank template is not an executable contract; filling its fields is."""
+        template = (ROOT / 'templates/phase.md').read_text(encoding='utf-8')
+        self.phase.write_text(template, encoding='utf-8')
+        blank = self.run_plan('lint', ok=False)
+        self.assertIn('E35', blank.stdout)
         self.phase.write_text(
-            (ROOT / "templates" / "phase.md").read_text(encoding="utf-8"),
+            template.replace('Goal:\n', 'Goal: implement the named behavior\n')
+                    .replace('Deliverables:\n', 'Deliverables: task files\n')
+                    .replace('Acceptance Criteria:\n', 'Acceptance Criteria: observable result\n'),
             encoding="utf-8")
         result = self.run_plan("lint")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -1179,7 +1276,7 @@ class WorkflowContractTest(unittest.TestCase):
         sync."""
         skill = (ROOT / "skills" / "cs-build" / "SKILL.md").read_text(encoding="utf-8")
         build_cmd = (ROOT / "commands" / "cs-build.md").read_text(encoding="utf-8")
-        self.assertIn("no read-enforcement hook", skill)
+        self.assertIn("native hook trust", skill)
         self.assertIn("canonical command's Reading", skill)
         self.assertIn("## Reading", build_cmd)
         self.assertIn("stop and", build_cmd)
@@ -1220,13 +1317,9 @@ class WorkflowContractTest(unittest.TestCase):
                 "policy-", (ROOT / installer).read_text(encoding="utf-8"), installer)
 
     def test_the_release_version_matches_the_changelog_and_every_install_pin(self):
-        """The tag, the tool, the changelog heading, and every documented
-        clone command are one fact written in four places.
+        """Release metadata and any explicit installation pins must agree.
 
-        v2.1.0 shipped with `plan version` reporting 2.0.0; the changelog
-        records the fix and nothing was left behind to catch the next drift,
-        so the install pins went stale again. A reader who copies the
-        documented `git clone --branch` line gets a tag that does not exist.
+        README intentionally follows the default branch without a release pin.
         """
         source = PLAN.read_text(encoding="utf-8")
         version = re.search(r'^TOOL_VERSION = "([^"]+)"', source, re.M).group(1)
@@ -1242,7 +1335,6 @@ class WorkflowContractTest(unittest.TestCase):
                          "the newest CHANGELOG entry is not this release")
 
         pinned = {
-            "README.md": (ROOT / "README.md").read_text(encoding="utf-8"),
             "docs/universal-planning-workflow.html":
                 (ROOT / "docs" / "universal-planning-workflow.html")
                 .read_text(encoding="utf-8"),
@@ -1270,25 +1362,16 @@ class WorkflowContractTest(unittest.TestCase):
         the difference as a bug in the code. Fail-open is the shared rule;
         silence belongs to the hook-invoked half alone."""
         text = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
-        rule = text[text.index("`plan guard` and `plan metrics` must fail open"):
-                    text.index("Every hook ships as")]
-        self.assertIn("guard", rule)
-        self.assertIn("metrics", rule)
-        # Silence is claimed for guard, and explicitly not for metrics.
-        self.assertIn("hook-invoked", rule)
-        self.assertIn("human-invoked", rule)
+        self.assertIn('`plan guard` is quiet for unrelated projects', text)
+        self.assertIn('human-invoked', text)
+        self.assertIn('fail with actionable errors', text)
 
     def test_installers_agree_on_the_hook_surface(self):
-        posix = (ROOT / "install.sh").read_text(encoding="utf-8")
-        powershell = (ROOT / "install.ps1").read_text(encoding="utf-8")
-        for kind in ("read", "write", "lint", "stage"):
-            self.assertIn(f"cs-guard-{kind}.sh", posix)
-            self.assertIn(f"cs-guard-{kind}.cmd", powershell)
-        # Both must keep recognising the three-key default written before
-        # hooks existed, or an upgrading user is warned about a file they
-        # never touched.
-        self.assertIn('{"model", "env", "permissions"}', posix)
-        self.assertIn('@("model", "env", "permissions")', powershell)
+        for installer in ('install.sh', 'install.ps1'):
+            self.assertIn('bin/cs_install.py', (ROOT / installer).read_text(encoding='utf-8'))
+        source = (ROOT / 'bin/cs_install.py').read_text(encoding='utf-8')
+        self.assertIn('configured_hooks', source)
+        self.assertIn('codex_config', source)
 
     def test_every_command_has_a_matching_codex_skill(self):
         """F4: a Claude-only command ships green -- nothing else in this
@@ -1333,7 +1416,7 @@ class InstalledHookTest(unittest.TestCase):
 
     def install(self, flavour, dest, agent="both"):
         if flavour == "sh":
-            argv = [BASH, str(ROOT / "install.sh"),
+            argv = [BASH, str(ROOT / "install.sh").replace("\\", "/"),
                     str(dest).replace("\\", "/"), "--agent", agent]
         else:
             argv = [POWERSHELL, "-NoProfile", "-NonInteractive", "-File",
@@ -1342,6 +1425,10 @@ class InstalledHookTest(unittest.TestCase):
         result = subprocess.run(argv, text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0,
                          f"{flavour} installer failed:\n{result.stdout}{result.stderr}")
+        preview = json.loads(result.stdout)
+        apply_flag = "--apply" if flavour == "sh" else "-Apply"
+        result = subprocess.run(argv + [apply_flag, preview['preview']], text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
 
     def hook_commands(self, dest):
@@ -1359,8 +1446,9 @@ class InstalledHookTest(unittest.TestCase):
         paper over exactly the missing quotes this exercises. The shell has to
         do the word splitting for the test to mean anything.
         """
+        command = command.replace('${CLAUDE_PROJECT_DIR}', '$CLAUDE_PROJECT_DIR')
         if command.rstrip('"').endswith(".cmd"):
-            expanded = command.replace("$CLAUDE_PROJECT_DIR", str(dest))
+            expanded = command.replace("$CLAUDE_PROJECT_DIR", str(dest)).replace("%CLAUDE_PROJECT_DIR%", str(dest))
             argv, shell = expanded, True
         else:
             expanded = command.replace("$CLAUDE_PROJECT_DIR",
@@ -1510,8 +1598,6 @@ class InstalledHookTest(unittest.TestCase):
     # deliberate-classification shape as test_the_gate_classifies_every_shipped_command.
     ALLOWED_BARE_PLAN_MENTIONS = {
         ("cs-close.md", "`plan lint`"),
-        ("cs-fanout.md", "`plan next --parallel`"),
-        ("cs-fanout.md", "`plan done`"),
         ("cs-review.md", "`plan resolve`"),
     }
 
