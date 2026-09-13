@@ -37,6 +37,8 @@ Then enforce in code what markdown cannot:
 - .env.example, committed, with keys only and no values.
 - Runnable lint, format, and typecheck commands.
 - One pre-commit or CI check that fails on a committed secret.
+- When Prettier checks repository JSON, add `docs/plans/*.json` to
+  `.prettierignore`; those runtime-owned sidecars use stable machine formatting.
 
 Scaffold the project. Run every command before putting it in AGENTS.md and fix
 failures first.

@@ -44,11 +44,10 @@ import time
 import shutil
 import threading
 import uuid
-import shlex
 from pathlib import Path
 from datetime import datetime
 
-TOOL_VERSION = "3.1.0"
+TOOL_VERSION = "3.1.1"
 FORMAT_VERSION = "2.0.0"
 
 ROOT = os.path.realpath(os.environ.get("PLAN_ROOT", "."))
@@ -2171,10 +2170,31 @@ def sensitive(path):
             leaf.endswith(('.pem', '.key', '.p12')) or leaf in ('credentials', 'credentials.json'))
 
 
+def temporary_scratch_path(path):
+    """Whether PATH is inside Claude's harness-provided temporary scratchpad."""
+    target = _guard_norm(path)
+    temp = _guard_norm(tempfile.gettempdir())
+    if not target or not temp or not target.startswith(temp + os.sep):
+        return False
+    parts = os.path.relpath(target, temp).replace('\\', '/').lower().split('/')
+    try:
+        scratch = parts.index('scratchpad')
+    except ValueError:
+        return False
+    return scratch < len(parts) - 1 and any(
+        part == 'claude' or part.startswith('claude-') for part in parts[:scratch])
+
+
 def strict_guard(phase, kind, args, payload):
     data = payload['tool_input']
+    tool_name = str(payload.get('tool_name') or '').lower()
     if kind == 'lint':
         return _guard_lint(args[0] if args else data.get('file_path', data.get('path')))
+    # Shell payloads are programs, not path declarations. Inferring every file
+    # they may touch made Build unusable without creating a security boundary.
+    # Native harness permissions remain authoritative for shell execution.
+    if kind == 'write' and tool_name in ('bash', 'powershell', 'exec_command', 'shell_command'):
+        return 0
     paths = [args[0]] if args else [data.get('file_path', data.get('path'))]
     patch = data.get('patch', data.get('input', ''))
     if isinstance(patch, str) and '*** Begin Patch' in patch:
@@ -2194,32 +2214,19 @@ def strict_guard(phase, kind, args, payload):
         elif tasks and not (len(tasks) == 1 and not phase['tasks'][tasks[0]].get('owner')) and not any(
                 a.get('coordinator') == owner for a in assignments.values()):
             return _guard_deny('E32', 'session does not own an active task', 'use the coordinator or explicitly resume the correct claim')
-    command = data.get('command', data.get('cmd'))
-    if isinstance(command, list):
-        command = ' '.join(shlex.quote(str(word)) for word in command)
-    if command and kind == 'write':
-        # Arbitrary shell is a language, not a safely parseable list of paths.
-        # Permit the validated runtime and filename-only discovery. Native
-        # permissions remain authoritative for all other execution.
-        if sensitive(command):
-            return _guard_deny('E33', 'shell references sensitive files', 'use project-approved secret handling')
-        if tasks:
-            safe = safe_runtime_command(command)
-            discovery = command.strip() == 'rg --files'
-            if not safe and not discovery:
-                return _guard_deny('E34', 'shell payload cannot be proven within task scope',
-                                   'use scoped file tools, filename discovery, or plan verify; retain native permissions')
-        elif re.search(r'approved|PLAN\.md|docs[/\\]plans', command, re.I):
-            return _guard_deny('E24', 'shell mutation of workflow documents cannot be validated', 'use scoped edit tools and plan commands')
-        return 0
     if kind == 'write' and not any(paths):
         return _guard_deny('E31', 'write payload has no verifiable paths', 'use a supported scoped file tool')
+    if kind == 'read' and tasks and tool_name in ('read', 'read_file', 'grep') and not any(paths):
+        return _guard_deny('E31', 'read payload has no verifiable path',
+                           'name one file from the task brief; filename-only discovery remains available')
     for path in filter(None, paths):
         if sensitive(path):
             return _guard_deny('E33', 'sensitive file access is restricted', 'use project-approved secret handling')
         target = _guard_norm(path)
-        root = os.path.normcase(ROOT)
+        root = _guard_norm(ROOT)
         if not target or not target.startswith(root + os.sep):
+            if kind == 'write' and temporary_scratch_path(path):
+                continue
             return _guard_deny('E26', 'path escapes repository after resolving links', 'use repository file paths')
         if kind == 'write':
             denied = _guard_write(phase, path, payload)
@@ -2236,21 +2243,6 @@ def strict_guard(phase, kind, args, payload):
                 return _guard_deny('E23', f'{kind} outside task scope: {path}',
                                    'correct an insufficient brief through replan before implementation')
     return 0
-
-
-def safe_runtime_command(command):
-    if re.search(r'[;&|<>`$%\r\n]', command):
-        return False
-    try:
-        words = shlex.split(command)
-    except ValueError:
-        return False
-    if words and words[0] in ('python', 'python3', 'py'):
-        words = words[1:]
-    executables = {prefix + suffix for prefix in ('.claude/bin/plan', '.agents/coldsession/bin/plan')
-                   for suffix in ('', '.cmd')}
-    return bool(len(words) >= 2 and words[0] in executables and words[1] in
-                ('status', 'lint', 'brief', 'next', 'recommend', 'verify', 'done', 'block', 'handoff', 'integrate', 'assign'))
 
 
 def scope_path(value):
@@ -2578,17 +2570,17 @@ def cmd_verify(phase, args):
         results.append(result)
     fresh = read_phase(phase['path'])
     after = working_fingerprint(fresh, tid)
-    success = (before == after and spec == specification(fresh) and
+    success = (spec == specification(fresh) and
                all(r['exit'] == 0 and not r.get('timeout') for r in results))
     records = load_json(evidence_path(phase), {})
-    records[tid] = {'spec': spec, 'files': before,
+    records[tid] = {'spec': spec, 'files': after, 'files-before': before,
                     'checks': [{**check, 'command': redact(check['command'])} for check in checks],
                     'checks-hash': digest(json.dumps(checks, sort_keys=True).encode()), 'results': results,
                     'success': success, 'at': datetime.now().isoformat()}
     save_json(evidence_path(phase), records)
     print(json.dumps(records[tid], indent=2))
     if not success:
-        print('verification failed, lacked an attestation, or inputs changed; rerun before done', file=sys.stderr)
+        print('verification failed, lacked an attestation, or the specification changed; rerun before done', file=sys.stderr)
     return 0 if success else 1
 
 

@@ -1,5 +1,5 @@
 @echo off
-rem PreToolUse Read|Edit|Write -- keep a build session inside its brief.
+rem PreToolUse Read|Grep -- keep content reads inside a build session's brief.
 rem
 rem Windows half of the pair, and the one this project's installer registers
 rem there. Same contract as the .sh: forward the event JSON on stdin to

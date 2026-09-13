@@ -21,9 +21,13 @@ Then run `.claude/bin/plan brief <task-id>`.
 ## Reading
 
 The brief's `read` block gives the file order, starting with AGENTS.md. Use
-inlined context and follow the phase/handoff annotations. Use bounded read-only discovery to locate affected behavior and existing capabilities.
-`files` authorizes writes; `reads` supplies supporting context. Correct an insufficient
-brief before implementation. Keep search results concise.
+inlined context and follow the phase/handoff annotations. Use filename-only
+discovery to locate affected behavior and existing capabilities; content
+searches must name a file in the brief.
+`files` authorizes writes; `reads` supplies supporting context. Correct an
+insufficient brief before implementation by running:
+`.claude/bin/plan block <task-id> "missing read: <path>"`
+Then take the finding through replan. Keep search results concise.
 Read relevant sections of large files and inherited dependency files as needed;
 the read list is not a requirement to load every file in full. Keep generated
 outputs such as lockfiles in writable scope and use their normal generator.
@@ -56,7 +60,8 @@ On success:
 
 1. Record a bounded handoff through `.claude/bin/plan handoff <task-id> <literal-JSON-object>`:
    decisions, evidence, limitations, affects (task IDs), provenance, and supersedes
-   (prior handoff IDs). Use empty lists or "none" where appropriate; no diff summary.
+   (prior handoff IDs). Use empty lists for list fields and "none" for empty
+   string fields; no diff summary.
    Keep the JSON at most 4096 characters. Quote it as a literal shell argument;
    the runtime writes the handoff, so no scratch source file is required.
 2. `.claude/bin/plan done <task-id>` — it accepts only `in_progress` tasks.

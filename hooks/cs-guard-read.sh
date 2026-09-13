@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# PreToolUse Read|Edit|Write -- keep a build session inside its brief.
+# PreToolUse Read|Grep -- keep content reads inside a build session's brief.
 #
 # Deliberately trivial: the event JSON arrives on stdin and is forwarded
 # untouched to `plan guard`, which owns every decision, carries the tests,

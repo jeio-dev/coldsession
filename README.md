@@ -222,6 +222,8 @@ Record bounded structured handoffs with `plan handoff T1 handoff.json` or
 `plan handoff T1 --stdin`. A literal JSON object argument also works, without
 creating a scratch file. `plan integrate` accepts the same input forms. Required fields are `decisions`, `evidence`,
 `limitations`, `affects` (task IDs), `provenance`, and `supersedes` (handoff IDs).
+Use arrays, including empty arrays, for `affects` and `supersedes`; use `"none"`
+only for an empty string field.
 Each entry is limited to 4096 characters. The runtime stamps identity, task,
 specification, and time. Briefs retrieve at most eight relevant non-superseded
 entries, rather than the latest global entry. Historical Markdown logs remain
@@ -263,17 +265,18 @@ detected CLIs, hook configuration, unknown trust, pending journals, and enforcem
 gaps. Configuration on disk does not prove that a running harness trusts or loads
 it. Start a fresh session and confirm native hook trust after installation.
 
-Both adapters normalize supported file, patch, and shell payloads into shared
-checks. Read access does not grant write access. Sensitive-file restrictions and
-resolved path scope checks apply to supported file tools. During active builds,
-shell payloads that cannot be proven within scope are refused; use scoped file
-tools, filename discovery, or recorded verification. Unrelated projects stay quiet.
+Both adapters normalize supported file and patch payloads into shared checks.
+Read access does not grant write access. `Read` and content-returning `Grep`
+must name a file in the active brief; filename-only discovery remains available.
+Sensitive-file restrictions and resolved path scope checks apply to supported
+file tools. Writes to Claude's resolved temporary `claude/.../scratchpad`
+subtree are also allowed. Unrelated projects stay quiet.
 Explicit mutations fail with actionable errors when workflow state is invalid.
 
-Arbitrary programs, network access, MCP tools, unregistered tools, direct human
-edits, and harnesses without trusted hooks remain enforcement gaps. Verification
-commands execute under native permissions and must be reviewed. This workflow
-is not an operating-system security boundary.
+Shell commands, arbitrary programs, network access, MCP tools, unregistered
+tools, direct human edits, and harnesses without trusted hooks remain enforcement
+gaps. Shell and verification commands execute under native permissions and must
+be reviewed. This workflow is not an operating-system security boundary.
 
 Current interface references: [Codex hook configuration](https://learn.chatgpt.com/docs/config-file/config-reference),
 [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents),

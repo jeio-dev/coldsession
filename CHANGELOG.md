@@ -4,6 +4,20 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
+## [v3.1.1]
+
+- Stop routing shell tools through the structured write-scope guard. Build
+  sessions can run their required `plan` lifecycle and verification commands;
+  shell execution remains governed by native harness permissions.
+- Apply bounded-read enforcement to content-returning `Grep`, keep
+  filename-only discovery available, and permit writes only to Claude's
+  resolved temporary scratchpad outside the repository. Build now gives an
+  executable block/replan path for missing reads.
+- Record verification fingerprints after successful generator and formatter
+  commands, so one successful run produces current completion evidence.
+- Preserve handoff list types in Build guidance and keep runtime-owned plan
+  sidecars out of Prettier checks in newly scaffolded Prettier projects.
+
 ## [v3.1.0]
 
 - Format-2 Revise can settle only Low acceptances without a revision bump when
