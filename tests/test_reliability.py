@@ -105,6 +105,49 @@ class ReliabilityTest(unittest.TestCase):
             self.edit(old, new)
             self.assertNotEqual(old_spec, self.rt.specification(self.p()))
 
+    def test_task_evidence_ignores_unrelated_task_contract_changes(self):
+        self.approve()
+        self.run_plan('start', 'T1')
+        self.run_plan('verify', 'T1')
+        self.run_plan('done', 'T1')
+        old_phase_spec = self.rt.specification(self.p())
+        old_task_spec = self.rt.task_specification(self.p(), 'T1')
+
+        self.edit('## T2 — test\n\nGoal: test', '## T2 — test\n\nGoal: unrelated change')
+
+        self.assertNotEqual(old_phase_spec, self.rt.specification(self.p()))
+        self.assertEqual(old_task_spec, self.rt.task_specification(self.p(), 'T1'))
+        self.assertTrue(self.rt.evidence_valid(self.p(), 'T1'))
+
+        self.edit('## T1 — test\n\nGoal: test', '## T1 — test\n\nGoal: relevant change')
+        self.assertIn('spec_changed', self.rt.evidence_failure_reasons(self.p(), 'T1'))
+
+    def test_task_specification_includes_transitive_dependency_contracts(self):
+        self.write(tasks={
+            'T1': ([], 'pending', ['src/a.py']),
+            'T2': (['T1'], 'pending', ['src/b.py']),
+        })
+        original = self.rt.task_specification(self.p(), 'T2')
+        self.edit('## T1 — test\n\nGoal: test', '## T1 — test\n\nGoal: dependency change')
+        self.assertNotEqual(original, self.rt.task_specification(self.p(), 'T2'))
+
+    def test_legacy_phase_scoped_evidence_remains_valid_until_the_phase_changes(self):
+        checks = self.rt.verification_checks(self.p(), 'T1')
+        legacy = {
+            'spec': self.rt.specification(self.p()),
+            'files': self.rt.working_fingerprint(self.p(), 'T1'),
+            'checks-hash': self.rt.digest(json.dumps(
+                checks, sort_keys=True).encode()),
+            'checks': checks,
+            'results': [{'exit': 0}],
+            'success': True,
+        }
+        self.rt.save_json(self.rt.evidence_path(self.p()), {'T1': legacy})
+        self.assertTrue(self.rt.evidence_valid(self.p(), 'T1'))
+
+        self.edit('## T2 — test\n\nGoal: test', '## T2 — test\n\nGoal: unrelated change')
+        self.assertIn('spec_changed', self.rt.evidence_failure_reasons(self.p(), 'T1'))
+
     def test_review_cannot_certify_concurrent_spec_edit(self):
         self.run_plan('begin', 'review')
         self.edit('Goal: test', 'Goal: changed')
@@ -304,7 +347,8 @@ class ReliabilityTest(unittest.TestCase):
         self.run_plan('done', 'T1', ok=False)
         self.run_plan('verify', 'T1')
         (self.root / 'src/a.py').write_text('changed', encoding='utf-8')
-        self.run_plan('done', 'T1', ok=False)
+        refused = self.run_plan('done', 'T1', ok=False)
+        self.assertIn('inputs_changed', refused.stderr)
         self.run_plan('verify', 'T1')
         self.run_plan('done', 'T1')
 
@@ -330,22 +374,79 @@ class ReliabilityTest(unittest.TestCase):
     def test_interrupted_verification_invalidates_previous_success(self):
         self.approve()
         self.run_plan('start', 'T1')
-        self.run_plan('verify', 'T1')
+        first = json.loads(self.run_plan('verify', 'T1').stdout)
         with mock.patch.object(self.rt, 'bounded_run', side_effect=OSError('interrupted')):
             with self.assertRaises(OSError):
                 self.rt.cmd_verify(self.p(), ['T1'])
         self.assertFalse(self.rt.evidence_valid(self.p(), 'T1'))
+        record = json.loads(self.phase.with_suffix('.evidence.json').read_text())['T1']
+        self.assertEqual(record['state'], 'running')
+        self.assertEqual(len(record['attempts']), 2)
+        self.assertEqual(record['latest-success'], first['id'])
         self.run_plan('done', 'T1', ok=False)
 
-    def test_manual_and_visual_are_explicit_attestations(self):
-        self.edit('Verify: `python -V` exits 0', 'Verify: visual: tab order reaches save\nVerify: manual: review exported file')
+    def test_manual_and_visual_require_distinct_bound_attestations(self):
+        command = ("python -c \"from pathlib import Path; "
+                   "Path('verify-ran').write_text('yes')\"")
+        self.edit('Verify: `python -V` exits 0',
+                  f'Verify: `{command}` exits 0\n'
+                  'Verify: visual: tab order reaches save\n'
+                  'Verify: manual: review exported file')
         self.approve()
         self.run_plan('start', 'T1')
-        self.run_plan('verify', 'T1', ok=False)
-        self.run_plan('verify', 'T1', '--attest', 'Observed tab order and checked export')
+        missing_first = self.run_plan('verify', 'T1', ok=False)
+        self.assertIn('missing_attestation', missing_first.stderr)
+        self.assertFalse(self.phase.with_suffix('.evidence.json').exists())
+        self.assertFalse((self.root / 'verify-ran').exists())
+        ambiguous = self.run_plan('verify', 'T1', '--attest',
+                                  'Observed tab order only', ok=False)
+        self.assertIn('each attestation must name its check', ambiguous.stderr)
+        self.assertFalse(self.phase.with_suffix('.evidence.json').exists())
+        self.assertFalse((self.root / 'verify-ran').exists())
+        self.run_plan('verify', 'T1',
+                      '--attest', 'visual:1=Observed tab order',
+                      '--attest', 'manual:1=Checked exported file')
+        self.assertTrue((self.root / 'verify-ran').exists())
         record = json.loads(self.phase.with_suffix('.evidence.json').read_text())['T1']
-        self.assertEqual([c['kind'] for c in record['checks']], ['visual', 'manual'])
-        self.assertIn('attestation', record['results'][0])
+        self.assertEqual([c['kind'] for c in record['checks']], ['automated', 'visual', 'manual'])
+        self.assertEqual(record['results'][1]['check-id'], 'visual:1')
+        self.assertEqual(record['results'][1]['attestation'], 'Observed tab order')
+        self.assertEqual(record['results'][2]['check-id'], 'manual:1')
+        self.assertEqual(record['results'][2]['attestation'], 'Checked exported file')
+        self.assertNotEqual(record['results'][1]['check-hash'], record['results'][2]['check-hash'])
+
+        before = self.phase.with_suffix('.evidence.json').read_bytes()
+        missing = self.run_plan('verify', 'T1', ok=False)
+        self.assertIn('--attest visual:1=', missing.stderr)
+        self.assertIn('--attest manual:1=', missing.stderr)
+        self.assertEqual(before, self.phase.with_suffix('.evidence.json').read_bytes())
+
+    def test_one_non_automated_check_accepts_legacy_unlabelled_attestation(self):
+        self.edit('Verify: `python -V` exits 0', 'Verify: manual: inspect export')
+        self.approve()
+        self.run_plan('start', 'T1')
+        record = json.loads(self.run_plan(
+            'verify', 'T1', '--attest', 'Export matched').stdout)
+        self.assertTrue(record['success'])
+        self.assertEqual(record['results'][0]['check-id'], 'manual:1')
+
+    def test_failed_reverification_preserves_attempt_history_and_success_pointer(self):
+        command = ('python -c "import os,sys;'
+                   "sys.exit(os.path.exists('failure.flag'))\"")
+        self.edit('`python -V`', f'`{command}`')
+        self.approve()
+        self.run_plan('start', 'T1')
+        first = json.loads(self.run_plan('verify', 'T1').stdout)
+        (self.root / 'failure.flag').write_text('fail', encoding='utf-8')
+
+        failed = json.loads(self.run_plan('verify', 'T1', ok=False).stdout)
+
+        self.assertFalse(failed['success'])
+        self.assertEqual(failed['failure-reasons'], ['automated_failed'])
+        self.assertEqual(len(failed['attempts']), 2)
+        self.assertTrue(failed['attempts'][0]['success'])
+        self.assertFalse(failed['attempts'][1]['success'])
+        self.assertEqual(failed['latest-success'], first['id'])
 
     def test_duplicate_ids_rejected_before_mutation(self):
         self.edit('tasks:', 'tasks:\n  T1: {deps: [], status: pending, files: [src/other.py]}')
@@ -583,10 +684,14 @@ class ReliabilityTest(unittest.TestCase):
         self.run_plan('verify', 'T2', ok=False)
 
     def test_automated_commands_cannot_be_overridden_by_attestation(self):
-        self.edit('`python -V`', '`python -c "raise SystemExit(1)"`')
+        self.edit('Verify: `python -V` exits 0',
+                  'Verify: `python -c "raise SystemExit(1)"` exits 0\n'
+                  'Verify: manual: inspect failure state')
         self.approve()
         self.run_plan('start', 'T1')
-        self.run_plan('verify', 'T1', '--attest', 'claims success', ok=False)
+        result = self.run_plan('verify', 'T1', '--attest',
+                               'manual:1=claims success', ok=False)
+        self.assertIn('automated_failed', result.stderr)
         self.run_plan('done', 'T1', ok=False)
 
     def test_upgrade_journal_blocks_mutations(self):

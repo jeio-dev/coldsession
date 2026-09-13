@@ -4,6 +4,17 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
+## [v3.2.1]
+
+- Bind every manual and visual attestation to its declared check, require
+  separate receipts when a task has multiple non-automated checks, and preflight
+  missing receipts before running commands or replacing evidence.
+- Preserve append-only verification attempts and a latest-success pointer while
+  reporting specific stale/failure reasons.
+- Scope verification hashes to the task and its transitive dependency contracts,
+  while retaining phase-wide hashes for review and approval and separate working
+  file fingerprints for input invalidation.
+
 ## [v3.2.0]
 
 - Make the default installer preview beginner-facing and print the exact apply
