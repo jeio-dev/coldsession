@@ -18,7 +18,7 @@ Stdlib only, no install step.
   plan begin STAGE [--resume]      claim review/revise/approve/close
   plan finish STAGE [--pass|--fail|--accept-only] complete a claimed stage
   plan start T2 [--resume]         claim one approved build task
-  plan verify T2 [--attest TEXT]  run checks and record matching evidence
+  plan verify T2 [--attest CHECK=TEXT]  run checks and record matching evidence
   plan replan [--recover-claims]  preserve history and return unfinished work to draft
   plan doctor [--json]             runtime, adapters, hooks, trust, and gaps
   plan recover                    replay an interrupted workflow transaction
@@ -47,7 +47,7 @@ import uuid
 from pathlib import Path
 from datetime import datetime
 
-TOOL_VERSION = "3.2.0"
+TOOL_VERSION = "3.2.1"
 FORMAT_VERSION = "2.0.0"
 
 ROOT = os.path.realpath(os.environ.get("PLAN_ROOT", "."))
@@ -2302,6 +2302,52 @@ def specification(phase):
     return digest(json.dumps(contract, sort_keys=True, ensure_ascii=True).encode())
 
 
+def task_specification(phase, tid):
+    """Hash only the contract that can affect one task's verification.
+
+    Review and approval deliberately use the phase-wide ``specification``. Evidence
+    has a narrower lifetime: shared constraints, this task, and its transitive
+    dependencies can invalidate it, while an unrelated later task cannot.
+    """
+    _, body = split_frontmatter(phase['text'])
+    relevant = set(_transitive_deps(phase, tid) + [tid])
+    chunks = re.split(r'(?=^##\s)', COMMENT_RE.sub('', body), flags=re.M)
+    prose = []
+    for chunk in chunks:
+        lines = chunk.splitlines()
+        head = lines[0].strip() if lines else ''
+        if head.lower() in ('## findings', '## changelog', '## migration', '## history'):
+            continue
+        task_head = re.match(r'^##\s+(T\d+)\b', head)
+        if task_head and task_head.group(1) not in relevant:
+            continue
+        prose.append('\n'.join(line.rstrip() for line in chunk.strip().splitlines()))
+
+    def canonical(key, values):
+        if key == 'deps':
+            return sorted(values)
+        result = []
+        for value in values:
+            try:
+                result.append(os.path.relpath(scope_path(value), ROOT).replace(os.sep, '/'))
+            except ValueError:
+                result.append('invalid:' + value)
+        return sorted(result)
+
+    contract = {
+        'phase': phase['meta'].get('phase'),
+        'prose': prose,
+        'tasks': {
+            task_id: {
+                key: canonical(key, phase['tasks'][task_id].get(key, []))
+                for key in ('deps', 'files', 'reads')
+            }
+            for task_id in phase['order'] if task_id in relevant
+        },
+    }
+    return digest(json.dumps(contract, sort_keys=True, ensure_ascii=True).encode())
+
+
 def atomic_write(path, text):
     path = os.path.abspath(path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -2435,12 +2481,26 @@ def task_conflict(phase, left, right):
     return bool(aw & (bw | br) or bw & ar)
 
 
-def evidence_valid(phase, tid):
+def evidence_failure_reasons(phase, tid):
     record = (load_json(evidence_path(phase), {}) or {}).get(tid, {})
-    return (record.get('spec') == specification(phase) and
-            record.get('files') == working_fingerprint(phase, tid) and
-            record.get('checks-hash') == digest(json.dumps(verification_checks(phase, tid), sort_keys=True).encode()) and
-            record.get('success') is True)
+    if not record:
+        return ['evidence_missing']
+    reasons = []
+    spec_kind = record.get('spec-kind')
+    expected_spec = task_specification(phase, tid) if spec_kind == 'task' else specification(phase)
+    if spec_kind not in (None, 'task') or record.get('spec') != expected_spec:
+        reasons.append('spec_changed')
+    if record.get('files') != working_fingerprint(phase, tid):
+        reasons.append('inputs_changed')
+    if record.get('checks-hash') != digest(json.dumps(verification_checks(phase, tid), sort_keys=True).encode()):
+        reasons.append('checks_changed')
+    if record.get('success') is not True:
+        reasons.extend(record.get('failure-reasons') or ['verification_failed'])
+    return list(dict.fromkeys(reasons))
+
+
+def evidence_valid(phase, tid):
+    return not evidence_failure_reasons(phase, tid)
 
 
 def redact(text):
@@ -2525,20 +2585,27 @@ def validate_transition(phase, name, args):
             if any(phase['tasks'][d]['status'] != 'done' for d in task['deps']):
                 die(f'{tid} has unfinished dependencies')
             for dep in task['deps']:
-                if not evidence_valid(phase, dep):
-                    die(f'{tid} dependency evidence is missing or stale; run plan verify {dep}')
+                reasons = evidence_failure_reasons(phase, dep)
+                if reasons:
+                    die(f'{tid} dependency evidence is missing or stale '
+                        f'({", ".join(reasons)}); run plan verify {dep}')
             if name == 'start':
                 for other, candidate in phase['tasks'].items():
                     if other != tid and candidate['status'] == 'in_progress' and task_conflict(phase, tid, other):
                         die(f'{tid} conflicts with running task {other}')
             elif task['status'] not in (('in_progress', 'done') if name == 'verify' else ('in_progress',)):
                 die(f'{tid} must be in_progress before {name}')
-            if name == 'done' and not evidence_valid(phase, tid):
-                die(f'{tid} needs matching successful evidence; run plan verify {tid}')
+            if name == 'done':
+                reasons = evidence_failure_reasons(phase, tid)
+                if reasons:
+                    die(f'{tid} needs matching successful evidence '
+                        f'({", ".join(reasons)}); run plan verify {tid}')
     if name in ('begin', 'finish') and args and args[0] == 'close':
         for tid in phase['order']:
-            if not evidence_valid(phase, tid):
-                die(f'{tid} completion is historical or verification is stale; run plan verify {tid}')
+            reasons = evidence_failure_reasons(phase, tid)
+            if reasons:
+                die(f'{tid} completion is historical or verification is stale '
+                    f'({", ".join(reasons)}); run plan verify {tid}')
     if name == 'begin' and args and args[0] in ('review', 'approve'):
         if any(t['status'] == 'in_progress' for t in phase['tasks'].values()):
             die('running work must settle before review')
@@ -2546,41 +2613,156 @@ def validate_transition(phase, name, args):
             die('reviewed specification changed; run plan replan')
 
 
-def cmd_verify(phase, args):
-    if not args or args[0].upper() not in phase['tasks']:
-        die('usage: plan verify T1 [--attest "observed result"] [--timeout SECONDS]')
-    tid = args[0].upper()
-    checks = verification_checks(phase, tid)
-    attest = args[args.index('--attest') + 1] if '--attest' in args and args.index('--attest') + 1 < len(args) else ''
-    timeout = intof(args[args.index('--timeout') + 1], 300) if '--timeout' in args else 300
+def _attestation_checks(checks):
+    """Return stable human-facing labels for the non-automated checks."""
+    counts, result = {}, []
+    for check in checks:
+        if check['kind'] == 'automated':
+            continue
+        counts[check['kind']] = counts.get(check['kind'], 0) + 1
+        label = f"{check['kind']}:{counts[check['kind']]}"
+        result.append((label, check))
+    return result
+
+
+def _verify_options(args, checks):
+    timeout, supplied, index = 300, [], 1
+    while index < len(args):
+        option = args[index]
+        if option not in ('--attest', '--timeout') or index + 1 >= len(args):
+            die('usage: plan verify T1 [--attest kind:N="observed result"]... [--timeout SECONDS]')
+        value = args[index + 1]
+        if option == '--timeout':
+            if not re.fullmatch(r'\d+', value):
+                die('verification timeout must be an integer between 1 and 3600 seconds')
+            timeout = int(value)
+        else:
+            supplied.append(value)
+        index += 2
+
     if timeout < 1 or timeout > 3600:
         die('verification timeout must be between 1 and 3600 seconds')
-    spec, before = specification(phase), working_fingerprint(phase, tid)
+
+    required = _attestation_checks(checks)
+    known = {label: check for label, check in required}
+    attestations = {}
+    for value in supplied:
+        if '=' in value:
+            label, observation = value.split('=', 1)
+            label = label.strip().lower()
+        elif len(required) == 1 and len(supplied) == 1:
+            label, observation = required[0][0], value
+        else:
+            die('each attestation must name its check, for example '
+                '--attest visual:1="observed result"')
+        if label not in known:
+            die(f'unknown attestation check {label!r}; expected one of: '
+                + (', '.join(known) if known else 'none'))
+        if label in attestations:
+            die(f'duplicate attestation for {label}')
+        if not observation.strip():
+            die(f'attestation for {label} is blank')
+        attestations[label] = observation
+
+    missing = [(label, check) for label, check in required if label not in attestations]
+    if missing:
+        detail = '\n'.join(
+            f'  --attest {label}="observed result"  # {check["command"]}'
+            for label, check in missing)
+        die('missing_attestation: perform each missing check and rerun with:\n' + detail)
+    return timeout, attestations
+
+
+def _attempt_history(record):
+    """Read new history or promote one legacy latest-record into history."""
+    if isinstance(record.get('attempts'), list):
+        return list(record['attempts'])
+    if not record:
+        return []
+    legacy = {key: value for key, value in record.items()
+              if key not in ('attempts', 'latest-success')}
+    legacy.setdefault('id', 'legacy-' + digest(json.dumps(
+        legacy, sort_keys=True, ensure_ascii=True).encode())[:16])
+    legacy.setdefault('state', 'complete' if 'results' in legacy else record.get('state', 'unknown'))
+    return [legacy]
+
+
+def _evidence_record(attempt, attempts, latest_success=None):
+    record = dict(attempt)
+    record['attempts'] = attempts
+    if latest_success:
+        record['latest-success'] = latest_success
+    return record
+
+
+def cmd_verify(phase, args):
+    if not args or args[0].upper() not in phase['tasks']:
+        die('usage: plan verify T1 [--attest kind:N="observed result"]... [--timeout SECONDS]')
+    tid = args[0].upper()
+    checks = verification_checks(phase, tid)
+    timeout, attestations = _verify_options(args, checks)
+    spec, phase_spec = task_specification(phase, tid), specification(phase)
+    before = working_fingerprint(phase, tid)
     records = load_json(evidence_path(phase), {})
-    records[tid] = {'spec': spec, 'files': before, 'success': False,
-                    'state': 'running', 'at': datetime.now().isoformat()}
+    prior = records.get(tid, {})
+    attempts = _attempt_history(prior)
+    latest_success = prior.get('latest-success')
+    if not latest_success and prior.get('success') is True and attempts:
+        latest_success = attempts[-1]['id']
+    attempt = {'id': uuid.uuid4().hex, 'spec-kind': 'task', 'spec': spec,
+               'phase-spec': phase_spec, 'files': before, 'success': False,
+               'state': 'running', 'at': datetime.now().isoformat()}
+    attempts.append(attempt)
+    records[tid] = _evidence_record(attempt, attempts, latest_success)
     save_json(evidence_path(phase), records)
     results = []
+    attestation_labels = iter(_attestation_checks(checks))
     for check in checks:
         if check['kind'] == 'automated':
             result = bounded_run(check['command'], timeout=timeout)
         else:
-            result = {'exit': 0 if attest.strip() else None, 'attestation': redact(attest)[:4096],
-                      'actor': _owner_id() or 'local operator', 'truncated': len(attest) > 4096}
+            label, _ = next(attestation_labels)
+            observation = attestations[label]
+            result = {'exit': 0, 'attestation': redact(observation)[:4096],
+                      'check-id': label,
+                      'check-hash': digest(json.dumps(check, sort_keys=True).encode()),
+                      'actor': _owner_id() or 'local operator',
+                      'truncated': len(observation) > 4096}
         results.append(result)
     fresh = read_phase(phase['path'])
     after = working_fingerprint(fresh, tid)
-    success = (spec == specification(fresh) and
+    current_spec = spec == task_specification(fresh, tid)
+    current_phase = phase_spec == specification(fresh)
+    success = (current_spec and current_phase and
                all(r['exit'] == 0 and not r.get('timeout') for r in results))
+    failure_reasons = []
+    if any(r['exit'] != 0 for r in results if r.get('exit') is not None):
+        failure_reasons.append('automated_failed')
+    if any(r.get('exit') is None for r in results):
+        failure_reasons.append('missing_attestation')
+    if not current_spec or not current_phase:
+        failure_reasons.append('spec_changed')
     records = load_json(evidence_path(phase), {})
-    records[tid] = {'spec': spec, 'files': after, 'files-before': before,
-                    'checks': [{**check, 'command': redact(check['command'])} for check in checks],
-                    'checks-hash': digest(json.dumps(checks, sort_keys=True).encode()), 'results': results,
-                    'success': success, 'at': datetime.now().isoformat()}
+    attempt = {'id': attempt['id'], 'spec-kind': 'task', 'spec': spec,
+               'phase-spec': phase_spec, 'files': after, 'files-before': before,
+               'checks': [{**check, 'command': redact(check['command'])} for check in checks],
+               'checks-hash': digest(json.dumps(checks, sort_keys=True).encode()),
+               'results': results, 'success': success, 'state': 'complete',
+               'failure-reasons': failure_reasons, 'at': datetime.now().isoformat()}
+    current = records.get(tid, {})
+    attempts = _attempt_history(current)
+    for index, previous in enumerate(attempts):
+        if previous.get('id') == attempt['id']:
+            attempts[index] = attempt
+            break
+    else:
+        attempts.append(attempt)
+    latest_success = attempt['id'] if success else current.get('latest-success')
+    records[tid] = _evidence_record(attempt, attempts, latest_success)
     save_json(evidence_path(phase), records)
     print(json.dumps(records[tid], indent=2))
     if not success:
-        print('verification failed, lacked an attestation, or the specification changed; rerun before done', file=sys.stderr)
+        print('verification failed: ' + ', '.join(failure_reasons) + '; rerun before done', file=sys.stderr)
     return 0 if success else 1
 
 

@@ -179,22 +179,36 @@ Verify: visual: tab through the dialog; focus reaches Save and Cancel
 
 `plan verify T1` executes the automated commands from the repository root with
 a configurable timeout (`--timeout SECONDS`, default 300, maximum 3600).
-Perform manual/visual checks yourself, then supply `--attest "observed result"`.
-The attestation describes all declared manual/visual checks and is stored as
-operator evidence, separate from automated exit status.
+Perform each manual/visual check yourself, then identify every observation with
+its kind and one-based index, for example:
+
+```text
+plan verify T1 --attest manual:1="exported totals match" --attest visual:1="focus reached Save and Cancel"
+```
+
+A task with exactly one non-automated check also accepts the legacy unlabelled
+form. Multiple checks always require separate labelled attestations. Each receipt
+is bound to the declared check's hash and stored as operator evidence, separate
+from automated exit status. Missing receipts are reported before commands run or
+existing evidence changes.
 
 Verification records commands, results, exit status, truncation/timeout flags,
-specification fingerprint, and content fingerprints for writable/supporting
-files and dependency outputs. Output is bounded and likely credentials are
+task-scoped specification fingerprint, and content fingerprints for
+writable/supporting files and dependency outputs. Attempts are append-only, and
+the record points to the latest successful attempt without allowing a later
+failure to count as success. Output is bounded and likely credentials are
 filtered before persistence. Commands must express their own expected-result
 assertions and exit zero on success. Checks that change relevant inputs require
 a rerun. `plan done` requires current successful evidence. Close rechecks all
 evidence, including historical completed tasks.
 
-The specification fingerprint includes task definitions, dependencies, scope,
-acceptance/verification instructions, and constraint prose. Operational task
-status, owner, stage markers, findings, and changelog do not change it. Edits to
-the contract invalidate review/readiness even without a revision bump.
+The phase-wide specification fingerprint includes every task definition,
+dependency, scope, acceptance/verification instruction, and constraint. It gates
+review/readiness. Evidence uses a separate task fingerprint containing shared
+constraints plus that task and its transitive dependency contracts, so unrelated
+later-task edits do not invalidate it. Working-file fingerprints remain a
+separate check. Operational task status, owner, stage markers, findings, and
+changelog do not change either specification fingerprint.
 
 `plan replan` preserves completed work and findings, resets unfinished work to
 draft, increments the revision, and clears readiness. Closed historical phases
@@ -245,7 +259,7 @@ plan brief T1
 plan begin review|revise|approve|close [--resume]
 plan finish review|revise|approve|close [--pass|--fail]
 plan start T1 [--resume]
-plan verify T1 [--attest "observed result"] [--timeout SECONDS]
+plan verify T1 [--attest kind:N="observed result"]... [--timeout SECONDS]
 plan done T1 / block T1 "reason"
 plan findings [--open] / resolve F1 resolved|accepted|open "note"
 plan bump / reviewed / metrics

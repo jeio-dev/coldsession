@@ -53,8 +53,11 @@ blocker.
 
 Run `.claude/bin/plan verify <task-id>` to execute every declared automated check.
 For `Verify: manual: ...` or `Verify: visual: ...`, perform the exact action and
-run verification with `--attest "observed result"`. Attestations remain distinct
-from automated evidence. Rerun verification after relevant files change.
+run verification with one check-specific receipt per declaration, such as
+`--attest manual:1="observed result" --attest visual:1="observed result"`.
+Use the one-based index within each kind shown by a bare verification preflight.
+Attestations remain distinct from each other and from automated evidence. Rerun
+verification after relevant files change.
 
 On success:
 
