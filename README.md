@@ -13,25 +13,32 @@ Keep the checkout until validation and recovery are complete:
 
 ```bash
 git clone --depth 1 https://github.com/jeio-dev/coldsession.git .coldsession
-.coldsession/install.sh . --agent both --preview
-.coldsession/install.sh . --apply <preview-id>
+.coldsession/install.sh
+# Review the short summary, then copy and run the command it prints.
 ```
 
 Windows PowerShell:
 
 ```powershell
 git clone --depth 1 https://github.com/jeio-dev/coldsession.git .coldsession
-.\.coldsession\install.ps1 -Target . -Agent both -Preview
-.\.coldsession\install.ps1 -Target . -Apply <preview-id>
+.\.coldsession\install.ps1
+# Review the short summary, then copy and run the command it prints.
 ```
 
-Both installers use `bin/cs_install.py`. Their default action saves and prints
-a preview; `--apply ID` / `-Apply ID` applies exactly that saved preview. Agent
-selection (`claude`, `codex`, `both`) is captured by the preview. `--keep` /
-`-Keep` remains accepted; the checkout is always retained for recovery.
+The first command changes nothing. It prints a short preview and the exact
+second command to copy and run. That second command applies only the saved
+preview. Agent selection (`claude`, `codex`, `both`) is carried forward
+automatically. The checkout is retained for recovery.
 
-The preview reports installation changes, customized files, conflicts,
-versioned document migrations, readiness consequences, and reconciliation.
+For automation or troubleshooting, add `--json` / `-Json` to receive the full
+machine-readable preview. The explicit `--preview` / `-Preview`, `--apply ID` /
+`-Apply ID`, `--baseline` / `-Baseline`, and `--keep` / `-Keep` options remain
+available for advanced use.
+
+The beginner preview reports how many managed files will change, whether local
+customizations will be kept, and the next command. JSON mode includes file-level
+changes, conflicts, versioned document migrations, readiness consequences, and
+reconciliation.
 The installer refuses active stages, task claims, or assignment groups.
 Settle workers first. Explicit `plan replan --recover-claims` recovers abandoned
 workflow claims; elapsed time alone never establishes abandonment.
@@ -39,11 +46,12 @@ workflow claims; elapsed time alone never establishes abandonment.
 Apply rechecks the preview's inputs, stages replacements, backs up every
 affected file with its checksum, and records an upgrade journal. It never
 runs project verification commands or changes application implementation.
-Unmodified managed files update automatically. Customized commands are preserved
-and reported; runtime/template conflicts block application. Unrelated settings,
-permissions, models, and hooks are preserved. Unknown legacy files are treated
-as customized. `--baseline <known-release-checkout>` / `-Baseline <path>` enables
-comparison against a known release when ownership records are absent.
+Unmodified managed files update automatically. Windows line-ending conversion
+is repaired automatically and is not treated as a customization. Customized
+commands are preserved and reported; runtime/template conflicts block
+application. Unrelated settings, permissions, models, and hooks are preserved.
+Unknown legacy files are treated as customized; advanced JSON output explains
+when a known-release baseline is needed.
 
 On failure, the installer restores affected files. An incomplete journal blocks
 workflow mutations. Run `install.sh <project> --recover` or

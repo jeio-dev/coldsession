@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared, stdlib-only installer. Preview -> explicit apply -> recoverable journal.
+"""Shared, stdlib-only installer. Friendly preview -> explicit apply -> recovery.
 
 No project command is executed during installation or migration.
 """
@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import stat
 import sys
@@ -34,6 +35,23 @@ def runtime(source=SOURCE):
 
 def sha(data):
     return hashlib.sha256(data).hexdigest() if data is not None else None
+
+
+def canonical_text(data):
+    """Normalize text line endings for ownership comparisons, preserving bytes otherwise."""
+    if data is None:
+        return None
+    return data.replace(b'\r\n', b'\n').replace(b'\r', b'\n')
+
+
+def matches_hash(data, expected):
+    """Accept a recorded raw hash or its line-ending-neutral equivalent."""
+    return expected in (sha(data), sha(canonical_text(data)))
+
+
+def same_text(left, right):
+    return left == right or (left is not None and right is not None and
+                             canonical_text(left) == canonical_text(right))
 
 
 def read(path):
@@ -165,7 +183,38 @@ def codex_config(original, enabled):
 def codex_hook_hash(data):
     text = (data or b'').decode('utf-8-sig')
     match = re.search(r'# BEGIN coldsession managed hooks.*?# END coldsession managed hooks', text, re.S)
-    return sha((match.group(0) if match else '').encode())
+    return sha(canonical_text((match.group(0) if match else '').encode()))
+
+
+def installer_command(args, identifier):
+    """One copy/paste command that applies a saved preview."""
+    script = SOURCE / ('install.ps1' if args.windows else 'install.sh')
+    try:
+        shown = Path(os.path.relpath(script, Path.cwd()))
+    except ValueError:
+        shown = script
+    if args.windows:
+        script_token = str(shown).replace('/', '\\')
+        if not shown.is_absolute() and not script_token.startswith('..'):
+            script_token = '.\\' + script_token
+        target_token = str(args.target).replace('/', '\\')
+        def quote(value):
+            return "'" + value.replace("'", "''") + "'" if re.search(r'\s', value) else value
+        prefix = '& ' if re.search(r'\s', script_token) else ''
+        return (f'{prefix}{quote(script_token)} -Target {quote(target_token)} '
+                f'-Agent {args.agent} -Apply {identifier}')
+    script_token = shown.as_posix()
+    if not shown.is_absolute() and not script_token.startswith('..'):
+        script_token = './' + script_token
+    return (f'{shlex.quote(script_token)} {shlex.quote(str(args.target))} '
+            f'--agent {args.agent} --apply {identifier}')
+
+
+def emit(args, payload, lines):
+    if getattr(args, 'json', False):
+        print(json.dumps(payload, indent=2))
+    else:
+        print('\n'.join(lines))
 
 
 def inspect_workflow(target, rt):
@@ -259,7 +308,9 @@ def preview(args, target, rt):
         if current == replacement:
             continue
         known = manifest['files'].get(relative)
-        if current is not None and sha(current) != known and current != baseline.get(relative):
+        if (current is not None and not matches_hash(current, known)
+                and not same_text(current, replacement)
+                and not same_text(current, baseline.get(relative))):
             custom.append(relative)
             # Runtime and template conflicts require resolution before installing a
             # mixed contract. User commands stay preserved and are clearly reported.
@@ -341,15 +392,40 @@ def preview(args, target, rt):
               'inputs': snapshot(target, watched), 'documents': sorted(documents),
               'changes': {p: encode(data) for p, data in changes.items()},
               'desired': {p: sha(data) for p, data in wanted.items()},
+              'owned': {p: sha(canonical_text(data)) for p, data in wanted.items()},
               'claude_hooks': sha(json.dumps({event: [entry for entry in entries if owned_hook(entry)]
                                               for event, entries in hooks.items() if any(owned_hook(e) for e in entries)}, sort_keys=True).encode()),
               'codex_hooks': codex_hook_hash(updated_config),
               'customizations': custom, 'conflicts': conflicts, 'migrations': migrations}
     write_json(state / 'previews' / (identifier + '.json'), record)
-    print(json.dumps({'preview': identifier, 'release': rt.TOOL_VERSION,
-                      'changes': sorted(changes), 'preserved_customizations': custom,
-                      'conflicts': conflicts, 'migrations': migrations,
-                      'next': f'installer --apply {identifier}' if not conflicts else 'resolve conflicts or supply a known --baseline release, then preview again'}, indent=2))
+    command = installer_command(args, identifier)
+    result = {'preview': identifier, 'release': rt.TOOL_VERSION,
+              'changes': sorted(changes), 'preserved_customizations': custom,
+              'conflicts': conflicts, 'migrations': migrations,
+              'next': (command if changes or migrations else 'No action needed.') if not conflicts else
+              'Keep or revert the listed local edits, then run the preview again.'}
+    if conflicts:
+        shown_conflicts = sorted({item.split(': ', 1)[0] for item in conflicts})
+        lines = [f'Coldsession {rt.TOOL_VERSION} could not prepare a safe update.',
+                 'Nothing was changed.', '', 'These Coldsession files contain local edits:']
+        lines += [f'  - {item}' for item in shown_conflicts]
+        detail_flag = '-Json' if args.windows else '--json'
+        lines += ['', 'Keep those edits or restore the original files, then run this installer again.',
+                  f'Use {detail_flag} only if you need technical details.']
+    elif not changes and not migrations:
+        lines = [f'Coldsession {rt.TOOL_VERSION} is already up to date.',
+                 'Nothing needs to be changed.']
+        if custom:
+            lines.append(f'{len(custom)} customized command file(s) remains untouched.')
+    else:
+        lines = [f'Coldsession {rt.TOOL_VERSION} is ready to install.',
+                 f'{len(changes)} Coldsession file(s) will be updated. Your application files will not be changed.']
+        if custom:
+            lines.append(f'{len(custom)} customized command file(s) will be kept.')
+        if migrations:
+            lines.append(f'{len(migrations)} workflow document(s) will be migrated with backups.')
+        lines += ['Nothing has changed yet.', '', 'Next, copy and run:', f'  {command}']
+    emit(args, result, lines)
 
 
 def rollback(target, journal):
@@ -379,7 +455,9 @@ def apply(args, target, rt):
     state = target / '.coldsession-state'
     existing = get_json(state / 'upgrade.json', {})
     if existing.get('status') == 'complete' and existing.get('id') == args.apply:
-        print('installation upgrade already succeeded; start a fresh session and run plan doctor')
+        emit(args, {'installation': 'already succeeded'},
+             ['Coldsession is already installed from this preview.',
+              'Start a fresh agent session and ask it to run plan doctor.'])
         return
     if existing.get('status') not in (None, 'complete', 'rolled-back'):
         raise ValueError('upgrade incomplete; run installer --recover')
@@ -396,8 +474,9 @@ def apply(args, target, rt):
     backup = '.coldsession-state/backups/' + plan['id']
     changes = {p: decode(data) for p, data in plan['changes'].items()}
     # Ownership records track only actual bundled bytes, never user customizations.
+    ownership = plan.get('owned', plan['desired'])
     manifest = {'release': plan['release'], 'claude_hooks': plan['claude_hooks'], 'codex_hooks': plan['codex_hooks'],
-                'files': {p: h for p, h in plan['desired'].items()
+                'files': {p: ownership[p] for p, h in plan['desired'].items()
                 if sha(changes.get(p, read(safe(target, p)))) == h}}
     changes['.coldsession-state/installed.json'] = (json.dumps(manifest, indent=2) + '\n').encode()
     originals = {}
@@ -451,10 +530,16 @@ def apply(args, target, rt):
         except (OSError, ValueError) as exc:
             print(f'rollback incomplete: {exc}; run installer --recover; backups: {backup}', file=sys.stderr)
         raise
-    print(json.dumps({'installation': 'succeeded', 'release': plan['release'], 'backup': backup,
-                      'preserved_customizations': plan['customizations'], 'migrations': plan['migrations'],
-                      'active_phase_ready': False if plan['migrations'] else 'run plan doctor to determine',
-                      'next': 'Start a fresh agent session, run plan doctor, resolve migration findings through review and human approval, then plan verify historical completed tasks.'}, indent=2))
+    result = {'installation': 'succeeded', 'release': plan['release'], 'backup': backup,
+              'preserved_customizations': plan['customizations'], 'migrations': plan['migrations'],
+              'active_phase_ready': False if plan['migrations'] else 'run plan doctor to determine',
+              'next': 'Start a fresh agent session and run plan doctor.'}
+    lines = [f'Coldsession {plan["release"]} installed successfully.',
+             'Your previous managed files were backed up.', '',
+             'Next: start a fresh agent session and ask it to run plan doctor.']
+    if plan['migrations']:
+        lines.append('The agent will guide any required review and verification after migration.')
+    emit(args, result, lines)
 
 
 def main():
@@ -466,6 +551,7 @@ def main():
     group.add_argument('--apply')
     group.add_argument('--recover', action='store_true')
     parser.add_argument('--baseline', help='known release checkout for legacy ownership comparison')
+    parser.add_argument('--json', action='store_true', help='print machine-readable details')
     parser.add_argument('--windows', action='store_true', default=os.name == 'nt')
     parser.add_argument('--keep', action='store_true', help='accepted for compatibility; source checkout is always retained')
     args = parser.parse_args()
@@ -479,7 +565,7 @@ def main():
     if args.recover:
         journal = get_json(target / '.coldsession-state' / 'upgrade.json', {})
         if journal.get('status') in (None, 'complete', 'rolled-back'):
-            print('no incomplete installation to recover')
+            emit(args, {'recovery': 'not needed'}, ['No incomplete installation was found.'])
             return
         # Recovery is also available from the backed-up installed helper.
         rt = runtime()
@@ -492,7 +578,9 @@ def main():
     try:
         if args.recover:
             rollback(target, journal)
-            print('installation restored; backups retained; create a fresh preview')
+            emit(args, {'recovery': 'restored'},
+                 ['The previous installation attempt was restored.',
+                  'Backups were kept. Run the installer again to create a fresh preview.'])
         elif args.apply:
             apply(args, target, rt)
         else:

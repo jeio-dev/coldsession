@@ -4,6 +4,14 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
+## [v3.2.0]
+
+- Make the default installer preview beginner-facing and print the exact apply
+  command to copy. Keep full preview and result details behind `--json` / `-Json`.
+- Treat CRLF/LF-only changes as the same managed content for ownership checks,
+  preventing Windows line-ending conversion from creating false runtime and
+  Codex hook conflicts while still restoring shipped line endings on apply.
+
 ## [v3.1.1]
 
 - Stop routing shell tools through the structured write-scope guard. Build
