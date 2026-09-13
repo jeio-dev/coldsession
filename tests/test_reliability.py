@@ -307,6 +307,18 @@ class ReliabilityTest(unittest.TestCase):
         self.run_plan('verify', 'T1')
         self.run_plan('done', 'T1')
 
+    def test_verify_records_generated_files_after_the_first_successful_run(self):
+        command = "python -c \"from pathlib import Path; Path('src/a.py').write_text('generated')\""
+        self.edit('`python -V`', f'`{command}`')
+        self.approve()
+        self.run_plan('start', 'T1')
+        result = self.run_plan('verify', 'T1')
+        record = json.loads(result.stdout)
+        self.assertTrue(record['success'])
+        self.assertNotEqual(record['files-before'], record['files'])
+        self.assertEqual(record['files'], self.rt.working_fingerprint(self.p(), 'T1'))
+        self.run_plan('done', 'T1')
+
     def test_failed_verify_cannot_complete(self):
         self.edit('`python -V`', '`python -c "raise SystemExit(3)"`')
         self.approve()
@@ -423,8 +435,48 @@ class ReliabilityTest(unittest.TestCase):
         self.approve()
         self.run_plan('start', 'T1')
         self.run_plan('guard', 'write', payload={'name': 'apply_patch', 'input': '*** Begin Patch\n*** Update File: src/b.py\n+x\n*** End Patch'}, ok=False)
-        self.run_plan('guard', 'write', payload={'tool_name': 'exec_command', 'arguments': {'cmd': 'python arbitrary.py'}}, ok=False)
+        for tool, data in (
+                ('Bash', {'command': '.claude/bin/plan brief T1'}),
+                ('PowerShell', {'command': r'.claude\bin\plan.cmd verify T1'}),
+                ('exec_command', {'cmd': 'python arbitrary.py'}),
+                ('shell_command', {'command': 'git status --short'})):
+            self.run_plan('guard', 'write', payload={'tool_name': tool, 'tool_input': data})
         self.run_plan('guard', 'read', '.env', ok=False)
+
+    def test_grep_is_bounded_but_filename_discovery_is_not_a_content_read(self):
+        self.edit('files: [src/a.py]}', 'files: [src/a.py], reads: [src/b.py]}')
+        self.approve()
+        self.run_plan('start', 'T1')
+        self.run_plan('guard', 'read', payload={
+            'tool_name': 'Grep', 'tool_input': {'pattern': 'b', 'path': 'src/b.py'}})
+        denied = self.run_plan('guard', 'read', payload={
+            'tool_name': 'Grep', 'tool_input': {'pattern': 'anything'}}, ok=False)
+        self.assertIn('E31', denied.stderr)
+        self.run_plan('guard', 'read', payload={
+            'tool_name': 'Glob', 'tool_input': {'pattern': '**/*.py'}})
+
+    def test_only_the_harness_scratchpad_may_escape_repository_write_scope(self):
+        self.approve()
+        self.run_plan('start', 'T1')
+        scratch = Path(tempfile.gettempdir()) / 'claude' / 'session-id' / 'scratchpad' / 'finish.sh'
+        self.run_plan('guard', 'write', payload={
+            'tool_name': 'Write', 'tool_input': {'file_path': str(scratch), 'content': 'echo done'}})
+        outside = Path(tempfile.gettempdir()) / 'not-claude' / 'scratchpad' / 'finish.sh'
+        denied = self.run_plan('guard', 'write', payload={
+            'tool_name': 'Write', 'tool_input': {'file_path': str(outside), 'content': 'echo done'}}, ok=False)
+        self.assertIn('E26', denied.stderr)
+
+    def test_hook_matchers_gate_content_tools_without_intercepting_shells(self):
+        installer = module('installer_hook_test', ROOT / 'bin/cs_install.py')
+        configured = installer.configured_hooks(windows=True)
+        pre = configured['PreToolUse']
+        self.assertEqual([entry['matcher'] for entry in pre],
+                         ['Read|Grep', 'Edit|Write|MultiEdit|apply_patch'])
+        codex = installer.codex_config(b'', True).decode()
+        self.assertIn('matcher = "read_file|Read|Grep"', codex)
+        self.assertIn('matcher = "apply_patch|write_file|Edit|Write"', codex)
+        for shell in ('Bash', 'PowerShell', 'exec_command', 'shell_command'):
+            self.assertNotIn(shell, '\n'.join(entry['matcher'] for entry in pre))
 
     def test_link_escape_is_rejected(self):
         with tempfile.TemporaryDirectory() as external:

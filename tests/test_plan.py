@@ -1343,6 +1343,13 @@ class WorkflowContractTest(unittest.TestCase):
         self.assertIn("## Reading", build_cmd)
         self.assertIn("stop and", build_cmd)
 
+    def test_build_contract_preserves_handoff_types_and_handles_scope_gaps(self):
+        build_cmd = (ROOT / "commands" / "cs-build.md").read_text(encoding="utf-8")
+        groundwork = (ROOT / "commands" / "cs-groundwork.md").read_text(encoding="utf-8")
+        self.assertIn('empty lists for list fields', build_cmd)
+        self.assertIn('.claude/bin/plan block <task-id>', build_cmd)
+        self.assertIn('`docs/plans/*.json`', groundwork)
+
     def test_policy_skills_are_host_owned_and_surface_neutral(self):
         """The policy layer is a convention, not shipped content, so the only
         thing holding it together is prose in two command files. Those files

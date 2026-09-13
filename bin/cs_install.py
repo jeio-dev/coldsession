@@ -97,7 +97,7 @@ def configured_hooks(windows):
             entry['matcher'] = matcher
         return entry
     return {'UserPromptSubmit': [hook('stage')],
-            'PreToolUse': [hook('read', 'Read'), hook('write', 'Edit|Write|MultiEdit|apply_patch|Bash|PowerShell|exec_command|shell_command')],
+            'PreToolUse': [hook('read', 'Read|Grep'), hook('write', 'Edit|Write|MultiEdit|apply_patch')],
             'PostToolUse': [hook('lint', 'Edit|Write|MultiEdit|apply_patch')]}
 
 
@@ -149,8 +149,8 @@ def codex_config(original, enabled):
     if enabled:
         rows = [start]
         for event, kind, matcher in (('UserPromptSubmit', 'stage', None),
-                                      ('PreToolUse', 'read', 'read_file|Read'),
-                                      ('PreToolUse', 'write', 'apply_patch|exec_command|shell_command|write_file|Edit|Write'),
+                                      ('PreToolUse', 'read', 'read_file|Read|Grep'),
+                                      ('PreToolUse', 'write', 'apply_patch|write_file|Edit|Write'),
                                       ('PostToolUse', 'lint', 'apply_patch|write_file|Edit|Write')):
             rows += [f'[[hooks.{event}]]']
             if matcher:
