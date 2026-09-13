@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -600,8 +601,11 @@ class UpgradeTest(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.inst = module('installer_test', ROOT / 'bin/cs_install.py')
 
-    def run_install(self, *args, ok=True):
-        result = subprocess.run([sys.executable, str(ROOT / 'bin/cs_install.py'), str(self.root), *args],
+    def run_install(self, *args, ok=True, json_output=True):
+        command = [sys.executable, str(ROOT / 'bin/cs_install.py'), str(self.root), *args]
+        if json_output:
+            command.append('--json')
+        result = subprocess.run(command,
                                 env=clean_env(), text=True, capture_output=True)
         self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
         return result
@@ -617,6 +621,44 @@ class UpgradeTest(unittest.TestCase):
         self.run_install('--apply', preview['preview'])
         self.run_install('--apply', preview['preview'])
         self.assertTrue((self.root / '.claude/bin/plan').exists())
+
+    def test_default_preview_is_beginner_facing_and_prints_the_exact_apply_command(self):
+        result = self.run_install(json_output=False)
+        self.assertIn('is ready to install', result.stdout)
+        self.assertIn('Nothing has changed yet.', result.stdout)
+        self.assertIn('Next, copy and run:', result.stdout)
+        match = re.search(r'(?i)(?:-Apply|--apply) ([a-f0-9]{32})', result.stdout)
+        self.assertIsNotNone(match)
+        self.assertNotIn('"conflicts":', result.stdout)
+        applied = self.run_install('--apply', match.group(1), json_output=False)
+        self.assertIn('installed successfully', applied.stdout)
+        self.assertIn('start a fresh agent session', applied.stdout)
+
+    def test_line_ending_conversion_is_repaired_without_a_false_conflict(self):
+        self.install()
+        converted = [
+            '.agents/coldsession/bin/plan', '.claude/bin/plan',
+            '.claude/hooks/cs-guard-lint.sh', '.claude/hooks/cs-guard-read.sh',
+            '.claude/hooks/cs-guard-stage.sh', '.claude/hooks/cs-guard-write.sh',
+            '.codex/config.toml',
+        ]
+        for relative in converted:
+            path = self.root / relative
+            path.write_bytes(path.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
+        preview = json.loads(self.run_install().stdout)
+        self.assertEqual(preview['conflicts'], [])
+        self.assertNotIn('.codex/config.toml: managed hooks were modified', preview['conflicts'])
+        for relative in converted:
+            self.assertIn(relative, preview['changes'])
+        self.run_install('--apply', preview['preview'])
+        self.assertNotIn(b'\r', (self.root / '.claude/bin/plan').read_bytes())
+
+    def test_current_install_reports_that_nothing_needs_to_be_done(self):
+        self.install()
+        result = self.run_install(json_output=False)
+        self.assertIn('is already up to date', result.stdout)
+        self.assertIn('Nothing needs to be changed.', result.stdout)
+        self.assertNotIn('Next, copy and run:', result.stdout)
 
     def test_modified_preflight_inputs_refuse_apply(self):
         preview = json.loads(self.run_install().stdout)

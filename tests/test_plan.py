@@ -1492,11 +1492,11 @@ class InstalledHookTest(unittest.TestCase):
     def install(self, flavour, dest, agent="both"):
         if flavour == "sh":
             argv = [BASH, str(ROOT / "install.sh").replace("\\", "/"),
-                    str(dest).replace("\\", "/"), "--agent", agent]
+                    str(dest).replace("\\", "/"), "--agent", agent, "--json"]
         else:
             argv = [POWERSHELL, "-NoProfile", "-NonInteractive", "-File",
                     str(ROOT / "install.ps1"), "-Target", str(dest),
-                    "-Agent", agent]
+                    "-Agent", agent, "-Json"]
         result = subprocess.run(argv, text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0,
                          f"{flavour} installer failed:\n{result.stdout}{result.stderr}")

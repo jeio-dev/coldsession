@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Both installers use the same preview, ownership, migration, and rollback engine.
+# Both installers use the same friendly preview, ownership, migration, and rollback engine.
 set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON=""

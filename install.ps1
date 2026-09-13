@@ -1,4 +1,4 @@
-# Shared recoverable upgrade flow. Default action is a saved preview.
+# Shared recoverable upgrade flow. Default action is a beginner-facing saved preview.
 param(
     [Parameter(Position = 0)][string]$Target = ".",
     [ValidateSet("claude", "codex", "both")][string]$Agent = "both",
@@ -6,6 +6,7 @@ param(
     [string]$Apply,
     [switch]$Recover,
     [string]$Baseline,
+    [switch]$Json,
     [switch]$Keep
 )
 $ErrorActionPreference = "Stop"
@@ -25,6 +26,7 @@ if ($Preview) { $installArgs += "--preview" }
 if ($Apply) { $installArgs += @("--apply", $Apply) }
 if ($Recover) { $installArgs += "--recover" }
 if ($Baseline) { $installArgs += @("--baseline", $Baseline) }
+if ($Json) { $installArgs += "--json" }
 if ($Keep) { $installArgs += "--keep" }
 & $pythonCommand @installArgs
 exit $LASTEXITCODE

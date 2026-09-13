@@ -42,6 +42,10 @@ criteria, dependencies, constraints, or verification require renewed review.
 The release version, phase format, templates, changelog, and installation pins
 are tested separately. Existing project-local installations change only through
 explicit preview/apply. Keep customizations and report conflicts.
+Managed-text ownership comparisons treat CRLF and LF as equivalent; saved
+preview inputs, staged replacements, backups, and rollback checks remain
+byte-exact. Human output is concise by default; automation uses `--json` or
+`-Json`.
 
 Prompt wording needs behavioral validation. Use the opt-in, budgeted runners in
 `evals/README.md`; include failed runs and unknown measurements. Deterministic
