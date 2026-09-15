@@ -30,6 +30,10 @@ and concrete recommended fix. Check especially:
 - Unresolved open questions: Critical.
 - Verify lines that are neither runnable commands nor named visual checks: High.
 - Incomplete `files` lists against the real codebase: High.
+- Missing supporting `reads` or likely writable fix paths found by tracing a
+  task's deliverables and `Verify:` commands through adjacent contracts,
+  fixtures, migrations, and test harness/configuration: High when the omission
+  would block Build. Name exact paths and the task that needs them.
 - False or missing dependency edges.
 - Phase ordering in PLAN.md and missing runnable outcomes.
 - Claims that a gate passed: distinguish a local result from an actual CI run.

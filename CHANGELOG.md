@@ -4,6 +4,14 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
+## [v3.2.2]
+
+- Inventory each bounded task's deliverables and verification dependencies
+  before Plan handoff; Review checks concrete missing supporting reads and
+  likely writable fix paths before Build.
+- Keep the planning instruction in the shared command installed for Claude Code
+  and Codex, and remove test references to a retired planning guide.
+
 ## [v3.2.1]
 
 - Bind every manual and visual attestation to its declared check, require

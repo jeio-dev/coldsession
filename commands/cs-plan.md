@@ -92,6 +92,12 @@ The task graph uses exactly:
   context. Include writable
   tests, configuration, generated definitions, and new files. Missing paths
   stall Build; broad paths waste context.
+- Before handing off each bounded task, trace its deliverables and each `Verify:`
+  command through the adjacent contracts, fixtures and normalizers, migrations,
+  test harness and configuration, and files a likely verification fix may edit.
+  Put necessary supporting paths in `reads` and every path the task may need to
+  change in `files`. Use exact paths found by targeted search; keep both lists
+  minimal rather than adding unrelated or speculative files.
 - Keep concurrently runnable tasks from sharing files where practical.
 
 Size every task at the lowest rung that holds, and stop there:
