@@ -1283,14 +1283,11 @@ class WorkflowContractTest(unittest.TestCase):
         review = (ROOT / "commands" / "cs-review.md").read_text(encoding="utf-8")
         adapter = (ROOT / "skills" / "cs-review" / "SKILL.md").read_text(encoding="utf-8")
         alias = (ROOT / "skills" / "cs-recheck" / "SKILL.md").read_text(encoding="utf-8")
-        guide = (ROOT / "docs" / "universal-planning-workflow.html").read_text(encoding="utf-8")
-
         self.assertIn("recommendation is not `/cs-revise`", review)
         self.assertIn("follow it\ncompletely with no arguments", review)
         self.assertIn("requires Review in a new session", review)
         self.assertIn("automatic Revise starts without forwarding that flag", adapter)
         self.assertIn("without forwarding that flag", alias)
-        self.assertIn("plan finish revise --accept-only", guide)
 
     def test_objective_template_is_planning_ready(self):
         text = (ROOT / "templates" / "OBJECTIVE.md").read_text(encoding="utf-8")
@@ -1385,11 +1382,8 @@ class WorkflowContractTest(unittest.TestCase):
             self.assertNotIn(
                 "policy-", (ROOT / installer).read_text(encoding="utf-8"), installer)
 
-    def test_the_release_version_matches_the_changelog_and_every_install_pin(self):
-        """Release metadata and any explicit installation pins must agree.
-
-        README intentionally follows the default branch without a release pin.
-        """
+    def test_the_release_version_matches_the_changelog_and_default_branch_install(self):
+        """Release metadata agrees while the README installs from main."""
         source = PLAN.read_text(encoding="utf-8")
         version = re.search(r'^TOOL_VERSION = "([^"]+)"', source, re.M).group(1)
 
@@ -1403,22 +1397,9 @@ class WorkflowContractTest(unittest.TestCase):
         self.assertEqual(headings[0], f"v{version}",
                          "the newest CHANGELOG entry is not this release")
 
-        pinned = {
-            "docs/universal-planning-workflow.html":
-                (ROOT / "docs" / "universal-planning-workflow.html")
-                .read_text(encoding="utf-8"),
-        }
-        for name, text in pinned.items():
-            pins = set(re.findall(r"--branch (v[0-9][0-9A-Za-z.-]*)", text))
-            self.assertTrue(pins, f"{name} documents no install pin")
-            self.assertEqual(pins, {f"v{version}"},
-                             f"{name} pins a release that is not this one")
-
-        guide = pinned["docs/universal-planning-workflow.html"]
-        self.assertIn("--preview", guide)
-        self.assertIn("--apply &lt;preview-id&gt;", guide)
-        self.assertIn("-Preview", guide)
-        self.assertIn("-Apply &lt;preview-id&gt;", guide)
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("git clone --depth 1 https://github.com/jeio-dev/coldsession.git", readme)
+        self.assertNotRegex(readme, r"--branch v[0-9]")
 
     def test_the_phase_format_version_matches_the_shipped_template(self):
         """workflow-rev is the other version, and it moves on its own
@@ -1726,6 +1707,14 @@ class InstalledHookTest(unittest.TestCase):
                          f"{flavour}: Claude and Codex command sets diverge on install")
         self.assertEqual(claude_commands, skill_dirs,
                          f"{flavour}: installed commands and installed skills diverge")
+        for name in claude_commands:
+            claude = (dest / ".claude" / "commands" / f"{name}.md").read_text(encoding="utf-8")
+            codex = (dest / ".agents" / "coldsession" / "commands" / f"{name}.md").read_text(encoding="utf-8")
+            codex = codex.replace(".agents/coldsession/bin/plan", ".claude/bin/plan")
+            self.assertEqual(claude, codex,
+                             f"{flavour}: {name} instructions diverge between Claude and Codex")
+        plan_skill = (dest / ".agents" / "skills" / "cs-plan" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Read `.agents/coldsession/commands/cs-plan.md` completely", plan_skill)
 
     @unittest.skipUnless(BASH and SH, "needs a POSIX shell")
     def test_sh_installed_surfaces_stay_in_parity(self):
