@@ -4,7 +4,11 @@ argument-hint: [task-id] [--resume]
 ---
 
 Parse `$ARGUMENTS` as one task ID plus optional `--resume`. If the ID is blank,
-run `.claude/bin/plan recommend` and stop.
+run `.claude/bin/plan recommend` and stop. A task ID names a task in the
+approved phase, such as `T1`. An issue number or URL is never a task ID: stop
+and point to `/cs-plan --issue <number>`. The approved phase file is Build's
+only contract. A `## Source` section is provenance; do not fetch or read the
+issue it cites.
 
 If invoked with a supervised assignment receipt, use its neutral brief and
 implement only assigned source files. Return task/spec/assignment IDs and the

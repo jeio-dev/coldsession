@@ -1,6 +1,6 @@
 ---
 name: cs-plan
-description: Create the initial phase from OBJECTIVE.md or the next phase from PLAN.md without rereading the objective. Use when the user invokes $cs-plan, resumes with --resume, or asks coldsession to plan one phase without implementing it.
+description: Create the initial phase from OBJECTIVE.md or the next phase from PLAN.md without rereading the objective, optionally from one GitHub issue with --issue. Use when the user invokes $cs-plan, resumes with --resume, plans an issue with --issue <number>, or asks coldsession to plan one phase without implementing it.
 ---
 
 # Coldsession Plan
@@ -10,11 +10,9 @@ Resolve it from the repository root and perform the workflow with that root
 as the working directory.
 
 Treat text and flags accompanying the skill invocation as `$ARGUMENTS`.
-Preserve `--resume` exactly and follow the command's on-disk source selection.
-
-If the command asks for a search subagent but subagents are unavailable or
-not authorized, use a bounded read-only search and retain only the required
-`file:line` result in working context.
+Preserve `--resume` and `--issue <number>` exactly and follow the command's
+on-disk source selection. An issue is planned only through this skill; never
+pass an issue number to `$cs-build`.
 
 Claude model names and mode changes in supporting documentation are not
 instructions to change Codex's model or collaboration mode. Preserve the

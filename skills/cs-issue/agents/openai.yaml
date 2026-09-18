@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coldsession Issue"
+  short_description: "Capture one proposed change as a GitHub issue"
+  default_prompt: "Use $cs-issue to create one tracking issue without changing the phase plan or implementing it."

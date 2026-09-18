@@ -1154,7 +1154,7 @@ class PlanRuntimeTest(unittest.TestCase):
         """
         expected = {
             "cs-define": 0, "cs-groundwork": 0, "cs-plan": 0, "cs-build": 0,
-            "cs-revise": 0, "cs-status": 0,
+            "cs-revise": 0, "cs-status": 0, "cs-issue": 0,
             # Allowed on purpose, and specifically in the session that just
             # authored the plan: cs-cold's whole job is to spawn the cold
             # session the gate would otherwise only refuse to let you have.

@@ -91,6 +91,30 @@ retention rules; they can contain copies of local configuration.
 
 `cs-define -> cs-groundwork? -> cs-plan -> cs-review -> cs-revise? -> cs-approve -> cs-build -> cs-close`
 
+`cs-issue <change request>` is an optional backlog command outside that phase
+sequence. It creates one GitHub issue for a coherent change, or prints a draft
+with `--draft`. Issues record the goal, observed state, expected behavior,
+acceptance criteria, and references. They do not create phase tasks or grant
+approval. Incorporate an issue through new phase planning or explicit replan
+when ready.
+
+`cs-plan --issue <number>` plans one open issue from the current GitHub
+repository into exactly one normal phase. It first runs the read-only
+`plan issue <number>`, which refuses before any workflow document changes when
+the current phase is not closed, `active: plan` lacks `--resume`, `gh` is
+missing or unauthenticated, retrieval fails, the issue is not open, or a phase
+already records the issue. Plan treats
+the issue body as proposed requirements: numbered steps are candidates, durable
+constraints win, and conflicts become the normal planning questions. The phase
+copies the agreed goal and acceptance criteria, defines its own scope,
+dependencies, and verification, and records the issue URL, update time, and
+body SHA-256 in `## Source`. That section is provenance inside the reviewed
+specification, so the phase stands alone without GitHub and later issue edits
+change nothing until an explicit replan, review, and human approval. It ends at
+the normal `cs-review` handoff; it never approves, builds, closes the phase, or
+closes the issue. `cs-build` still takes only task IDs and refuses an issue
+number.
+
 Claude invokes `/cs-build T1`; Codex invokes `$cs-build T1`. Existing command
 names are retained, including the deprecated explicit `cs-recheck` alias.
 Commands provide instructions; they do not select the active model or guarantee
@@ -106,9 +130,22 @@ resume.
 `cs-define` records the product objective. `cs-plan` creates one bounded phase.
 Carry durable product constraints into PLAN.md and each phase's Constraints
 section so later phases retain requirements without rereading the objective.
-Before implementing, understand affected behavior and existing capabilities.
-Prefer reuse, configuration, standard-library/native solutions, and an extension
-of existing code. Add an abstraction only for demonstrated needs.
+
+Commands that need decisions from you ask in numbered rounds. A round is every
+question whose prerequisites are already settled, asked together, each with a
+recommended answer so the round can be accepted whole. Facts the repository can
+answer are searched, not asked. `cs-define` asks until nothing is left open;
+`cs-plan` asks one round, at most two, and a third means the phase should be
+split; `cs-issue` asks one round only when a question blocks publishing.
+
+Work is sized at the lowest rung that holds: no task because an existing
+capability covers it, a configuration change, an extension of existing code, a
+new file, then a new abstraction. `cs-plan` sizes tasks this way because a task
+a rung too high widens `files`, the scope a Build session is bounded to.
+`cs-build` implements the lower rung when the plan overshot and notes it in the
+phase log. `cs-review` names the rung an over-built task should have stopped at.
+Before implementing, understand affected behavior and existing capabilities,
+and prefer standard-library and native solutions.
 
 Preserve correctness, security, data integrity, and accessibility, including
 necessary error handling. Necessary work beyond the approved specification or
@@ -267,6 +304,7 @@ plan replan [--recover-claims]
 plan doctor [--json]
 plan recover
 plan guard read|write|lint|stage
+plan issue NUMBER [--resume]
 ```
 
 Mutations hold one repository lock, including verification and shared-resource

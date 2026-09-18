@@ -34,6 +34,9 @@ and concrete recommended fix. Check especially:
   task's deliverables and `Verify:` commands through adjacent contracts,
   fixtures, migrations, and test harness/configuration: High when the omission
   would block Build. Name exact paths and the task that needs them.
+- A phase with a `## Source` issue: review the phase as written, without
+  GitHub. A requirement, criterion, or scope that exists only by reference to
+  the issue is High, because Build never reads the issue.
 - False or missing dependency edges.
 - Phase ordering in PLAN.md and missing runnable outcomes.
 - Claims that a gate passed: distinguish a local result from an actual CI run.
