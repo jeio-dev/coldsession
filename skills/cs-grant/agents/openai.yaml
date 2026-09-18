@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coldsession Grant"
+  short_description: "Human approval of a ready phase from chat"
+  default_prompt: "$cs-grant"

@@ -186,6 +186,16 @@ human edits the phase to `status: approved`. Teammate plan approval does not
 replace this step. Hooks reject supported agent edits introducing approval;
 native sandbox, permissions, and hook trust remain authoritative.
 
+When you cannot edit the file yourself, for example from a phone or a remote
+session, type `/cs-grant` (Codex: `$cs-grant`) as a prompt instead. The
+UserPromptSubmit hook, not the agent, sets `status: approved`, and only when
+the current revision carries the `/cs-approve` ready marker, its specification
+is unchanged since, lint is clean, and no finding is open. Otherwise the hook
+blocks the prompt with the reason (E34). A grant runs only from the hook's
+prompt event, never from `plan guard` arguments. It trusts whoever can submit
+a prompt to the session, so do not let an orchestrator relay `/cs-grant` to a
+worker terminal. Without trusted hooks nothing is approved; edit the file.
+
 ## Format 2 contract
 
 ```yaml

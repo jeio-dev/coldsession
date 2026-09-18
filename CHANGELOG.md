@@ -4,6 +4,15 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
+## [v3.4.0]
+
+- Add `/cs-grant` (`$cs-grant`) so a human who cannot edit the phase file can
+  approve from chat. The UserPromptSubmit hook applies it before the model
+  turn, so no agent writes `status: approved`. It approves only the ready,
+  unchanged, lint-clean revision with no open findings, refuses otherwise
+  with E34, and ignores the `plan guard stage` argument form.
+- `plan recommend` names `/cs-grant` next to the manual approval edit.
+
 ## [v3.3.0]
 
 - Add `/cs-plan --issue <number>` and `$cs-plan --issue <number>` to plan one
