@@ -317,6 +317,7 @@ plan recover
 plan guard read|write|lint|stage
 plan issue NUMBER [--resume]
 plan scout template|request|validate|cached   (experimental)
+plan scout run --request REQUEST.json         (experimental)
 plan scout setup|model|exclude|disable        (experimental)
 ```
 
@@ -335,8 +336,8 @@ The phase index remains on the closed phase until planning creates the next one.
 
 Scout lets an external agent CLI do read-only exploration, so the host model
 does not spend its own quota on it. This release adds the contract, its
-deterministic validator, and opt-in setup. It does not run scout requests yet;
-running the `agy` provider and `/cs-scout` come in later releases.
+deterministic validator, opt-in setup, and `plan scout run` for the `agy`
+provider. `/cs-scout` and host guidance come in a later release.
 
 ### Setup and data sharing
 
@@ -381,7 +382,8 @@ models.
 `plan doctor` reports scout on one line; `plan doctor --json` has the same
 fields: whether it is enabled, the provider and model, whether the CLI is on
 PATH, the last check's result and time, and counters for runs, accepted and
-rejected reports (by reason), fallbacks, and cache hits. The counters are kept
+rejected reports (by reason), fallbacks, cache hits, retries, timeouts, and
+working-tree changes. The counters are kept
 in a small, bounded `.coldsession-state/scout/stats.json` and are updated only
 after setup.
 
@@ -429,6 +431,91 @@ directory ignores itself in git, so the cache is never committed. `cached`
 reuses a report only when the request was made on a clean tree, HEAD is
 unchanged, and the tree is still clean. It also revalidates the report
 before returning it.
+
+### Running a request
+
+```text
+plan scout run --request REQUEST.json [--json]
+```
+
+`run` answers one request made with `plan scout request`. It refuses, with
+the command that fixes it, when scout is not set up or is disabled. It
+returns a cached report first. Otherwise it calls the provider once, retries
+once only when the report's shape is invalid, and validates the result.
+Stdout then holds either the accepted report with its verification stats, or
+exactly one line:
+
+```text
+scout unavailable (<reason>); explore natively
+```
+
+The exit status is 0 for a report and 1 for the fallback line. A report
+that fails validation is not retried.
+
+**What `agy` does and does not block.** Checked with `agy` 1.2.6 on Windows
+(2026-09-18):
+
+| Setting | Reads in print mode | File writes | Shell commands |
+| --- | --- | --- | --- |
+| no workspace (`--add-dir` omitted) | denied, or read from an unrelated project | n/a | n/a |
+| workspace, default mode | allowed, no prompt | **allowed, no prompt** | denied (headless cannot prompt) |
+| `--mode plan` | allowed | **allowed**: it approves its own plan | denied |
+| `--sandbox` | allowed | **allowed** | sandboxed; on Windows asks the OS for consent |
+| `--dangerously-skip-permissions` | allowed | allowed | **allowed**, and it retries outside the sandbox |
+
+A write outside the workspace was declined, but by the model, not by
+enforcement. No setting makes `agy` read-only, and none can be scoped to one
+call; allow and deny rules live only in the user's global
+`~/.gemini/antigravity-cli/settings.json`, which coldsession never edits. So
+scout never passes permission bypass, plan mode, or sandbox, and it protects
+the tree itself:
+
+- `agy` runs with `--print`, JSON output, a report schema narrowed to the
+  request's kind, `--disable-slash-commands`, the configured model, and
+  `--print-timeout`. Its workspace (`--add-dir` and working directory) is a
+  disposable copy outside the repository. The copy holds only the files the
+  request may cite: in scope, tracked or unignored, not `sensitive()`, not
+  excluded, inside an active task's read set, at most 2 MiB each and 64 MiB
+  in total. Excluded files never reach the provider. The copy is deleted
+  afterwards, and a write to it rejects the report.
+- Before the call, scout records HEAD, `git status --porcelain` including
+  untracked files, and digests of every modified or untracked file. Any
+  difference afterwards rejects the report and prints an alert to stderr
+  listing the changed paths. Nothing is reverted automatically, and the event
+  is counted. Files that git ignores are not checked.
+- At the timeout (`timeout_seconds`, default 180, per attempt) the whole
+  process tree is killed: `taskkill /T /F` on Windows, the process group
+  elsewhere.
+- Provider output is read with a 256 KiB bound and is never stored. Only an
+  accepted report is cached. Failure details are credential-filtered before
+  they are printed. On Windows, a `.bat` or `.cmd` launcher for `agy` is
+  refused, because batch files cannot carry the multi-line request safely.
+- `agy` ends a turn with no report whenever it tries a shell command, so
+  scout appends one fixed line telling it that shell commands are unavailable.
+
+Unverified: `agy` on Linux and macOS, whether `agy` keeps its own
+conversation history for these calls (it records conversations under
+`~/.gemini/antigravity-cli/`), and whether the fixed line changes how
+reliable reports are. `plan doctor` lists these gaps.
+
+**Manual live check.** The deterministic tests use a stub `agy` and make no
+network or model calls. To check a real provider, use a throwaway
+repository, because its content is sent to the provider:
+
+```text
+git init scout-live && cd scout-live
+# add a small source file that defines a function, then commit it
+plan scout setup --accept-data-sharing --model MODEL
+plan scout request locate symbol=FUNCTION --purpose "live check" --include . > ../req.json
+plan scout run --request ../req.json        # report, or one fallback line
+plan scout run --request ../req.json        # cache hit, provider not called
+git status --porcelain --untracked-files=all   # must be empty
+plan doctor --json                          # counters under scout
+```
+
+Repeat with `trace` and `inventory` requests. Record failures as well as
+successes, and see whether any OS or permission prompt appears. A prompt
+means the run was not unattended.
 
 A scout report is orientation only. `plan verify` attestations and commands,
 `plan resolve` notes, `plan handoff`, and `plan integrate` refuse scout

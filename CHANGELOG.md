@@ -45,6 +45,26 @@ that against the supported format rather than the product release.
   `plan doctor` reports scout status, the last check, and counters.
   Coldsession adds no spending cap; the README documents provider-side
   controls.
+- **Experimental:** add `plan scout run --request REQUEST.json` (#20). It
+  runs one request through `agy` non-interactively and prints either the
+  validated report with its verification stats or exactly one line,
+  `scout unavailable (<reason>); explore natively`. It refuses with the fix
+  when scout is disabled or not set up, and answers from the cache first.
+- An investigation of `agy` 1.2.6 on Windows found no read-only mode. Print
+  mode writes files in its workspace without prompting. `--mode plan`
+  approves its own plan and then writes. `--sandbox` restricts only terminal
+  commands and asks Windows for consent. Scout therefore never passes
+  permission bypass, plan mode, or sandbox. The provider's workspace is a
+  disposable copy of only the in-scope, non-sensitive, non-excluded files.
+  HEAD, `git status`, and the contents of modified and untracked files are
+  compared before and after each call. Any change rejects the report and
+  prints an alert listing the paths. Nothing is reverted, and the event is
+  counted. Linux and macOS behavior is unverified.
+- An invalid report shape is retried once. A report that fails validation
+  falls back immediately. On timeout (default 180 s) the whole process tree
+  is killed, including on Windows. Provider output is bounded, never stored,
+  and credential-filtered wherever it is shown. `plan doctor` also counts
+  retries, timeouts, and working-tree changes, and lists the `agy` gap.
 
 ## [v3.4.0]
 
