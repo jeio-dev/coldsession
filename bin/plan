@@ -31,6 +31,7 @@ Stdlib only, no install step.
   plan guard KIND [target]        shared hook checks; quiet for unrelated projects
   plan issue NUMBER               read-only GitHub issue intake for /cs-plan --issue
   plan scout template|request|validate|cached   experimental scout report contract
+  plan scout run --request REQUEST.json         run one request through the provider (experimental)
   plan scout setup|model|exclude|disable        opt-in scout configuration (experimental)
   plan version                    print the coldsession release version
 """
@@ -2768,25 +2769,43 @@ def redact(text):
     return re.sub(r'\b(?:sk-[\w-]{12,}|gh[pousr]_[\w]{15,}|AKIA[A-Z0-9]{16})\b', '[REDACTED]', text)
 
 
-def bounded_run(command, timeout=300, env=None, shell=True):
-    """Drain continuously with bounded memory. Never persist an environment dump."""
+def bounded_run(command, timeout=300, env=None, shell=True, cwd=None, limit=16384, stdin=None, split=False,
+                clean=redact):
+    """Drain continuously with bounded memory. Never persist an environment dump.
+
+    With SPLIT, stderr is kept apart, bounded, as 'errors' (its last 4 KiB).
+    CLEAN filters credentials; a caller that parses the output must pass None
+    and filter whatever it keeps or shows.
+    """
+    clean = clean or (lambda text: text)
     output = bytearray()
+    errors = bytearray()
     total = [0]
     try:
-        process = subprocess.Popen(command, cwd=ROOT, shell=shell, env=env,
-                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        process = subprocess.Popen(command, cwd=cwd or ROOT, shell=shell, env=env, stdin=stdin,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE if split else subprocess.STDOUT,
                                    start_new_session=os.name != 'nt')
     except OSError as exc:
-        return {'exit': 127, 'output': redact(str(exc)), 'truncated': False, 'timeout': False}
+        return {'exit': 127, 'output': clean(str(exc)), 'errors': '', 'truncated': False, 'timeout': False}
     def drain():
         while True:
             chunk = process.stdout.read(4096)
             if not chunk:
                 break
             total[0] += len(chunk)
-            output.extend(chunk[:max(0, 16384 - len(output))])
+            output.extend(chunk[:max(0, limit - len(output))])
+    def drain_errors():
+        while True:
+            chunk = process.stderr.read(4096)
+            if not chunk:
+                break
+            errors.extend(chunk)
+            del errors[:max(0, len(errors) - 4096)]
     reader = threading.Thread(target=drain, daemon=True)
     reader.start()
+    error_reader = threading.Thread(target=drain_errors, daemon=True) if split else None
+    if error_reader:
+        error_reader.start()
     timed_out = False
     try:
         process.wait(timeout=timeout)
@@ -2802,7 +2821,12 @@ def bounded_run(command, timeout=300, env=None, shell=True):
     reader.join(timeout=2)
     if not reader.is_alive():
         process.stdout.close()
-    return {'exit': process.returncode, 'output': redact(output.decode('utf-8', 'replace')),
+    if error_reader:
+        error_reader.join(timeout=2)
+        if not error_reader.is_alive():
+            process.stderr.close()
+    return {'exit': process.returncode, 'output': clean(output.decode('utf-8', 'replace')),
+            'errors': clean(errors.decode('utf-8', 'replace')),
             'truncated': total[0] > len(output) or reader.is_alive(), 'timeout': timed_out}
 
 
@@ -3242,6 +3266,11 @@ def cmd_doctor(_phase, args):
     report['upgrade'] = diagnostic_json(state_path('upgrade.json')).get('status', 'none')
     report['workflow_transaction_pending'] = os.path.exists(state_path('transaction.json'))
     report['scout'] = scout_doctor()
+    if report['scout'].get('provider') == 'agy':
+        report['gaps'].append('Scout (agy): agy has no verified read-only mode. Scout runs it without permission '
+                              'bypass, plan mode, or sandbox, in a disposable copy of the in-scope files, and '
+                              'rejects any working-tree change without reverting it. Ignored files are not '
+                              'checked. Behavior on Linux and macOS is unverified.')
     try:
         if os.path.exists(INDEX):
             phase = read_phase(read_index())
@@ -3916,8 +3945,10 @@ def _scout_print(result, as_json):
         print(f'  unknown: {item}')
     for item in report['read_next']:
         print(f"  read next: {item['file']}:{item['line_start']}-{item['line_end']}")
+    meta = report['meta']
+    source = f"; {meta['provider']} ({meta['model']}), attempts {result['attempts']}" if 'attempts' in result else ''
     print(f"verified: snippets {stats['evidence_checked']} (max drift {stats['max_drift']}), "
-          f"patterns rerun {stats['patterns_rerun']}; cache {result.get('cache', 'not stored')}")
+          f"patterns rerun {stats['patterns_rerun']}; cache {result.get('cache', 'not stored')}{source}")
 
 
 # Opt-in setup. Scout is off until a user runs `plan scout setup` and accepts
@@ -3926,13 +3957,17 @@ def _scout_print(result, as_json):
 
 SCOUT_PROVIDERS = {
     'agy': {'name': 'Antigravity CLI', 'recipient': 'Google',
-            'version': ['--version'], 'models': ['models']},
+            'version': ['--version'], 'models': ['models'],
+            # Appended to every agy prompt: headless agy denies shell commands,
+            # and a denied command ends the turn with no report.
+            'note': 'Shell and terminal commands are unavailable in this session; any attempt ends it '
+                    'without a report. Use only your file viewing, listing, and search tools.'},
 }
 SCOUT_DEFAULT_TIMEOUT = 180
 SCOUT_ALWAYS_EXCLUDED = ['sensitive()'] + list(SCOUT_BUILTIN_EXCLUSIONS)
 SCOUT_CONFIG_KEYS = {'experimental', 'enabled', 'provider', 'model', 'timeout_seconds',
                      'exclusions', 'threshold', 'disclosure'}
-SCOUT_COUNTERS = ('runs', 'accepted', 'fallbacks', 'cache_hits')
+SCOUT_COUNTERS = ('runs', 'accepted', 'fallbacks', 'cache_hits', 'retries', 'timeouts', 'tree_changes')
 SCOUT_MAX_REASONS = 32
 
 
@@ -4002,7 +4037,7 @@ def _scout_counting():
 
 
 def _scout_tail(output):
-    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    lines = [line.strip() for line in redact(output).splitlines() if line.strip()]
     return (lines[-1] if lines else 'no output')[:200]
 
 
@@ -4258,13 +4293,304 @@ def scout_doctor():
             'counters': stats}
 
 
+# Provider run. agy (verified on Windows, 1.2.6) has no read-only mode: with a
+# workspace set, print mode reads and writes files there without prompting and
+# soft-denies shell commands; --mode plan approves its own plan and then
+# writes; --sandbox restricts only terminal commands and on Windows asks the OS
+# for consent; --dangerously-skip-permissions also approves shell commands and
+# unsandboxed retries. So scout never passes bypass, plan mode, or sandbox. The
+# provider's workspace is a disposable copy holding only the in-scope files,
+# and the real tree is snapshotted before and compared after. A change there
+# rejects the report and is reported, never reverted.
+
+SCOUT_STAGE_FILES = 20000
+SCOUT_STAGE_BYTES = 64 * 1024 * 1024
+SCOUT_OUTPUT_LIMIT = 256 * 1024
+
+
+def _scout_file_digest(path):
+    try:
+        info = os.stat(path)
+        if info.st_size > SCOUT_MAX_FILE:
+            return f'stat:{info.st_size}:{info.st_mtime_ns}'
+        with open(path, 'rb') as handle:
+            return hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def _scout_snapshot():
+    """HEAD, porcelain status, and digests of every modified or untracked file; None without git."""
+    head = _scout_git('rev-parse', '--verify', 'HEAD')
+    status = _scout_git('status', '--porcelain=v1', '-z', '--untracked-files=all')
+    listed = _scout_git('ls-files', '-z', '--modified', '--others', '--exclude-standard')
+    if head is None or status is None or listed is None:
+        return None
+    entries, tokens, index = {}, status.split('\0'), 0
+    while index < len(tokens):
+        token = tokens[index]
+        index += 1
+        if len(token) > 3:
+            entries[token[3:]] = token[:2]
+            if token[0] in 'RC':
+                index += 1  # the rename or copy source follows
+    files = {name: _scout_file_digest(os.path.join(ROOT, name)) for name in set(listed.split('\0')) if name}
+    return {'head': head.strip(), 'status': entries, 'files': files}
+
+
+def _scout_tree_changes(before, after):
+    if after is None:
+        return ['(git state became unreadable)']
+    changed = [] if before['head'] == after['head'] else [f"HEAD {before['head'][:12]} -> {after['head'][:12]}"]
+    names = set(before['status']) | set(after['status']) | set(before['files']) | set(after['files'])
+    return changed + sorted(name for name in names
+                            if before['status'].get(name) != after['status'].get(name)
+                            or before['files'].get(name) != after['files'].get(name))
+
+
+def _scout_stage(request, stage):
+    """Copy the files the request may cite into STAGE; return {relative path: digest}."""
+    ctx = _ScoutContext(request)
+    staged, total = {}, 0
+    for name in ctx.candidates():
+        resolved = ctx.rel(name)
+        if isinstance(resolved, str):
+            continue
+        rel, target = resolved
+        if (not os.path.isfile(target) or ctx.blocked(name) or ctx.blocked(rel)
+                or not (ctx.in_scope(name) and ctx.in_scope(rel))
+                or (ctx.allowed is not None and os.path.normcase(target) not in ctx.allowed)):
+            continue
+        try:
+            if os.path.getsize(target) > SCOUT_MAX_FILE:
+                continue
+            with open(target, 'rb') as handle:
+                data = handle.read()
+        except OSError:
+            continue
+        total += len(data)
+        if len(staged) >= SCOUT_STAGE_FILES or total > SCOUT_STAGE_BYTES:
+            raise ValueError(f'scope is too large to stage (over {SCOUT_STAGE_FILES} files or '
+                             f'{SCOUT_STAGE_BYTES // (1024 * 1024)} MiB); narrow --include')
+        dest = os.path.join(stage, *name.split('/'))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, 'wb') as handle:
+            handle.write(data)
+        staged[name] = hashlib.sha256(data).hexdigest()
+    return staged
+
+
+def _scout_stage_changes(stage, staged):
+    found = {}
+    for base, _dirs, files in os.walk(stage):
+        for name in files:
+            path = os.path.join(base, name)
+            found[os.path.relpath(path, stage).replace(os.sep, '/')] = _scout_file_digest(path)
+    return sorted(name for name in set(found) | set(staged) if found.get(name) != staged.get(name))
+
+
+def _scout_kind_schema(kind):
+    """The report schema narrowed to KIND, as the validator reads it: only trace has steps, and needs them.
+
+    agy fills every optional property a schema offers, so the shared schema
+    would draw steps into locate and inventory reports.
+    """
+    schema = json.loads(_scout_read('report.schema.json'))
+    if kind == 'trace':
+        schema['required'] = schema['required'] + ['steps']
+    else:
+        del schema['properties']['steps']
+    return json.dumps(schema, separators=(',', ':'))
+
+
+def _scout_agy_command(cli, config, stage, request, timeout):
+    # The prompt goes last and attached to its flag: agy otherwise takes the
+    # next word as the prompt.
+    prompt = request['prompt']
+    command = [cli, '--add-dir', stage, '--output-format', 'json',
+               '--json-schema', _scout_kind_schema(request['kind']),
+               '--print-timeout', f'{max(5, timeout - 5)}s', '--disable-slash-commands']
+    if config.get('model'):
+        command += ['--model', config['model']]
+    return command + ['--print=' + prompt.rstrip('\n') + '\n\n' + SCOUT_PROVIDERS['agy']['note'] + '\n']
+
+
+def _scout_unstage(report, stage):
+    """Map staging-copy paths the provider may cite back to repository-relative ones."""
+    prefix = _scout_fold(os.path.realpath(stage).replace('\\', '/').rstrip('/') + '/')
+    def fix(value):
+        if not isinstance(value, str):
+            return value
+        text = value.replace('\\', '/')
+        text = re.sub(r'^file:///(?=[A-Za-z]:)', '', text)
+        text = re.sub(r'^file://', '', text)
+        return text[len(prefix):] if _scout_fold(text).startswith(prefix) else value
+    for key in ('evidence', 'read_next'):
+        for item in report.get(key) or []:
+            if isinstance(item, dict) and 'file' in item:
+                item['file'] = fix(item['file'])
+    for item in report.get('searched') or []:
+        if isinstance(item, dict) and isinstance(item.get('paths'), list):
+            item['paths'] = [fix(path) for path in item['paths']]
+    return report
+
+
+def _scout_provider_report(ran, stage):
+    """(report, None), or (None, (kind, detail)) where kind 'shape' may be retried and 'failed' may not."""
+    envelope = None
+    for line in reversed(ran['output'].splitlines()):
+        line = line.strip()
+        if line.startswith('{'):
+            try:
+                value = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(value, dict) and 'status' in value:
+                envelope = value
+                break
+    if ran['exit'] != 0:
+        return None, ('failed', f"exited {ran['exit']}: {_scout_tail(ran['errors'] or ran['output'])}")
+    if envelope is None:
+        return None, ('shape', 'output was truncated' if ran['truncated']
+                      else f"no JSON result in the output ({_scout_tail(ran['errors'] or ran['output'])[:120]})")
+    if envelope.get('status') != 'SUCCESS':
+        return None, ('failed', f"reported status {str(envelope.get('status'))[:40]}")
+    report = envelope.get('structured_output')
+    if not isinstance(report, dict):
+        denied = [str(d.get('action'))[:40] for d in envelope.get('denied_actions') or [] if isinstance(d, dict)]
+        return None, ('shape', 'no structured report' + ('; denied: ' + ', '.join(denied[:5]) if denied else ''))
+    return _scout_unstage(report, stage), None
+
+
+def _scout_fallback(reason, as_json, **extra):
+    # Details can quote provider output, so they are filtered like any other.
+    reason = ' '.join(redact(reason).split())
+    if 'reasons' in extra:
+        extra['reasons'] = [dict(item, detail=redact(item['detail'])) for item in extra['reasons']]
+    line = f'scout unavailable ({reason}); explore natively'
+    print(json.dumps(dict({'accepted': False, 'fallback': line, 'reason': reason}, **extra), indent=2)
+          if as_json else line)
+    return 1
+
+
+def _scout_cache_lookup(request):
+    """(accepted result, None) on a hit, else (None, reason). A stored report that no longer validates is dropped."""
+    path = _scout_cache_path(request)
+    miss = _scout_cacheable(request) or (None if os.path.exists(path) else 'no stored report')
+    if miss:
+        return None, miss
+    stored = load_json(path, {}) or {}
+    result, accepted = scout_validate(stored.get('report'), request)
+    if accepted:
+        result['cache'] = 'hit'
+        return result, None
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+    return None, 'stored report no longer validates'
+
+
+def _scout_alert(provider, changed):
+    shown = changed[:20] + ([f'... and {len(changed) - 20} more'] if len(changed) > 20 else [])
+    print('!' * 72 + f'\nSCOUT ALERT: {provider} changed the working tree during a read-only request.\n'
+          'The report was rejected. Nothing was reverted; review these paths yourself:\n'
+          + ''.join(f'  {path}\n' for path in shown) + '!' * 72, file=sys.stderr)
+
+
+def scout_run(request, as_json):
+    """Answer REQUEST from the cache or the configured provider: a validated report or one fallback line."""
+    try:
+        config = _scout_config()
+    except ValueError as exc:
+        return _scout_fallback(f'invalid scout config: {exc}; rerun plan scout setup', as_json)
+    if config is None:
+        return _scout_fallback('scout is not set up; run plan scout setup to opt in', as_json)
+    if not config['enabled']:
+        return _scout_fallback('scout is disabled; run plan scout setup to enable it', as_json)
+    hit, _miss = _scout_cache_lookup(request)
+    if hit:
+        _scout_record(cache_hits=1)
+        _scout_print(hit, as_json)
+        return 0
+    provider = config['provider']
+    def fallback(reason, rejected=(), **extra):
+        _scout_record(fallbacks=1, rejected=rejected)
+        return _scout_fallback(reason, as_json, **extra)
+    cli = shutil.which(provider)
+    if not cli:
+        return fallback(f'{provider} is not on PATH')
+    if os.name == 'nt' and os.path.splitext(cli)[1].lower() in ('.bat', '.cmd'):
+        return fallback(f'{provider} resolves to a batch launcher, which cannot pass the request safely')
+    _scout_home()  # its ignore file must exist before the snapshot, or our own counters would look like a change
+    before = _scout_snapshot()
+    if before is None or not request['rev']['head']:
+        return fallback('the tree cannot be checked without a git repository and a commit')
+    if before['head'] != request['rev']['head']:
+        return fallback('HEAD changed since the request was made; regenerate it')
+    timeout = config.get('timeout_seconds', SCOUT_DEFAULT_TIMEOUT)
+    stage = tempfile.mkdtemp(prefix='coldsession-scout-')
+    try:
+        try:
+            staged = _scout_stage(request, stage)
+        except ValueError as exc:
+            return fallback(str(exc))
+        if not staged:
+            return fallback('nothing in scope to scout')
+        command = _scout_agy_command(cli, config, stage, request, timeout)
+        for attempt in (1, 2):
+            _scout_record(runs=1, retries=attempt - 1)
+            ran = bounded_run(command, timeout=timeout, shell=False, cwd=stage,
+                              limit=SCOUT_OUTPUT_LIMIT, stdin=subprocess.DEVNULL, split=True, clean=None)
+            changed = _scout_tree_changes(before, _scout_snapshot())
+            if changed:
+                _scout_alert(provider, changed)
+                _scout_record(tree_changes=1)
+                return fallback(f'{provider} changed the working tree ({len(changed)} path(s)); nothing was reverted',
+                                rejected=['tree_changed'], tree_changed=changed[:200])
+            if ran['timeout']:
+                _scout_record(timeouts=1)
+                return fallback(f'{provider} timed out after {timeout}s')
+            if _scout_stage_changes(stage, staged):
+                return fallback(f'{provider} wrote files during a read-only request', rejected=['provider_wrote'])
+            report, problem = _scout_provider_report(ran, stage)
+            if problem and problem[0] == 'failed':
+                return fallback(f'{provider} {problem[1]}')
+            if report is not None:
+                report['meta'] = {'provider': provider, 'model': config.get('model') or 'provider default'}
+                result, accepted = scout_validate(report, request)
+                if accepted:
+                    break
+                codes = sorted({reason['code'] for reason in result['reasons']})
+                if result['shape_valid']:
+                    return fallback('report failed validation: ' + ', '.join(codes), rejected=codes,
+                                    reasons=result['reasons'][:SCOUT_MAX_REASONS])
+                problem = ('shape', '; '.join(reason['detail'] for reason in result['reasons'][:3]))
+            if attempt == 2:
+                return fallback(f'invalid report shape twice: {problem[1][:200]}', rejected=['invalid_shape'])
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+    _scout_record(accepted=1)
+    result['attempts'] = attempt
+    miss = _scout_cacheable(request)
+    if miss:
+        result['cache'] = f'not stored ({miss})'
+    else:
+        _scout_store(request, report)
+        result['cache'] = 'stored'
+    _scout_print(result, as_json)
+    return 0
+
+
 def cmd_scout(_phase, args):
     usage = ('usage: plan scout template KIND | request KIND NAME=VALUE... --purpose TEXT '
              '[--include PATH]... [--exclude PATH]... [--known TEXT]... | '
              'validate REPORT.json --request REQUEST.json [--json] | cached --request REQUEST.json [--json] | '
+             'run --request REQUEST.json [--json] | '
              'setup [--provider agy] [--model NAME] [--timeout SECONDS] [--exclude PATH]... '
              '[--accept-data-sharing] [--json] | model NAME|--default | exclude add|remove PATH... | disable')
-    if not args or args[0] not in ('template', 'request', 'validate', 'cached', 'setup', 'model', 'exclude', 'disable'):
+    if not args or args[0] not in ('template', 'request', 'validate', 'cached', 'run', 'setup', 'model', 'exclude',
+                                   'disable'):
         die(usage)
     action, rest = args[0], list(args[1:])
     as_json = '--json' in rest
@@ -4313,22 +4639,17 @@ def cmd_scout(_phase, args):
     if isinstance(request, ValueError):
         die(str(request))
     request = _scout_check_request(request)
+    if action in ('cached', 'run') and positional:
+        die(usage)
+    if action == 'run':
+        return scout_run(request, as_json)
     if action == 'cached':
-        if positional:
-            die(usage)
-        path = _scout_cache_path(request)
-        miss = _scout_cacheable(request) or (None if os.path.exists(path) else 'no stored report')
-        if not miss:
-            stored = load_json(path, {}) or {}
-            result, accepted = scout_validate(stored.get('report'), request)
-            if accepted:
-                result['cache'] = 'hit'
-                if _scout_counting():
-                    _scout_record(cache_hits=1)
-                _scout_print(result, as_json)
-                return 0
-            miss = 'stored report no longer validates'
-            os.unlink(path)
+        result, miss = _scout_cache_lookup(request)
+        if result:
+            if _scout_counting():
+                _scout_record(cache_hits=1)
+            _scout_print(result, as_json)
+            return 0
         print(json.dumps({'hit': False, 'reason': miss}) if as_json else f'scout cache miss ({miss})')
         return 1
     if len(positional) != 1:
