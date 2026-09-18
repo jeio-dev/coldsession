@@ -30,6 +30,7 @@ Stdlib only, no install step.
   plan metrics                    deterministic workflow metrics across every phase
   plan guard KIND [target]        shared hook checks; quiet for unrelated projects
   plan issue NUMBER               read-only GitHub issue intake for /cs-plan --issue
+  plan scout template|request|validate|cached   experimental scout report contract
   plan version                    print the coldsession release version
 """
 
@@ -48,7 +49,7 @@ import uuid
 from pathlib import Path
 from datetime import datetime
 
-TOOL_VERSION = "3.4.0"
+TOOL_VERSION = "3.5.0"
 FORMAT_VERSION = "2.0.0"
 
 ROOT = os.path.realpath(os.environ.get("PLAN_ROOT", "."))
@@ -490,7 +491,8 @@ def lint_issues(phase):
                 except ValueError as exc:
                     errs.append(f"E26 {tid}: {exc}")
             try:
-                verification_checks(phase, tid)
+                if scout_evidence([c['command'] for c in verification_checks(phase, tid)]):
+                    errs.append(f"E36 {tid}: Verify cites a scout report, which is orientation only")
             except ValueError as exc:
                 errs.append(f"E27 {tid}: {exc}")
         if not block(phase['blocks'], 'Constraints').strip():
@@ -1091,6 +1093,7 @@ def cmd_resolve(phase, args):
             "carries the fix")
     if any(char in note for char in ('|', '\n', '\r')):
         die('finding notes must be one line with no pipe characters')
+    refuse_scout_evidence(note, 'review')
     note = redact(note)
     finding = phase['findings'][fid]
     if state == 'accepted' and finding['severity'] in ('Critical', 'High'):
@@ -2954,6 +2957,7 @@ def cmd_verify(phase, args):
         die(f'{tid} is not in this phase')
     checks = verification_checks(phase, tid)
     timeout, attestations = _verify_options(args, checks)
+    refuse_scout_evidence([check['command'] for check in checks] + list(attestations.values()), 'verification')
     spec, phase_spec = task_specification(phase, tid), specification(phase)
     before = working_fingerprint(phase, tid)
     records = load_json(evidence_path(phase), {})
@@ -3059,7 +3063,9 @@ def relevant_handoffs(phase, tid):
 def cmd_handoff(phase, args):
     if len(args) != 2 or args[0] not in phase['tasks']:
         die('usage: plan handoff T1 <JSON-file> (decisions, evidence, limitations, affects, provenance, supersedes)')
+    refuse_scout_evidence(args[1], 'completion')
     entry = json_input(args[1])
+    refuse_scout_evidence(entry, 'completion')
     required = ('decisions', 'evidence', 'limitations', 'affects', 'provenance', 'supersedes')
     if not isinstance(entry, dict) or any(key not in entry for key in required):
         die('handoff is missing required fields')
@@ -3144,7 +3150,9 @@ def cmd_assign(phase, args):
 def cmd_integrate(phase, args):
     if len(args) != 1:
         die('usage: plan integrate <worker-result.json>')
+    refuse_scout_evidence(args[0], 'completion')
     result = json_input(args[0])
+    refuse_scout_evidence(result, 'completion')
     records = load_json(assignment_path(phase), {})
     tid = result.get('task')
     assignment = records.get(tid)
@@ -3337,6 +3345,659 @@ def _orca_mirror():
           "--workspace-status", status, "--comment", comment, "--json")
 
 
+# -------------------------------------------------------------------- scout
+# Delegated read-only exploration. A provider's report reaches the host only
+# after its evidence is checked mechanically here, at no host-model cost. A
+# report is orientation only: no workflow command accepts one, or anything
+# under .coldsession-state/scout/, as verification, review, or completion
+# evidence (scout_evidence below).
+
+SCOUT_CONTRACT = 'coldsession-scout/1'
+SCOUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'scout')
+SCOUT_KINDS = ('locate', 'trace', 'inventory')
+SCOUT_STATUSES = ('answered', 'partial', 'not_found', 'out_of_scope')
+SCOUT_BUDGET = {'evidence': 15, 'snippet_lines': 5, 'answer_sentences': 3}
+SCOUT_DRIFT = 3
+SCOUT_MAX_FILE = 2 * 1024 * 1024
+SCOUT_MAX_HITS = 200
+SCOUT_CACHE_LIMIT = 200
+# The cache holds verbatim snippets, so scouting it would cite itself.
+SCOUT_BUILTIN_EXCLUSIONS = ('.coldsession-state',)
+SCOUT_CITE_RE = re.compile(r'\[\s*(E\d+(?:\s*,\s*E\d+)*)\s*\]')
+SCOUT_REPORT_KEYS = {'status', 'answer', 'evidence', 'steps', 'searched', 'unknowns', 'read_next', 'meta'}
+# Run in a separate interpreter so a pathological pattern can be killed on its
+# time bound; `re` cannot be interrupted in-process.
+SCOUT_SEARCH = r'''
+import json, re, sys
+job = json.loads(sys.stdin.buffer.read().decode("ascii"))
+rx = re.compile(re.escape(job["pattern"]) if job["fixed"] else job["pattern"])
+hits = []
+for rel, path in job["files"]:
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError:
+        continue
+    if b"\0" in data[:8192]:
+        continue
+    for number, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
+        if rx.search(line):
+            hits.append([rel, number])
+            if len(hits) > job["limit"]:
+                break
+    if len(hits) > job["limit"]:
+        break
+sys.stdout.write(json.dumps(hits))
+'''
+
+
+def scout_evidence(value):
+    """Whether VALUE names the scout cache or carries a scout report."""
+    text = value if isinstance(value, str) else json.dumps(value)
+    text = text.replace('\\\\', '/').replace('\\', '/').lower()
+    return '.coldsession-state/scout' in text or SCOUT_CONTRACT in text
+
+
+def refuse_scout_evidence(value, use):
+    if scout_evidence(value):
+        die(f'E36 a scout report is orientation only and cannot be {use} evidence; '
+            'check the files themselves and record what you observed')
+
+
+def _scout_fold(value):
+    return value.lower() if os.name == 'nt' else value
+
+
+def _scout_under(rel, prefix):
+    rel, prefix = _scout_fold(rel), _scout_fold(prefix)
+    return prefix == '.' or rel == prefix or rel.startswith(prefix + '/')
+
+
+def _scout_entry(value):
+    """A repository-relative scope entry: '.', a directory, or a file."""
+    if not isinstance(value, str):
+        raise ValueError(f'scope entry must be a string: {value!r}')
+    value = value.strip().replace('\\', '/').rstrip('/') or '.'
+    if value == '.':
+        return value
+    parts = value.split('/')
+    if value.startswith('/') or re.match(r'^[A-Za-z]:', value) or any(p in ('', '.', '..') for p in parts):
+        raise ValueError(f'scope entry must be a plain repository-relative path: {value!r}')
+    return value
+
+
+def _scout_line(value, limit, what):
+    if not isinstance(value, str) or not value.strip() or len(value) > limit or re.search(r'[\r\n]', value):
+        raise ValueError(f'{what} must be one non-empty line of at most {limit} characters')
+    return ' '.join(value.split())
+
+
+def _scout_read(name):
+    path = os.path.join(SCOUT_DIR, name)
+    try:
+        return read_text(path)
+    except OSError:
+        die(f'scout contract file {name} is not installed next to this runtime ({path}); rerun the installer')
+
+
+def _scout_template(kind):
+    if kind not in SCOUT_KINDS:
+        die(f"scout kind must be one of {', '.join(SCOUT_KINDS)}")
+    text = _scout_read(kind + '.md')
+    match = re.match(r'<!-- coldsession-scout template: (\w+) version: (\d+) params: ([\w, ]+) -->\n', text)
+    common = _scout_read('common.md')
+    head = re.match(r'<!-- coldsession-scout common version: (\d+) -->\n', common)
+    if not match or match.group(1) != kind or not head:
+        die(f'scout template {kind} has no valid version header; rerun the installer')
+    version = {'kind': kind, 'version': int(match.group(2)), 'common': int(head.group(1))}
+    return version, csv(match.group(3)), text[match.end():].strip() + '\n\n' + common[head.end():].strip() + '\n'
+
+
+def _scout_render(body, values):
+    # One pass, so a parameter that happens to contain {{name}} stays literal.
+    return re.sub(r'\{\{(\w+)\}\}', lambda m: str(values[m.group(1)]), body)
+
+
+def _scout_git(*args):
+    try:
+        result = subprocess.run(['git', *args], cwd=ROOT, capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.decode('utf-8', 'replace') if result.returncode == 0 else None
+
+
+def _scout_rev():
+    head = _scout_git('rev-parse', '--verify', 'HEAD')
+    status = _scout_git('status', '--porcelain', '--untracked-files=all') if head else None
+    if not head or status is None:
+        return {'head': None, 'dirty': True}
+    return {'head': head.strip(), 'dirty': bool(status.strip())}
+
+
+def _scout_exclusions():
+    config = load_json(state_path(os.path.join('scout', 'config.json')), {}) or {}
+    extra = config.get('exclusions', []) if isinstance(config, dict) else []
+    if not isinstance(extra, list):
+        die('scout config exclusions must be a list of repository paths')
+    return list(SCOUT_BUILTIN_EXCLUSIONS) + [_scout_entry(entry) for entry in extra]
+
+
+def scout_request(kind, params, include=None, exclude=None, known=None, purpose='', rev=None):
+    """Build a request from the fixed template for KIND; there is no free-form prompt."""
+    version, names, body = _scout_template(kind)
+    if sorted(params) != sorted(names):
+        raise ValueError(f"{kind} takes exactly: {', '.join(names)}")
+    params = {name: _scout_line(params[name], 200, name) for name in names}
+    include = [_scout_entry(p) for p in (include or ['.'])]
+    exclude = [_scout_entry(p) for p in (exclude or [])]
+    known = [_scout_line(k, 200, 'known') for k in (known or [])]
+    if len(include) > 20 or len(exclude) > 20 or len(known) > 10:
+        raise ValueError('scope takes at most 20 include and 20 exclude paths; known at most 10 facts')
+    purpose = _scout_line(purpose, 120, 'purpose')
+    values = dict(params, **SCOUT_BUDGET, purpose=purpose, include=', '.join(include),
+                  exclude=', '.join(exclude + list(SCOUT_BUILTIN_EXCLUSIONS)) + ', and any credential or secret file',
+                  known='; '.join(known) or 'nothing yet')
+    return {'contract': SCOUT_CONTRACT, 'kind': kind, 'template': version,
+            'params': params, 'scope': {'include': include, 'exclude': exclude}, 'known': known,
+            'purpose': purpose, 'budget': dict(SCOUT_BUDGET), 'rev': rev or _scout_rev(),
+            'prompt': _scout_render(body, values)}
+
+
+def _scout_check_request(request):
+    """Rebuild the request from its own fields; any drift means it was not produced by the template."""
+    try:
+        if not isinstance(request, dict) or request.get('contract') != SCOUT_CONTRACT:
+            raise ValueError(f'not a {SCOUT_CONTRACT} request')
+        rev = request.get('rev')
+        if not (isinstance(rev, dict) and set(rev) == {'head', 'dirty'} and isinstance(rev['dirty'], bool)
+                and (rev['head'] is None or isinstance(rev['head'], str))):
+            raise ValueError('rev must hold head and dirty')
+        scope = request.get('scope') or {}
+        expected = scout_request(request.get('kind'), request.get('params') or {}, scope.get('include'),
+                                 scope.get('exclude'), request.get('known'), request.get('purpose'), rev)
+        if request != expected:
+            raise ValueError('fields differ from the installed template; regenerate it with plan scout request')
+    except ValueError as exc:
+        die(f'invalid scout request: {exc}')
+    return request
+
+
+def _scout_int(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def _scout_lines(snippet):
+    return snippet.replace('\r\n', '\n').replace('\r', '\n').rstrip('\n').split('\n')
+
+
+def _scout_shape(report, kind):
+    """Schema and budget failures. These are the ones a provider retry may fix."""
+    bad = []
+    def need(ok, detail):
+        if not ok:
+            bad.append(detail)
+        return ok
+    if not need(isinstance(report, dict), 'report must be a JSON object'):
+        return bad
+    extra = set(report) - SCOUT_REPORT_KEYS
+    need(not extra, f"unknown fields: {', '.join(sorted(extra))}")
+    missing = SCOUT_REPORT_KEYS - {'steps'} - set(report)
+    if not need(not missing, f"missing fields: {', '.join(sorted(missing))}"):
+        return bad
+    need(report['status'] in SCOUT_STATUSES, f"status must be one of {', '.join(SCOUT_STATUSES)}")
+    answer = report['answer']
+    if need(isinstance(answer, str) and len(answer) <= 800, 'answer must be a string of at most 800 characters'):
+        sentences = [s for s in re.split(r'(?<=[.!?])\s+', answer.strip()) if s.strip()]
+        need(len(sentences) <= SCOUT_BUDGET['answer_sentences'],
+             f"answer has {len(sentences)} sentences; the budget is {SCOUT_BUDGET['answer_sentences']}")
+    evidence = report['evidence']
+    if need(isinstance(evidence, list) and len(evidence) <= SCOUT_BUDGET['evidence'],
+            f"evidence must be a list of at most {SCOUT_BUDGET['evidence']} items"):
+        ids = set()
+        for item in evidence:
+            if not need(isinstance(item, dict) and set(item) == {'id', 'file', 'line_start', 'line_end', 'snippet', 'why'},
+                        'each evidence item has exactly id, file, line_start, line_end, snippet, why'):
+                continue
+            eid = item['id']
+            need(isinstance(eid, str) and re.fullmatch(r'E\d+', eid) and eid not in ids, f'evidence id {eid!r} must be a unique E<number>')
+            ids.add(eid)
+            need(isinstance(item['file'], str) and item['file'].strip(), f'{eid} file must be a path')
+            need(isinstance(item['why'], str) and len(item['why']) <= 200 and not re.search(r'[\r\n]', item['why']),
+                 f'{eid} why must be one line of at most 200 characters')
+            if need(_scout_int(item['line_start']) and _scout_int(item['line_end']) and item['line_end'] >= item['line_start'],
+                    f'{eid} needs line_start <= line_end, both positive integers'):
+                count = item['line_end'] - item['line_start'] + 1
+                need(count <= SCOUT_BUDGET['snippet_lines'], f"{eid} cites {count} lines; the budget is {SCOUT_BUDGET['snippet_lines']}")
+                need(isinstance(item['snippet'], str) and len(_scout_lines(item['snippet'])) == count,
+                     f'{eid} snippet must hold exactly the {count} cited lines')
+    steps = report.get('steps')
+    if kind == 'trace':
+        if need(isinstance(steps, list) and len(steps) <= 15, 'trace needs steps: a list of at most 15 items'):
+            for step in steps:
+                need(isinstance(step, dict) and set(step) == {'text', 'evidence'} and isinstance(step['text'], str)
+                     and not re.search(r'[\r\n]', step['text']) and len(step['text']) <= 200
+                     and isinstance(step['evidence'], list) and all(isinstance(e, str) for e in step['evidence']),
+                     'each step has exactly a one-line text and an evidence list of IDs')
+    else:
+        need(steps is None, 'steps belongs only to trace')
+    searched = report['searched']
+    if need(isinstance(searched, list) and len(searched) <= 10, 'searched must be a list of at most 10 items'):
+        for item in searched:
+            if not need(isinstance(item, dict) and {'pattern', 'paths'} <= set(item) <= {'pattern', 'paths', 'fixed'},
+                        'each searched item has pattern, paths, and optional fixed'):
+                continue
+            pattern, fixed = item['pattern'], item.get('fixed', False)
+            if not need(isinstance(pattern, str) and 0 < len(pattern) <= 200 and isinstance(fixed, bool),
+                        'searched pattern must be 1-200 characters and fixed a boolean'):
+                continue
+            need(isinstance(item['paths'], list) and 0 < len(item['paths']) <= 20 and all(isinstance(p, str) for p in item['paths']),
+                 f'searched {pattern!r} needs 1-20 paths')
+            if not fixed:
+                try:
+                    re.compile(pattern)
+                except (re.error, RecursionError, OverflowError) as exc:
+                    need(False, f'searched pattern {pattern!r} is not a valid regular expression: {exc}')
+    unknowns = report['unknowns']
+    need(isinstance(unknowns, list) and len(unknowns) <= 10 and all(isinstance(u, str) and len(u) <= 300 for u in unknowns),
+         'unknowns must be a list of at most 10 strings of at most 300 characters')
+    read_next = report['read_next']
+    need(isinstance(read_next, list) and len(read_next) <= 10 and all(
+        isinstance(r, dict) and set(r) == {'file', 'line_start', 'line_end'} and isinstance(r['file'], str)
+        and _scout_int(r['line_start']) and _scout_int(r['line_end']) and r['line_end'] >= r['line_start']
+        for r in read_next), 'read_next must be at most 10 {file, line_start, line_end} ranges')
+    meta = report['meta']
+    need(isinstance(meta, dict) and isinstance(meta.get('provider'), str) and isinstance(meta.get('model'), str),
+         'meta must hold provider and model strings')
+    return bad
+
+
+class _ScoutContext:
+    def __init__(self, request):
+        self.request = request
+        self.root = os.path.realpath(ROOT)
+        self.include = request['scope']['include']
+        self.exclude = request['scope']['exclude']
+        self.exclusions = _scout_exclusions()
+        # Shell-launched providers bypass the read guard, so an active claim's
+        # read set bounds scout evidence here instead.
+        scope = _guard_scope(_guard_phase(), _owner_id())
+        self.allowed = scope[1] if scope else None
+        self.claim = scope[0] if scope else []
+        self._files = None
+
+    def rel(self, value):
+        """(repository-relative resolved path, absolute path) or a reason code."""
+        value = value.strip().replace('\\', '/')
+        if value.startswith('/') or re.match(r'^[A-Za-z]:', value) or '..' in value.split('/'):
+            return 'outside_repo'
+        target = os.path.realpath(os.path.join(self.root, value))
+        root = os.path.normcase(self.root)
+        if os.path.normcase(target) != root and not os.path.normcase(target).startswith(root + os.sep):
+            return 'outside_repo'
+        rel = os.path.relpath(target, self.root).replace(os.sep, '/')
+        return (rel, target)
+
+    def blocked(self, rel):
+        if sensitive(rel):
+            return 'sensitive'
+        if any(_scout_under(rel, entry) for entry in self.exclusions):
+            return 'excluded'
+        return None
+
+    def in_scope(self, rel):
+        return (any(_scout_under(rel, entry) for entry in self.include) and
+                not any(_scout_under(rel, entry) for entry in self.exclude))
+
+    def file(self, value):
+        """Check one cited file; return (reason, rel, absolute path)."""
+        resolved = self.rel(value)
+        if isinstance(resolved, str):
+            return resolved, None, None
+        rel, target = resolved
+        literal = value.strip().replace('\\', '/')
+        literal = literal[2:] if literal.startswith('./') else literal
+        if not os.path.isfile(target):
+            return 'missing_file', rel, target
+        reason = self.blocked(literal) or self.blocked(rel)
+        if reason:
+            return reason, rel, target
+        if not (self.in_scope(literal) and self.in_scope(rel)):
+            return 'outside_scope', rel, target
+        if self.allowed is not None and os.path.normcase(target) not in self.allowed:
+            return 'outside_read_set', rel, target
+        if os.path.getsize(target) > SCOUT_MAX_FILE:
+            return 'file_too_large', rel, target
+        return None, rel, target
+
+    def candidates(self):
+        if self._files is None:
+            listed = _scout_git('ls-files', '-z', '--cached', '--others', '--exclude-standard')
+            if listed is not None:
+                names = [name for name in listed.split('\0') if name]
+            else:
+                names = []
+                for base, dirs, files in os.walk(self.root):
+                    dirs[:] = [d for d in dirs if d != '.git']
+                    names += [os.path.relpath(os.path.join(base, f), self.root).replace(os.sep, '/') for f in files]
+            self._files = sorted(set(names))
+        return self._files
+
+
+def _scout_match(lines, item):
+    """The drift (0, then ±1..±3) at which the snippet matches, or None."""
+    want = [re.sub(r'\s+', '', line) for line in _scout_lines(item['snippet'])]
+    if not any(want):
+        return None
+    for drift in sorted(range(-SCOUT_DRIFT, SCOUT_DRIFT + 1), key=lambda d: (abs(d), d)):
+        start = item['line_start'] + drift
+        if start >= 1 and start - 1 + len(want) <= len(lines) and \
+                [re.sub(r'\s+', '', line) for line in lines[start - 1:start - 1 + len(want)]] == want:
+            return drift
+    return None
+
+
+def _scout_file_lines(path):
+    with open(path, 'rb') as handle:
+        return handle.read().decode('utf-8', 'replace').splitlines()
+
+
+def _scout_rerun(ctx, item, stats):
+    """Rerun one searched pattern within scope; return hits or a reason."""
+    prefixes = []
+    for value in item['paths']:
+        resolved = ctx.rel(value)
+        if isinstance(resolved, str):
+            return resolved, value
+        rel = resolved[0]
+        if not os.path.exists(resolved[1]):
+            return 'missing_file', value
+        if ctx.blocked(rel):
+            return ctx.blocked(rel), value
+        if not (ctx.in_scope(rel) or any(_scout_under(entry, rel) for entry in ctx.include)):
+            return 'outside_scope', value
+        prefixes.append(rel)
+    files = []
+    for name in ctx.candidates():
+        if not any(_scout_under(name, prefix) for prefix in prefixes):
+            continue
+        reason, rel, target = ctx.file(name)
+        if reason == 'file_too_large':
+            stats['skipped_large'] += 1
+        if reason is None and rel is not None:
+            files.append([rel, target])
+    stats['files_searched'] += len(files)
+    job = json.dumps({'pattern': item['pattern'], 'fixed': item.get('fixed', False),
+                      'files': files, 'limit': SCOUT_MAX_HITS}).encode('ascii')
+    timeout = max(1, intof(os.environ.get('CS_SCOUT_PATTERN_TIMEOUT'), 10))
+    try:
+        result = subprocess.run([sys.executable, '-I', '-c', SCOUT_SEARCH], input=job,
+                                capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 'pattern_timeout', f'{item["pattern"]!r} exceeded {timeout}s'
+    if result.returncode != 0:
+        return 'pattern_failed', repr(item['pattern'])
+    return None, json.loads(result.stdout.decode('ascii'))
+
+
+def scout_validate(report, request):
+    """Deterministic acceptance. Returns (result, accepted)."""
+    kind = request['kind']
+    outcome = {'contract': SCOUT_CONTRACT, 'orientation_only': True, 'kind': kind}
+    shape = _scout_shape(report, kind)
+    if shape:
+        return dict(outcome, accepted=False, shape_valid=False,
+                    reasons=[{'code': 'invalid_shape', 'detail': detail} for detail in shape]), False
+    ctx = _ScoutContext(request)
+    reasons = []
+    def reject(code, detail):
+        reasons.append({'code': code, 'detail': detail})
+    stats = {'evidence_checked': 0, 'max_drift': 0, 'patterns_rerun': 0, 'hits_checked': 0,
+             'files_searched': 0, 'skipped_large': 0}
+    current = _scout_rev()
+    if request['rev']['head'] != current['head']:
+        reject('rev_changed', f"request was made at {request['rev']['head']}, HEAD is now {current['head']}")
+
+    located = {}
+    for item in report['evidence']:
+        reason, rel, target = ctx.file(item['file'])
+        if reason:
+            reject(reason, f"{item['id']} {item['file']}")
+            continue
+        drift = _scout_match(_scout_file_lines(target), item)
+        if drift is None:
+            reject('snippet_mismatch', f"{item['id']} {item['file']}:{item['line_start']}-{item['line_end']}")
+            continue
+        stats['evidence_checked'] += 1
+        stats['max_drift'] = max(stats['max_drift'], abs(drift))
+        located[item['id']] = (_scout_fold(rel), item['line_start'] + drift, item['line_end'] + drift)
+    for entry in report['read_next']:
+        reason, _rel, target = ctx.file(entry['file'])
+        if reason:
+            reject(reason, f"read_next {entry['file']}")
+        elif entry['line_start'] > len(_scout_file_lines(target)):
+            reject('line_out_of_range', f"read_next {entry['file']}:{entry['line_start']}")
+
+    ids = {item['id'] for item in report['evidence']}
+    status, steps = report['status'], report.get('steps') or []
+    cited = SCOUT_CITE_RE.findall(report['answer'])
+    for group in cited + [', '.join(step['evidence']) for step in steps]:
+        for eid in csv(group):
+            if eid not in ids:
+                reject('unknown_evidence_id', eid)
+    if status in ('answered', 'partial'):
+        for sentence in re.split(r'(?<=[.!?])\s+', report['answer'].strip()):
+            if sentence.strip() and not SCOUT_CITE_RE.search(sentence):
+                reject('uncited_claim', sentence[:120])
+        if not report['answer'].strip():
+            reject('uncited_claim', 'answer is empty')
+    if kind == 'locate' and status == 'answered' and not report['evidence']:
+        reject('locate_without_evidence', 'answered requires at least one evidence item')
+    if kind == 'trace' and status in ('answered', 'partial'):
+        bare = [index for index, step in enumerate(steps) if not step['evidence']]
+        if not steps:
+            reject('trace_step_without_evidence', 'no steps')
+        elif status == 'answered' and bare:
+            reject('trace_step_without_evidence', f'step {bare[0] + 1} has no evidence; status must be partial')
+        elif bare and bare[0] != len(steps) - 1:
+            reject('trace_step_without_evidence', f'step {bare[0] + 1} has no evidence but the chain continues')
+
+    rerun = kind == 'inventory' or status == 'not_found'
+    if rerun and not report['searched']:
+        reject('searched_missing', f'{kind} {status} requires searched patterns')
+    if rerun:
+        for item in report['searched']:
+            reason, hits = _scout_rerun(ctx, item, stats)
+            if reason:
+                reject(reason, hits)
+                continue
+            stats['patterns_rerun'] += 1
+            stats['hits_checked'] += len(hits)
+            if len(hits) > SCOUT_MAX_HITS:
+                reject('uncited_hit', f'{item["pattern"]!r} matches more than {SCOUT_MAX_HITS} lines')
+                continue
+            uncovered = [f'{rel}:{line}' for rel, line in hits
+                         if not any(where == _scout_fold(rel) and start <= line <= end
+                                    for where, start, end in located.values())]
+            for hit in uncovered[:10]:
+                reject('uncited_hit', f'{item["pattern"]!r} matches {hit}')
+            if len(uncovered) > 10:
+                reject('uncited_hit', f'{len(uncovered) - 10} more uncited matches')
+    if ctx.claim:
+        stats['read_set_of'] = ctx.claim
+    if reasons:
+        return dict(outcome, accepted=False, shape_valid=True, reasons=reasons, verification=stats), False
+    return dict(outcome, accepted=True, report=report, verification=stats), True
+
+
+def _scout_cache_key(request):
+    return json_digest({'contract': SCOUT_CONTRACT, 'kind': request['kind'], 'params': request['params'],
+                        'scope': {k: sorted(v) for k, v in request['scope'].items()},
+                        'head': request['rev']['head']})
+
+
+def _scout_cache_path(request):
+    return state_path(os.path.join('scout', 'reports', _scout_cache_key(request) + '.json'))
+
+
+def _scout_cacheable(request):
+    """Reuse needs an exact rev with a clean tree at both requests; else a miss."""
+    if request['rev']['dirty'] or not request['rev']['head']:
+        return 'tree was dirty or unversioned at request'
+    current = _scout_rev()
+    if current['head'] != request['rev']['head']:
+        return 'HEAD changed'
+    if current['dirty']:
+        return 'tree is dirty now'
+    return None
+
+
+def _scout_store(request, report):
+    base = state_path('scout')
+    os.makedirs(base, exist_ok=True)
+    # Local cache only: keep it out of commits even where .coldsession-state/
+    # itself is tracked for the installation ownership record.
+    ignore = os.path.join(base, '.gitignore')
+    if not os.path.exists(ignore):
+        atomic_write(ignore, '# coldsession scout cache: local only, never committed\n*\n')
+    save_json(_scout_cache_path(request), {
+        'contract': SCOUT_CONTRACT, 'orientation_only': True, 'rev': request['rev']['head'],
+        'request': {k: request[k] for k in ('kind', 'params', 'scope')},
+        'report': report, 'at': datetime.now().isoformat()})
+    stored = sorted(glob.glob(os.path.join(base, 'reports', '*.json')), key=os.path.getmtime)
+    for path in stored[:-SCOUT_CACHE_LIMIT]:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def _scout_load(path, what):
+    try:
+        if path == '-':
+            raw = sys.stdin.buffer.read(262145).decode('utf-8-sig', 'replace')
+        else:
+            if os.path.getsize(path) > 262144:
+                raise ValueError(f'{what} exceeds 256 KiB')
+            raw = read_text(path)
+        if len(raw) > 262144:
+            raise ValueError(f'{what} exceeds 256 KiB')
+        return json.loads(raw)
+    except (OSError, ValueError) as exc:
+        return ValueError(f'{what} is not readable JSON: {exc}')
+
+
+def _scout_print(result, as_json):
+    if as_json:
+        print(json.dumps(result, indent=2))
+        return
+    kind = result['kind']
+    if not result['accepted']:
+        print(f'scout {kind} report rejected:')
+        for reason in result['reasons']:
+            print(f"  {reason['code']}: {reason['detail']}")
+        return
+    report, stats = result['report'], result['verification']
+    print(f"scout {kind}: {report['status']} (orientation only; never verification, review, or completion evidence)")
+    if report['answer'].strip():
+        print(report['answer'].strip())
+    for item in report['evidence']:
+        print(f"  {item['id']} {item['file']}:{item['line_start']}-{item['line_end']}  {item['why']}")
+    for index, step in enumerate(report.get('steps') or [], 1):
+        print(f"  step {index}: {step['text']} [{', '.join(step['evidence']) or 'no evidence'}]")
+    for item in report['unknowns']:
+        print(f'  unknown: {item}')
+    for item in report['read_next']:
+        print(f"  read next: {item['file']}:{item['line_start']}-{item['line_end']}")
+    print(f"verified: snippets {stats['evidence_checked']} (max drift {stats['max_drift']}), "
+          f"patterns rerun {stats['patterns_rerun']}; cache {result.get('cache', 'not stored')}")
+
+
+def cmd_scout(_phase, args):
+    usage = ('usage: plan scout template KIND | request KIND NAME=VALUE... --purpose TEXT '
+             '[--include PATH]... [--exclude PATH]... [--known TEXT]... | '
+             'validate REPORT.json --request REQUEST.json [--json] | cached --request REQUEST.json [--json]')
+    if not args or args[0] not in ('template', 'request', 'validate', 'cached'):
+        die(usage)
+    action, rest = args[0], list(args[1:])
+    as_json = '--json' in rest
+    rest = [value for value in rest if value != '--json']
+    if action == 'template':
+        if len(rest) != 1:
+            die(usage)
+        version, names, body = _scout_template(rest[0])
+        print(f"{rest[0]} template v{version['version']} (common v{version['common']}); "
+              f"parameters: {', '.join(names)}\n")
+        print(body, end='')
+        return 0
+    options, positional, index = {'--include': [], '--exclude': [], '--known': [], '--purpose': [], '--request': []}, [], 0
+    while index < len(rest):
+        if rest[index] in options:
+            if index + 1 >= len(rest):
+                die(usage)
+            options[rest[index]].append(rest[index + 1])
+            index += 2
+        else:
+            positional.append(rest[index])
+            index += 1
+    if action == 'request':
+        if not positional or len(options['--purpose']) != 1 or options['--request']:
+            die(usage)
+        params = {}
+        for pair in positional[1:]:
+            if '=' not in pair:
+                die(f'template parameters are NAME=VALUE, got {pair!r}')
+            name, value = pair.split('=', 1)
+            params[name.strip()] = value
+        try:
+            request = scout_request(positional[0], params, options['--include'] or None, options['--exclude'],
+                                    options['--known'], options['--purpose'][0])
+        except ValueError as exc:
+            die(f'invalid scout request: {exc}')
+        print(json.dumps(request, indent=2))
+        return 0
+    if len(options['--request']) != 1 or any(options[key] for key in ('--include', '--exclude', '--known', '--purpose')):
+        die(usage)
+    request = _scout_load(options['--request'][0], 'request')
+    if isinstance(request, ValueError):
+        die(str(request))
+    request = _scout_check_request(request)
+    if action == 'cached':
+        if positional:
+            die(usage)
+        path = _scout_cache_path(request)
+        miss = _scout_cacheable(request) or (None if os.path.exists(path) else 'no stored report')
+        if not miss:
+            stored = load_json(path, {}) or {}
+            result, accepted = scout_validate(stored.get('report'), request)
+            if accepted:
+                result['cache'] = 'hit'
+                _scout_print(result, as_json)
+                return 0
+            miss = 'stored report no longer validates'
+            os.unlink(path)
+        print(json.dumps({'hit': False, 'reason': miss}) if as_json else f'scout cache miss ({miss})')
+        return 1
+    if len(positional) != 1:
+        die(usage)
+    report = _scout_load(positional[0], 'report')
+    if isinstance(report, ValueError):
+        result = {'contract': SCOUT_CONTRACT, 'orientation_only': True, 'kind': request['kind'],
+                  'accepted': False, 'shape_valid': False,
+                  'reasons': [{'code': 'invalid_shape', 'detail': str(report)}]}
+        accepted = False
+    else:
+        result, accepted = scout_validate(report, request)
+    if accepted:
+        miss = _scout_cacheable(request)
+        if miss:
+            result['cache'] = f'not stored ({miss})'
+        else:
+            _scout_store(request, report)
+            result['cache'] = 'stored'
+    _scout_print(result, as_json)
+    return 0 if accepted else 1
+
+
 COMMANDS = {"version": cmd_version, "status": cmd_status, "lint": cmd_lint,
             "next": cmd_next, "brief": cmd_brief, "start": cmd_start,
             "done": cmd_done, "block": cmd_block, "begin": cmd_begin,
@@ -3346,7 +4007,7 @@ COMMANDS = {"version": cmd_version, "status": cmd_status, "lint": cmd_lint,
             "metrics": cmd_metrics, "guard": cmd_guard,
             "verify": cmd_verify, "replan": cmd_replan, "doctor": cmd_doctor,
             "handoff": cmd_handoff, "assign": cmd_assign, "integrate": cmd_integrate,
-            "issue": cmd_issue, "recover": None}
+            "issue": cmd_issue, "scout": cmd_scout, "recover": None}
 
 
 def main():
@@ -3357,7 +4018,7 @@ def main():
     name = argv[0]
     if name not in COMMANDS:
         die(f"unknown command {name!r}. Try: {', '.join(COMMANDS)}")
-    if name in ("version", "metrics", "guard", "doctor", "issue"):
+    if name in ("version", "metrics", "guard", "doctor", "issue", "scout"):
         # None of the three answer from a `current:` phase: version needs no
         # phase file at all, metrics scans every phase file itself, and guard
         # reads plan state defensively because it runs from a hook in

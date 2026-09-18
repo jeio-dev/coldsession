@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "coldsession-scout/1/report",
+  "title": "coldsession scout report",
+  "description": "A read-only exploration report. `plan scout validate` checks it mechanically before a host sees it. It is orientation only and never verification, review, or completion evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "answer", "evidence", "searched", "unknowns", "read_next", "meta"],
+  "properties": {
+    "status": {"enum": ["answered", "partial", "not_found", "out_of_scope"]},
+    "answer": {
+      "type": "string",
+      "maxLength": 800,
+      "description": "At most 3 sentences. When status is answered or partial, every sentence cites evidence IDs such as [E1] or [E1, E2]. Inferences belong in unknowns."
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 15,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "file", "line_start", "line_end", "snippet", "why"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^E[0-9]+$"},
+          "file": {"type": "string", "description": "Repository-relative path with forward slashes."},
+          "line_start": {"type": "integer", "minimum": 1},
+          "line_end": {"type": "integer", "minimum": 1},
+          "snippet": {"type": "string", "description": "Verbatim lines line_start..line_end, at most 5 lines, one snippet line per cited line."},
+          "why": {"type": "string", "maxLength": 200, "pattern": "^[^\\r\\n]*$"}
+        }
+      }
+    },
+    "steps": {
+      "description": "Required for trace: the ordered chain. A step without evidence ends the chain and requires status partial.",
+      "type": "array",
+      "maxItems": 15,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "evidence"],
+        "properties": {
+          "text": {"type": "string", "maxLength": 200, "pattern": "^[^\\r\\n]*$"},
+          "evidence": {"type": "array", "items": {"type": "string", "pattern": "^E[0-9]+$"}}
+        }
+      }
+    },
+    "searched": {
+      "description": "Exact patterns and the paths searched. Required for inventory and for not_found. The runtime reruns them.",
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pattern", "paths"],
+        "properties": {
+          "pattern": {"type": "string", "minLength": 1, "maxLength": 200},
+          "fixed": {"type": "boolean", "description": "true for a literal string; false or absent for a Python-compatible regular expression, matched per line."},
+          "paths": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "string"}}
+        }
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {"type": "string", "maxLength": 300}
+    },
+    "read_next": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "line_start", "line_end"],
+        "properties": {
+          "file": {"type": "string"},
+          "line_start": {"type": "integer", "minimum": 1},
+          "line_end": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "required": ["provider", "model"],
+      "properties": {
+        "provider": {"type": "string"},
+        "model": {"type": "string"},
+        "rev": {"type": ["string", "null"]},
+        "duration_ms": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

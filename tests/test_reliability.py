@@ -714,6 +714,44 @@ class ReliabilityTest(unittest.TestCase):
         self.assertIn('automated_failed', result.stderr)
         self.run_plan('done', 'T1', ok=False)
 
+    def scout_report(self):
+        path = self.root / '.coldsession-state/scout/reports/cached.json'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({'contract': 'coldsession-scout/1', 'orientation_only': True,
+                                    'report': {'status': 'answered'}}), encoding='utf-8')
+        return path
+
+    def test_scout_report_is_never_verification_or_completion_evidence(self):
+        cached = self.scout_report()
+        self.edit('Verify: `python -V` exits 0', 'Verify: `python -V` exits 0\nVerify: manual: inspect refresh')
+        self.approve()
+        self.run_plan('start', 'T1')
+        for observation in ('matches .coldsession-state/scout/reports/cached.json',
+                            r'see .coldsession-state\scout\reports\cached.json',
+                            cached.read_text(encoding='utf-8')):
+            refused = self.run_plan('verify', 'T1', '--attest', 'manual:1=' + observation, ok=False)
+            self.assertIn('E36', refused.stderr)
+        self.assertFalse(self.phase.with_suffix('.evidence.json').exists())
+        entry = {'decisions': 'none', 'evidence': json.loads(cached.read_text(encoding='utf-8')),
+                 'limitations': 'none', 'affects': ['T2'], 'provenance': 'T1', 'supersedes': []}
+        self.assertIn('E36', self.run_plan('handoff', 'T1', json.dumps(entry), ok=False).stderr)
+        self.assertIn('E36', self.run_plan('handoff', 'T1', '.coldsession-state/scout/reports/cached.json', ok=False).stderr)
+        self.assertIn('E36', self.run_plan('integrate', '.coldsession-state/scout/reports/cached.json', ok=False).stderr)
+        self.run_plan('verify', 'T1', '--attest', 'manual:1=refresh renews the token in the running app')
+        self.run_plan('done', 'T1')
+
+    def test_scout_report_is_never_review_evidence_or_a_verify_command(self):
+        self.write(findings='F1 | Medium | Risk | T1 | open | A consequence | Fix T1')
+        self.run_plan('begin', 'review')
+        self.run_plan('finish', 'review')
+        self.run_plan('begin', 'revise')
+        self.run_plan('bump')
+        refused = self.run_plan('resolve', 'F1', 'resolved', 'scout confirmed: .coldsession-state/scout/reports/x.json', ok=False)
+        self.assertIn('E36', refused.stderr)
+        self.run_plan('resolve', 'F1', 'resolved', 'T1 now handles the case')
+        self.edit('Verify: `python -V` exits 0', 'Verify: `python -c "print(open(\'.coldsession-state/scout/reports/x.json\').read())"` exits 0')
+        self.assertIn('E36', self.run_plan('lint', ok=False).stdout)
+
     def test_upgrade_journal_blocks_mutations(self):
         self.rt.save_json(self.rt.state_path('upgrade.json'), {'status': 'applying'})
         self.run_plan('begin', 'review', ok=False)

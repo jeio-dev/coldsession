@@ -139,6 +139,9 @@ def bundle(source, target, agent, windows):
             put('.claude/hooks/' + path.name, path)
         for name in ('plan', 'plan.cmd'):
             put('.claude/bin/' + name, source / 'bin' / name)
+        # The runtime reads its scout contract from ../scout beside bin/.
+        for path in (source / 'scout').glob('*'):
+            put('.claude/scout/' + path.name, path)
     if agent in ('codex', 'both'):
         for path in (source / 'commands').glob('cs-*.md'):
             put('.agents/coldsession/commands/' + path.name, path,
@@ -149,6 +152,8 @@ def bundle(source, target, agent, windows):
                     '.agents/coldsession/bin/plan.cmd' if windows else '.agents/coldsession/bin/plan')
         for name in ('plan', 'plan.cmd'):
             put('.agents/coldsession/bin/' + name, source / 'bin' / name)
+        for path in (source / 'scout').glob('*'):
+            put('.agents/coldsession/scout/' + path.name, path)
     for path in (source / 'templates').glob('*.md'):
         put('templates/' + path.name, path)
     # Recovery travels with the installed release; no disposable clone required.
@@ -314,7 +319,8 @@ def preview(args, target, rt):
             custom.append(relative)
             # Runtime and template conflicts require resolution before installing a
             # mixed contract. User commands stay preserved and are clearly reported.
-            if relative.endswith(('/bin/plan', '/bin/plan.cmd')) or relative.startswith('templates/'):
+            if (relative.endswith(('/bin/plan', '/bin/plan.cmd')) or relative.startswith('templates/')
+                    or '/scout/' in relative):
                 conflicts.append(relative)
             continue
         changes[relative] = replacement

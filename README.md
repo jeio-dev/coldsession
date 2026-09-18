@@ -77,6 +77,7 @@ the normal workflow. Do not infer readiness from a successful install.
 | `.agents/skills/cs-*` | Codex skill adapters |
 | `.agents/coldsession/commands/` | Canonical command copies for Codex |
 | `.agents/coldsession/bin/plan{,.cmd}` | Codex runtime |
+| `.claude/scout/`, `.agents/coldsession/scout/` | Experimental scout schemas and kind templates |
 | `.codex/config.toml` | Delimited managed Codex hook registration |
 | `templates/` | Objective, plan index, and phase templates |
 | `.coldsession-state/` | Installation ownership, previews, journals, backups |
@@ -315,6 +316,7 @@ plan doctor [--json]
 plan recover
 plan guard read|write|lint|stage
 plan issue NUMBER [--resume]
+plan scout template|request|validate|cached   (experimental)
 ```
 
 Mutations hold one repository lock, including verification and shared-resource
@@ -327,6 +329,62 @@ File replacements are atomic. Multi-file close, assignment, and recovery
 operations use a journal with before/after contents. `plan recover` replays an
 interrupted transaction idempotently and refuses conflicting intervening edits.
 The phase index remains on the closed phase until planning creates the next one.
+
+## Scout (experimental)
+
+Scout lets an external agent CLI do read-only exploration, so the host model
+does not spend its own quota on it. This release adds only the contract and
+its deterministic validator. It runs no provider and makes no network or
+model call. Setup, the `agy` provider, and `/cs-scout` come in later releases.
+
+```text
+plan scout template locate|trace|inventory
+plan scout request KIND NAME=VALUE... --purpose TEXT [--include PATH]... [--exclude PATH]... [--known TEXT]...
+plan scout validate REPORT.json --request REQUEST.json [--json]
+plan scout cached --request REQUEST.json [--json]
+```
+
+A request is always rendered from a fixed, versioned kind template. `locate`
+and `inventory` take `symbol`, and `trace` takes `from` and `to`. Hosts cannot
+send a free-form prompt. `validate` rebuilds the request from the installed
+template and refuses one that doesn't match. The budget is 15 evidence items,
+5-line snippets, and a 3-sentence answer.
+
+Any failed check rejects the whole report, with machine-readable reasons. A
+report is accepted only when all of the following hold:
+
+- It matches `report.schema.json`. Shape failures are reported separately
+  (`shape_valid: false`), because they are the only failures a retry may fix.
+- Every cited file exists and resolves inside the repository after links are
+  followed.
+- Every cited file is inside the request scope, is neither `sensitive()` nor
+  excluded, and, during an active task claim, is inside that task's read set.
+  An external CLI launched from a shell bypasses the read guard, so the
+  validator enforces the read set itself.
+- Every snippet matches its cited lines. Whitespace differences are ignored
+  and up to 3 lines of drift are allowed.
+- Every answer sentence cites evidence IDs. A `locate` answer has evidence.
+  In a `trace`, a step without evidence ends the chain and requires `partial`.
+- For `inventory` and `not_found` reports, every `searched` pattern is rerun
+  over its paths. The rerun skips sensitive files, excluded files, and files
+  that git ignores. Any match the evidence does not cover rejects the report.
+  Each pattern runs in a separate process with a time bound
+  (`CS_SCOUT_PATTERN_TIMEOUT`, default 10 seconds). A pattern that exceeds
+  the bound rejects the report instead of hanging.
+- HEAD is still the commit recorded in the request.
+
+`.coldsession-state/` is always excluded. Additional exclusions can be listed
+in `.coldsession-state/scout/config.json` as `{"exclusions": [...]}`.
+Accepted reports are cached under `.coldsession-state/scout/reports/`. That
+directory ignores itself in git, so the cache is never committed. `cached`
+reuses a report only when the request was made on a clean tree, HEAD is
+unchanged, and the tree is still clean. It also revalidates the report
+before returning it.
+
+A scout report is orientation only. `plan verify` attestations and commands,
+`plan resolve` notes, `plan handoff`, and `plan integrate` refuse scout
+reports and paths under `.coldsession-state/scout/` with E36. `plan lint`
+reports E36 for a Verify line that cites one.
 
 ## Hooks and doctor
 
