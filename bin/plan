@@ -4417,14 +4417,20 @@ def _scout_agy_command(cli, config, stage, request, timeout):
 
 def _scout_unstage(report, stage):
     """Map staging-copy paths the provider may cite back to repository-relative ones."""
-    prefix = _scout_fold(os.path.realpath(stage).replace('\\', '/').rstrip('/') + '/')
+    # The provider may cite the stage as given (e.g. an 8.3 short name on
+    # Windows) or fully resolved, so either form maps back.
+    prefixes = {_scout_fold(p.replace('\\', '/').rstrip('/') + '/')
+                for p in (stage, os.path.realpath(stage))}
     def fix(value):
         if not isinstance(value, str):
             return value
         text = value.replace('\\', '/')
         text = re.sub(r'^file:///(?=[A-Za-z]:)', '', text)
         text = re.sub(r'^file://', '', text)
-        return text[len(prefix):] if _scout_fold(text).startswith(prefix) else value
+        for prefix in prefixes:
+            if _scout_fold(text).startswith(prefix):
+                return text[len(prefix):]
+        return value
     for key in ('evidence', 'read_next'):
         for item in report.get(key) or []:
             if isinstance(item, dict) and 'file' in item:
