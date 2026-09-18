@@ -174,6 +174,26 @@ class ReliabilityTest(unittest.TestCase):
         self.assertIn('set status: approved', self.run_plan('recommend').stdout)
         self.run_plan('start', 'T1', ok=False)
 
+    def test_grant_approves_only_the_specification_approve_checked(self):
+        self.run_plan('begin', 'review')
+        self.run_plan('finish', 'review')
+        self.run_plan('begin', 'approve')
+        self.run_plan('finish', 'approve', '--pass')
+        self.edit('Goal: test', 'Goal: changed after approve')
+        env = clean_env(PLAN_ROOT=str(self.root), PATH=self.test_path)
+        grant = lambda: subprocess.run([sys.executable, str(ROOT / 'bin/plan'), 'guard', 'stage'],
+                                       env=env, input=json.dumps({'prompt': '/cs-grant'}),
+                                       text=True, capture_output=True)
+        refused = grant()
+        self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
+        self.assertEqual(self.p()['meta']['status'], 'draft')
+        self.edit('Goal: changed after approve', 'Goal: test')
+        granted = grant()
+        self.assertEqual(granted.returncode, 0, granted.stderr)
+        self.assertEqual(self.p()['meta']['status'], 'approved')
+        self.run_plan('lint')
+        self.run_plan('start', 'T1')
+
     def test_accept_only_rejects_changed_contract_and_can_fall_back_to_review(self):
         self.start_low_revision()
         self.run_plan('resolve', 'F1', 'accepted', 'Description is cosmetic; T1 behavior already meets the criterion')

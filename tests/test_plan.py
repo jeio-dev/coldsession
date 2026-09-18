@@ -1155,6 +1155,8 @@ class PlanRuntimeTest(unittest.TestCase):
         expected = {
             "cs-define": 0, "cs-groundwork": 0, "cs-plan": 0, "cs-build": 0,
             "cs-revise": 0, "cs-status": 0, "cs-issue": 0,
+            # Approves only from a hook's prompt event, never from arguments.
+            "cs-grant": 0,
             # Allowed on purpose, and specifically in the session that just
             # authored the plan: cs-cold's whole job is to spawn the cold
             # session the gate would otherwise only refuse to let you have.
@@ -1176,6 +1178,40 @@ class PlanRuntimeTest(unittest.TestCase):
             actual = self.run_guard("stage", f"/{name}", "--session", "S")
             self.assertEqual(actual.returncode, code,
                              f"/{name} expected {code}, got {actual.returncode}")
+
+    def test_grant_prompt_approves_a_ready_revision(self):
+        self.write_phase(reviewed=1, ready=1)
+        for prompt in ("/cs-grant", "$cs-grant"):
+            self.write_phase(reviewed=1, ready=1)
+            fired = self.run_guard("stage", payload={"prompt": prompt, "session_id": "H"})
+            self.assertEqual(fired.returncode, 0, fired.stderr)
+            self.assertIn("status: approved", self.phase.read_text(encoding="utf-8"))
+            self.assertIn("approved", fired.stdout)
+        self.assertTrue(self.run_plan("recommend").stdout.startswith("/cs-build"))
+
+    def test_grant_refuses_what_approve_did_not_mark_ready(self):
+        cases = [
+            dict(reviewed=1),
+            dict(rev=2, reviewed=2, ready=1),
+            dict(reviewed=1, ready=1,
+                 findings="F1 | High | Gap | T1 | open | Missing | Add it"),
+        ]
+        for kwargs in cases:
+            self.write_phase(**kwargs)
+            fired = self.run_guard("stage", payload={"prompt": "/cs-grant"})
+            self.assertEqual(fired.returncode, 2, kwargs)
+            self.assertIn("E34", fired.stderr)
+            self.assertIn("status: draft", self.phase.read_text(encoding="utf-8"))
+
+    def test_grant_is_not_an_argument_the_agent_can_pass(self):
+        self.write_phase(reviewed=1, ready=1)
+        self.assertEqual(self.run_guard("stage", "/cs-grant").returncode, 0)
+        self.assertEqual(
+            self.run_guard("stage", "/cs-grant", "--session", "A").returncode, 0)
+        self.assertIn("status: draft", self.phase.read_text(encoding="utf-8"))
+        self.assertEqual(self.run_guard(
+            "stage", payload={"prompt": "please /cs-grant"}).returncode, 0)
+        self.assertIn("status: draft", self.phase.read_text(encoding="utf-8"))
 
     def test_guard_stage_ignores_prose_and_missing_session_ids(self):
         self.write_phase()

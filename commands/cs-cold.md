@@ -30,10 +30,12 @@ here:
 
 With an argument, use it verbatim. With none, run `.claude/bin/plan recommend`
 and take its command. Stop and print the output unchanged if it names no
-runnable `/cs-` command — `(set status: approved)`, `(fix the linter first)`,
+runnable `/cs-` command — `(set status: approved, or type /cs-grant)`, `(fix the linter first)`,
 and `(nothing runnable)` are all answers for the human, not work to hand off.
 
 Refuse to spawn `/cs-status`; it reads no source and belongs in this session.
+Refuse to spawn or send `/cs-grant`; approval is a prompt only the human
+types.
 
 ## Check the placement
 

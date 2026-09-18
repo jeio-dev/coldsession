@@ -48,7 +48,7 @@ import uuid
 from pathlib import Path
 from datetime import datetime
 
-TOOL_VERSION = "3.3.0"
+TOOL_VERSION = "3.4.0"
 FORMAT_VERSION = "2.0.0"
 
 ROOT = os.path.realpath(os.environ.get("PLAN_ROOT", "."))
@@ -574,8 +574,8 @@ def recommend(phase):
                     f"plan lint reports {len(errs)} error(s); nothing downstream can trust "
                     "this file until they are fixed")
         if intof(meta.get("ready"), 0) == rev:
-            return ("(set status: approved)",
-                    f"rev {rev} passed /cs-approve; the human approval edit is pending")
+            return ("(set status: approved, or type /cs-grant)",
+                    f"rev {rev} passed /cs-approve; the human approval is pending")
         return ("/cs-approve",
                 f"rev {rev} is reviewed with no open findings; /cs-approve produces the "
                 "evidence, then you set `status: approved` yourself")
@@ -1812,6 +1812,8 @@ def cmd_metrics(_phase, _args):
 GUARD_KINDS = ("read", "write", "lint", "stage")
 AUTHORING_COMMANDS = ("cs-plan", "cs-revise")
 JUDGING_COMMANDS = ("cs-review", "cs-approve", "cs-close")
+# Typed by the human; the prompt hook, not the agent, writes the approval.
+GRANT_COMMAND = "cs-grant"
 # A 2.x compatibility alias runs the stage it aliases, so it has to face the
 # same gate. Resolved to the canonical name before anything is checked or
 # recorded: a gate that named only the canonical commands was one rename away
@@ -2114,13 +2116,21 @@ def _guard_stage(args, payload):
     if session is None:
         session = payload.get("session_id")
     prompt = rest[0] if rest else payload.get("prompt")
-    if not session or not isinstance(prompt, str):
+    if not isinstance(prompt, str):
         return 0
 
     m = CS_COMMAND_RE.match(prompt.strip())
     if not m:
         return 0
     command = COMMAND_ALIASES.get(m.group(1), m.group(1))
+
+    # Before the session check: a grant needs a human prompt, not a session id.
+    # Only the hook's event on stdin counts; the argument form is not an
+    # approve button for anything that can run `plan`.
+    if command == GRANT_COMMAND:
+        return _grant_approval() if not rest else 0
+    if not session:
+        return 0
 
     if command in JUDGING_COMMANDS:
         authored = [c for c in _session_ran(session) if c in AUTHORING_COMMANDS]
@@ -2140,6 +2150,62 @@ def _guard_stage(args, payload):
                 f"session and run /{command} in a new one; the phase file "
                 "carries everything it needs.")
     _session_record(session, command)
+    return 0
+
+
+def _grant_approval():
+    """Set `status: approved` because the human typed /cs-grant.
+
+    The approval line is the one edit no agent may make, which strands a human
+    who cannot reach an editor -- on a phone, in a remote session, or with the
+    file open only inside an agent's worktree. A UserPromptSubmit hook is the
+    one place the product can tell the human apart from the agent: it sees the
+    prompt the human submitted, before any model turn, and no tool call can
+    produce one. So the hook writes the line itself and the agent never does.
+
+    It approves exactly what /cs-approve marked ready and nothing newer, so a
+    grant can never stand in for a check that did not run. Refusals exit 2,
+    which blocks the prompt and shows the reason to the human who typed it.
+    """
+    if _guard_phase() is None:
+        return 0
+    if os.environ.get('CS_WORKER_ASSIGNMENT'):
+        return _guard_deny('E34', '/cs-grant cannot run in a worker session',
+                           'grant approval from your own session')
+    lock = _lock_acquire(INDEX)
+    try:
+        phase = _guard_phase()
+        if phase is None:
+            return _guard_deny('E34', '/cs-grant cannot read the current phase',
+                               'run plan doctor, then retry')
+        meta = phase['meta']
+        name = meta.get('phase', '?')
+        rev = intof(meta.get('rev'), 1)
+        status = meta.get('status', 'draft')
+        if status == 'approved':
+            print(f"coldsession: {name} rev {rev} is already approved; nothing to grant.")
+            return 0
+        reason = None
+        if status != 'draft':
+            reason = f"{name} is {status}, not a draft awaiting approval"
+        elif meta.get('active'):
+            reason = f"{meta['active']} is still active; finish it first"
+        elif intof(meta.get('ready'), 0) != rev:
+            reason = f"rev {rev} has not passed /cs-approve; run it in a new session first"
+        elif strict(phase) and meta.get('ready-spec') != specification(phase):
+            reason = 'the specification changed after /cs-approve; run plan replan'
+        elif open_findings(phase):
+            reason = f"open findings remain: {', '.join(open_findings(phase))}"
+        elif lint_issues(phase)[0]:
+            reason = 'plan lint reports errors; fix them first'
+        if reason:
+            return _guard_deny('E34', f'/cs-grant refused: {reason}',
+                               'nothing was approved.')
+        write_phase(phase, set_meta(phase['text'], 'status', 'approved'))
+    finally:
+        _lock_release(lock)
+    print(f"coldsession: the human approved {name} rev {rev} with /cs-grant; "
+          "status is now approved. Do not edit the phase file.")
     return 0
 
 
