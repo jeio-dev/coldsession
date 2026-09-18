@@ -63,6 +63,19 @@ policy-a11y | T2, T4 | contrast and focus order on the new list view
 policy-billing | - | not applicable; this phase touches no pricing surface
 -->
 
+## Source
+
+<!-- Only `/cs-plan --issue` writes this section; delete it otherwise. Paste the
+     block `plan issue` prints. It is provenance, not requirements: the tasks
+     above must stand alone without GitHub, and a later issue edit changes
+     nothing here without replan, review, and human approval.
+
+issue: https://github.com/<owner>/<repo>/issues/<number>
+title: <issue title at snapshot>
+updated: <issue updatedAt at snapshot>
+body-sha256: <64 hex digits>
+-->
+
 ## Findings
 
 <!-- /cs-review writes here on every review round. One finding per line, seven fields:

@@ -4,6 +4,39 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
+## [v3.3.0]
+
+- Add `/cs-plan --issue <number>` and `$cs-plan --issue <number>` to plan one
+  open GitHub issue into exactly one normal phase. The issue body is proposed
+  requirements reconciled with PLAN.md and phase constraints through the normal
+  question round; it is never an approved plan.
+- Add read-only `plan issue NUMBER [--resume]`. It applies the unclosed-phase
+  and active planning resume guards before any network call, then refuses when
+  `gh` is missing or
+  unauthenticated, retrieval fails, the issue is not open, or a phase
+  `## Source` already records the issue. Every refusal happens before Plan
+  writes workflow state.
+- Add an optional `## Source` phase section holding the issue URL, title,
+  update time, and normalized body SHA-256. It is part of the reviewed
+  specification, so later provenance edits require replan, review, and human
+  approval. `plan lint` warns (W08) when a Source block lacks its snapshot.
+  The phase format stays 2.0.0: older tools treat the section as ordinary
+  hashed prose.
+- `plan start`, `brief`, `verify`, `done`, and `block` accept only task IDs
+  such as `T1` and refuse an issue number or URL, pointing to
+  `/cs-plan --issue`. Build never reads GitHub.
+- `/cs-issue` asks its blocking questions as one numbered round with
+  recommended answers, matching `/cs-define` and `/cs-plan`.
+- Remove the search-subagent fallback from the `cs-define` and `cs-plan` Codex
+  adapters. Both commands have used bounded read-only search since v3.0.0, so
+  the clause no longer applied.
+- README documents the question rounds and the lowest-rung sizing rule.
+
+## [v3.2.3]
+
+- Add `/cs-issue` and `$cs-issue` to capture one proposed change as a GitHub
+  issue without changing phase state or granting implementation approval.
+
 ## [v3.2.2]
 
 - Inventory each bounded task's deliverables and verification dependencies

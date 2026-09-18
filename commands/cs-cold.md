@@ -52,6 +52,7 @@ setting, and a flag here would silently outrank it and drift from it.
 | `/cs-define`, `/cs-review` | `claude --permission-mode plan` |
 | `/cs-build` | `claude --effort medium` |
 | `/cs-plan`, `/cs-revise`, `/cs-approve`, `/cs-close` | `claude` |
+| `/cs-issue` | `claude` |
 
 ## Hand it over
 
