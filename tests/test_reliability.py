@@ -797,6 +797,23 @@ class UpgradeTest(unittest.TestCase):
         self.assertIn('installed successfully', applied.stdout)
         self.assertIn('start a fresh agent session', applied.stdout)
 
+    def test_install_and_upgrade_never_enable_or_mention_scout(self):
+        shown = self.run_install(json_output=False).stdout
+        self.assertNotIn('scout', shown.lower())
+        self.install()
+        config = self.root / '.coldsession-state/scout/config.json'
+        self.assertFalse(config.exists())
+        doctor = subprocess.run([sys.executable, str(self.root / '.claude/bin/plan'), 'doctor', '--json'],
+                                cwd=self.root, env=clean_env(PLAN_ROOT=str(self.root)), text=True, capture_output=True)
+        self.assertEqual(json.loads(doctor.stdout)['scout'], {'experimental': True, 'enabled': False})
+        # An upgrade leaves a disabled configuration exactly as it was.
+        config.parent.mkdir(parents=True)
+        config.write_text(json.dumps({'enabled': False, 'provider': 'agy'}), encoding='utf-8')
+        before = config.read_bytes()
+        self.assertNotIn('scout', self.run_install(json_output=False).stdout.lower())
+        self.install()
+        self.assertEqual(config.read_bytes(), before)
+
     def test_line_ending_conversion_is_repaired_without_a_false_conflict(self):
         self.install()
         converted = [
