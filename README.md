@@ -317,6 +317,7 @@ plan recover
 plan guard read|write|lint|stage
 plan issue NUMBER [--resume]
 plan scout template|request|validate|cached   (experimental)
+plan scout setup|model|exclude|disable        (experimental)
 ```
 
 Mutations hold one repository lock, including verification and shared-resource
@@ -333,9 +334,58 @@ The phase index remains on the closed phase until planning creates the next one.
 ## Scout (experimental)
 
 Scout lets an external agent CLI do read-only exploration, so the host model
-does not spend its own quota on it. This release adds only the contract and
-its deterministic validator. It runs no provider and makes no network or
-model call. Setup, the `agy` provider, and `/cs-scout` come in later releases.
+does not spend its own quota on it. This release adds the contract, its
+deterministic validator, and opt-in setup. It does not run scout requests yet;
+running the `agy` provider and `/cs-scout` come in later releases.
+
+### Setup and data sharing
+
+Scout is off by default. Installing or upgrading coldsession never enables it
+and never asks about it. A user opts one project in explicitly:
+
+```text
+plan scout setup [--provider agy] [--model NAME] [--timeout SECONDS] [--exclude PATH]... [--accept-data-sharing] [--json]
+plan scout model NAME|--default
+plan scout exclude add|remove PATH...
+plan scout disable
+```
+
+**Data sharing.** When scout runs, repository content inside each request's
+scope is sent to the provider. For `agy` (Antigravity CLI) that is Google.
+For opencode, when it arrives, it is OpenRouter and the vendor of the routed
+model. `setup` shows this disclosure and enables scout only after you accept
+it: type `yes` at a terminal, or pass `--accept-data-sharing` in a
+non-interactive run. Piped or closed input is never taken as acceptance.
+
+`setup` first checks the provider CLI with bounded calls: it must be on PATH
+and `--version` must succeed. A missing CLI and a failing CLI are reported
+separately and leave scout disabled. When the provider lists its models
+(`agy models`), `setup` and `plan scout model` reject names that are not on
+the list. Authentication and quota cannot be confirmed without a real request,
+so they are always reported as `unknown`, never `ok`.
+
+The configuration is local to you and this project. It lives in
+`.coldsession-state/scout/config.json`, next to the stats and the report
+cache, and that directory ignores itself in git, so one developer's opt-in
+never opts in teammates. It records `enabled`, `provider`, `model` (empty
+means the provider's default), `timeout_seconds` (default 180), `exclusions`,
+and `threshold` (`strict`). `sensitive()` paths and `.coldsession-state/` are
+always excluded and cannot be removed; `exclusions` adds your own, such as
+private folders. `plan scout disable` turns scout off and keeps cached reports
+and stats.
+
+**Cost.** Coldsession adds no spending cap. Usage is governed by the
+provider's own controls, such as OpenRouter usage caps or routing to free
+models.
+
+`plan doctor` reports scout on one line; `plan doctor --json` has the same
+fields: whether it is enabled, the provider and model, whether the CLI is on
+PATH, the last check's result and time, and counters for runs, accepted and
+rejected reports (by reason), fallbacks, and cache hits. The counters are kept
+in a small, bounded `.coldsession-state/scout/stats.json` and are updated only
+after setup.
+
+### Contract and validation
 
 ```text
 plan scout template locate|trace|inventory
@@ -373,8 +423,7 @@ report is accepted only when all of the following hold:
   the bound rejects the report instead of hanging.
 - HEAD is still the commit recorded in the request.
 
-`.coldsession-state/` is always excluded. Additional exclusions can be listed
-in `.coldsession-state/scout/config.json` as `{"exclusions": [...]}`.
+`.coldsession-state/` is always excluded, as are your configured exclusions.
 Accepted reports are cached under `.coldsession-state/scout/reports/`. That
 directory ignores itself in git, so the cache is never committed. `cached`
 reuses a report only when the request was made on a clean tree, HEAD is
@@ -389,8 +438,8 @@ reports E36 for a Verify line that cites one.
 ## Hooks and doctor
 
 `plan doctor --json` reports Python/runtime versions, adapter installation,
-detected CLIs, hook configuration, unknown trust, pending journals, and enforcement
-gaps. Configuration on disk does not prove that a running harness trusts or loads
+detected CLIs, hook configuration, unknown trust, pending journals, scout status,
+and enforcement gaps. Configuration on disk does not prove that a running harness trusts or loads
 it. Start a fresh session and confirm native hook trust after installation.
 
 Both adapters normalize supported file and patch payloads into shared checks.

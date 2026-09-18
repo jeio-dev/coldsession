@@ -30,6 +30,21 @@ that against the supported format rather than the product release.
 - A scout report is orientation only. `plan verify`, `resolve`, `handoff`,
   and `integrate` refuse scout reports and scout cache paths with E36, and
   `plan lint` reports a Verify line that cites one.
+- **Experimental:** add opt-in scout setup (#19). `plan scout setup` checks
+  the provider CLI (`agy` at launch), shows the data-sharing disclosure, and
+  enables scout only after interactive `yes` or `--accept-data-sharing`.
+  Missing CLIs, failing CLIs, and undetectable authentication or quota are
+  reported distinctly; the last is always `unknown`. Installs and upgrades
+  never enable scout.
+- Add `plan scout model`, `exclude`, and `disable`. Model names are checked
+  against the provider's model list when it has one. `sensitive()` paths and
+  `.coldsession-state/` cannot be removed from the exclusions. Disabling keeps
+  cached reports and stats.
+- Keep the scout configuration and bounded counters under
+  `.coldsession-state/scout/`, local to the user and never committed.
+  `plan doctor` reports scout status, the last check, and counters.
+  Coldsession adds no spending cap; the README documents provider-side
+  controls.
 
 ## [v3.4.0]
 

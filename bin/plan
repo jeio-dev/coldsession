@@ -31,6 +31,7 @@ Stdlib only, no install step.
   plan guard KIND [target]        shared hook checks; quiet for unrelated projects
   plan issue NUMBER               read-only GitHub issue intake for /cs-plan --issue
   plan scout template|request|validate|cached   experimental scout report contract
+  plan scout setup|model|exclude|disable        opt-in scout configuration (experimental)
   plan version                    print the coldsession release version
 """
 
@@ -3240,6 +3241,7 @@ def cmd_doctor(_phase, args):
         pass  # Recorded trust is a diagnostic hint, never a permission grant.
     report['upgrade'] = diagnostic_json(state_path('upgrade.json')).get('status', 'none')
     report['workflow_transaction_pending'] = os.path.exists(state_path('transaction.json'))
+    report['scout'] = scout_doctor()
     try:
         if os.path.exists(INDEX):
             phase = read_phase(read_index())
@@ -3851,14 +3853,20 @@ def _scout_cacheable(request):
     return None
 
 
-def _scout_store(request, report):
+def _scout_home():
     base = state_path('scout')
     os.makedirs(base, exist_ok=True)
-    # Local cache only: keep it out of commits even where .coldsession-state/
-    # itself is tracked for the installation ownership record.
+    # Cache, configuration, and stats are local to this user and project: keep
+    # them out of commits even where .coldsession-state/ itself is tracked for
+    # the installation ownership record, so one opt-in never opts in teammates.
     ignore = os.path.join(base, '.gitignore')
     if not os.path.exists(ignore):
-        atomic_write(ignore, '# coldsession scout cache: local only, never committed\n*\n')
+        atomic_write(ignore, '# coldsession scout: local only, never committed\n*\n')
+    return base
+
+
+def _scout_store(request, report):
+    base = _scout_home()
     save_json(_scout_cache_path(request), {
         'contract': SCOUT_CONTRACT, 'orientation_only': True, 'rev': request['rev']['head'],
         'request': {k: request[k] for k in ('kind', 'params', 'scope')},
@@ -3912,15 +3920,359 @@ def _scout_print(result, as_json):
           f"patterns rerun {stats['patterns_rerun']}; cache {result.get('cache', 'not stored')}")
 
 
+# Opt-in setup. Scout is off until a user runs `plan scout setup` and accepts
+# the data-sharing disclosure; installers and upgrades never write this. The
+# configuration and counters live beside the cache and share its ignore file.
+
+SCOUT_PROVIDERS = {
+    'agy': {'name': 'Antigravity CLI', 'recipient': 'Google',
+            'version': ['--version'], 'models': ['models']},
+}
+SCOUT_DEFAULT_TIMEOUT = 180
+SCOUT_ALWAYS_EXCLUDED = ['sensitive()'] + list(SCOUT_BUILTIN_EXCLUSIONS)
+SCOUT_CONFIG_KEYS = {'experimental', 'enabled', 'provider', 'model', 'timeout_seconds',
+                     'exclusions', 'threshold', 'disclosure'}
+SCOUT_COUNTERS = ('runs', 'accepted', 'fallbacks', 'cache_hits')
+SCOUT_MAX_REASONS = 32
+
+
+def _scout_config_path():
+    return state_path(os.path.join('scout', 'config.json'))
+
+
+def _scout_config():
+    """The saved configuration, None when scout was never set up. Raises ValueError when invalid."""
+    config = load_json(_scout_config_path())
+    if config is None:
+        return None
+    if not isinstance(config, dict) or set(config) - SCOUT_CONFIG_KEYS:
+        raise ValueError('scout config must be an object with only ' + ', '.join(sorted(SCOUT_CONFIG_KEYS)))
+    if not isinstance(config.get('enabled'), bool) or config.get('provider') not in SCOUT_PROVIDERS:
+        raise ValueError('scout config needs enabled true/false and a supported provider')
+    if not isinstance(config.get('model', ''), str) or not isinstance(config.get('exclusions', []), list):
+        raise ValueError('scout config model must be a string and exclusions a list')
+    timeout = config.get('timeout_seconds', SCOUT_DEFAULT_TIMEOUT)
+    if not isinstance(timeout, int) or isinstance(timeout, bool) or not 10 <= timeout <= 3600:
+        raise ValueError('scout config timeout_seconds must be an integer from 10 to 3600')
+    return config
+
+
+def _scout_config_or_die(required=False):
+    try:
+        config = _scout_config()
+    except ValueError as exc:
+        die(f'{exc}; rerun plan scout setup')
+    if required and config is None:
+        die('scout is not set up; run plan scout setup first')
+    return config
+
+
+def _scout_stats():
+    stats = load_json(state_path(os.path.join('scout', 'stats.json')), {})
+    stats = stats if isinstance(stats, dict) else {}
+    counters = {key: stats[key] if isinstance(stats.get(key), int) else 0 for key in SCOUT_COUNTERS}
+    rejected = stats.get('rejected') if isinstance(stats.get('rejected'), dict) else {}
+    counters['rejected'] = {str(k): v for k, v in rejected.items() if isinstance(v, int)}
+    counters['last_check'] = stats.get('last_check') if isinstance(stats.get('last_check'), dict) else None
+    return counters
+
+
+def _scout_record(**change):
+    """Update the bounded counters. Diagnostic only: a lost update is tolerable, a torn file is not."""
+    try:
+        stats = _scout_stats()
+        for key in SCOUT_COUNTERS:
+            stats[key] += change.get(key, 0)
+        for code in change.get('rejected', ()):
+            code = code if code in stats['rejected'] or len(stats['rejected']) < SCOUT_MAX_REASONS else 'other'
+            stats['rejected'][code] = stats['rejected'].get(code, 0) + 1
+        if 'last_check' in change:
+            stats['last_check'] = change['last_check']
+        _scout_home()
+        save_json(state_path(os.path.join('scout', 'stats.json')), stats)
+    except (OSError, ValueError):
+        pass  # Counters never change what a scout command decides or prints.
+
+
+def _scout_counting():
+    try:
+        return _scout_config() is not None
+    except (OSError, ValueError):
+        return False
+
+
+def _scout_tail(output):
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    return (lines[-1] if lines else 'no output')[:200]
+
+
+def _scout_check(provider, models=True):
+    """Bounded health check. Authentication and quota are never claimed: they stay unknown."""
+    spec = SCOUT_PROVIDERS[provider]
+    check = {'provider': provider, 'at': datetime.now().isoformat(timespec='seconds'),
+             'cli': shutil.which(provider), 'result': 'ok', 'detail': '', 'version': None,
+             'models': None, 'auth': 'unknown', 'quota': 'unknown'}
+    if not check['cli']:
+        check.update(result='missing', detail=f'{provider} ({spec["name"]}) is not on PATH')
+        return check
+    ran = bounded_run([check['cli'], *spec['version']], timeout=15, shell=False)
+    if ran['exit'] != 0 or ran['timeout']:
+        why = 'timed out' if ran['timeout'] else f"exited {ran['exit']}: {_scout_tail(ran['output'])}"
+        check.update(result='failing', detail=f'{provider} {" ".join(spec["version"])} {why}')
+        return check
+    check['version'] = _scout_tail(ran['output'])
+    if models and spec.get('models'):
+        ran = bounded_run([check['cli'], *spec['models']], timeout=60, shell=False)
+        if ran['exit'] == 0 and not ran['timeout'] and not ran['truncated']:
+            # One model per line: an identifier, a tab, then its display name.
+            listed = [line.split('\t', 1)[0].strip() for line in ran['output'].splitlines() if '\t' in line]
+            check['models'] = [name for name in listed if name] or None
+        if check['models'] is None:
+            check['detail'] = 'model list unavailable; authentication or quota may need attention'
+    return check
+
+
+def _scout_check_model(check, model):
+    if model and check['models'] is not None and model not in check['models']:
+        die(f"model {model!r} is not offered by {check['provider']}; choose one of: {', '.join(check['models'])}")
+    return model and check['models'] is None
+
+
+def _scout_disclosure(provider):
+    spec = SCOUT_PROVIDERS[provider]
+    return (f"Scout is experimental. When it runs, repository content inside each request's scope is sent "
+            f"to {spec['recipient']} through {provider} ({spec['name']}). sensitive() paths, "
+            f".coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; "
+            f"usage is governed by the provider's own limits.")
+
+
+def _scout_terminal():
+    """Whether stdin is a person at a terminal. Windows reports NUL as a tty, so ask the console."""
+    try:
+        if not sys.stdin or not sys.stdin.isatty():
+            return False
+        if os.name != 'nt':
+            return True
+        import ctypes
+        import msvcrt
+        mode = ctypes.c_ulong()
+        return bool(ctypes.windll.kernel32.GetConsoleMode(msvcrt.get_osfhandle(sys.stdin.fileno()), ctypes.byref(mode)))
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def _scout_confirm(provider):
+    """Interactive acceptance on a terminal only. Piped or closed input is never consent."""
+    if not _scout_terminal():
+        return False
+    try:
+        answer = input(f'Type yes to share repository content with {SCOUT_PROVIDERS[provider]["recipient"]}: ')
+    except EOFError:
+        return False
+    return answer.strip().lower() == 'yes'
+
+
+def _scout_show_check(check):
+    print(f"provider: {check['provider']} ({check['result']}){': ' + check['detail'] if check['detail'] else ''}")
+    if check['version']:
+        print(f"version: {check['version']}; authentication: {check['auth']}; quota: {check['quota']}")
+
+
+def _scout_options(rest, flags, repeat=()):
+    """Parse --flag VALUE pairs; repeated ones collect into lists."""
+    values, extra, index = {key: [] for key in repeat}, [], 0
+    while index < len(rest):
+        key = rest[index]
+        if key in flags or key in repeat:
+            if index + 1 >= len(rest):
+                die(f'{key} needs a value')
+            if key in repeat:
+                values[key].append(rest[index + 1])
+            elif key in values:
+                die(f'{key} was given twice')
+            else:
+                values[key] = rest[index + 1]
+            index += 2
+        else:
+            extra.append(key)
+            index += 1
+    return values, extra
+
+
+def _scout_exclusion(value):
+    try:
+        entry = _scout_entry(value)
+    except ValueError as exc:
+        die(str(exc))
+    if entry == '.':
+        die('excluding the whole repository would leave nothing to scout; run plan scout disable instead')
+    return entry
+
+
+def scout_setup(rest, as_json):
+    options, extra = _scout_options(rest, ('--provider', '--model', '--timeout'), repeat=('--exclude',))
+    accepted = '--accept-data-sharing' in extra
+    extra = [value for value in extra if value != '--accept-data-sharing']
+    if extra:
+        die(f"unexpected setup arguments: {' '.join(extra)}")
+    provider = options.get('--provider', 'agy')
+    if provider not in SCOUT_PROVIDERS:
+        die(f"unsupported scout provider {provider!r}; supported: {', '.join(SCOUT_PROVIDERS)}")
+    try:
+        previous = _scout_config() or {}
+    except ValueError:
+        # Setup is the repair path: keep valid exclusions (the bare
+        # {"exclusions": [...]} form predates setup) and rewrite the rest.
+        raw = load_json(_scout_config_path(), {})
+        kept = raw.get('exclusions') if isinstance(raw, dict) else None
+        previous = {'exclusions': kept if isinstance(kept, list) else []}
+    if previous.get('provider') != provider:
+        previous = {'exclusions': previous.get('exclusions', [])}
+    timeout = options.get('--timeout', previous.get('timeout_seconds', SCOUT_DEFAULT_TIMEOUT))
+    try:
+        timeout = int(timeout)
+    except ValueError:
+        die('--timeout takes whole seconds')
+    if not 10 <= timeout <= 3600:
+        die('--timeout must be from 10 to 3600 seconds')
+    exclusions = []
+    for value in previous.get('exclusions', []):
+        try:
+            entry = _scout_entry(value)
+        except ValueError:
+            continue  # Unusable entries from a hand-edited file are dropped, not trusted.
+        if entry != '.' and entry not in exclusions:
+            exclusions.append(entry)
+    for value in options['--exclude']:
+        entry = _scout_exclusion(value)
+        if entry not in exclusions:
+            exclusions.append(entry)
+    check = _scout_check(provider)
+    _scout_record(last_check={k: check[k] for k in ('provider', 'result', 'detail', 'at')})
+    disclosure = _scout_disclosure(provider)
+    result = {'experimental': True, 'check': check, 'disclosure': disclosure, 'enabled': False}
+    def refuse(message):
+        if as_json:
+            print(json.dumps(dict(result, error=message), indent=2))
+        die(message)
+    if check['result'] != 'ok':
+        if not as_json:
+            _scout_show_check(check)
+        refuse(f"scout was not enabled: {check['detail']}")
+    model = options.get('--model', previous.get('model', '')).strip()
+    if len(model) > 200 or re.search(r'\s', model):
+        die('a model name is one word of at most 200 characters')
+    unvalidated = _scout_check_model(check, model)
+    if not as_json:
+        _scout_show_check(check)
+        print('\n' + disclosure + '\n')
+    if not accepted:
+        if as_json:
+            print(disclosure, file=sys.stderr)
+        accepted = _scout_confirm(provider)
+    if not accepted:
+        refuse('scout was not enabled: data sharing was not accepted '
+               '(non-interactive setup needs --accept-data-sharing)')
+    config = {'experimental': True, 'enabled': True, 'provider': provider, 'model': model,
+              'timeout_seconds': timeout, 'exclusions': exclusions, 'threshold': 'strict',
+              'disclosure': {'recipient': SCOUT_PROVIDERS[provider]['recipient'],
+                             'accepted_at': datetime.now().isoformat(timespec='seconds')}}
+    _scout_home()
+    save_json(_scout_config_path(), config)
+    result.update(enabled=True, config=config, always_excluded=SCOUT_ALWAYS_EXCLUDED)
+    if as_json:
+        print(json.dumps(result, indent=2))
+        return 0
+    print(f"scout enabled (experimental): {provider}, model {model or 'provider default'}"
+          f"{' (not validated: the provider did not list models)' if unvalidated else ''}, "
+          f"timeout {timeout}s")
+    print(f"always excluded: {', '.join(SCOUT_ALWAYS_EXCLUDED)}"
+          f"{'; also excluded: ' + ', '.join(exclusions) if exclusions else ''}")
+    print('change the model with plan scout model NAME; turn scout off with plan scout disable')
+    return 0
+
+
+def scout_configure(action, rest, as_json):
+    """model, exclude, and disable: edits that never repeat setup or its disclosure."""
+    config = _scout_config_or_die(required=action != 'disable')
+    if config is None:
+        print('scout is not set up; nothing to disable')
+        return 0
+    note = ''
+    if action == 'disable':
+        if rest:
+            die('usage: plan scout disable')
+        config['enabled'] = False
+        note = 'scout disabled; cached reports and stats were kept'
+    elif action == 'model':
+        if len(rest) != 1:
+            die('usage: plan scout model NAME|--default')
+        model = '' if rest[0] == '--default' else rest[0].strip()
+        if len(model) > 200 or re.search(r'\s', model):
+            die('a model name is one word of at most 200 characters')
+        check = _scout_check(config['provider'])
+        if check['result'] == 'ok':
+            unvalidated = _scout_check_model(check, model)
+        else:
+            unvalidated = bool(model)
+        config['model'] = model
+        note = f"scout model: {model or 'provider default'}" + (
+            ' (not validated: the provider did not list models)' if unvalidated else '')
+    else:
+        if len(rest) < 2 or rest[0] not in ('add', 'remove'):
+            die('usage: plan scout exclude add|remove PATH...')
+        entries = [_scout_exclusion(value) for value in rest[1:]]
+        exclusions = list(config.get('exclusions', []))
+        for entry in entries:
+            if rest[0] == 'add':
+                if entry not in exclusions:
+                    exclusions.append(entry)
+                continue
+            if sensitive(entry) or any(_scout_under(entry, p) for p in SCOUT_BUILTIN_EXCLUSIONS):
+                die(f'{entry} is always excluded ({", ".join(SCOUT_ALWAYS_EXCLUDED)}) and cannot be removed')
+            if entry not in exclusions:
+                die(f'{entry} is not a configured exclusion')
+            exclusions.remove(entry)
+        config['exclusions'] = exclusions
+        note = f"always excluded: {', '.join(SCOUT_ALWAYS_EXCLUDED)}; also excluded: {', '.join(exclusions) or 'nothing'}"
+    save_json(_scout_config_path(), config)
+    print(json.dumps({'config': config, 'always_excluded': SCOUT_ALWAYS_EXCLUDED}, indent=2) if as_json else note)
+    return 0
+
+
+def scout_doctor():
+    """Doctor's scout entry: one flag when never set up, otherwise config, CLI, last check, and counters."""
+    try:
+        config = _scout_config()
+    except (OSError, ValueError) as exc:
+        return {'experimental': True, 'enabled': False, 'error': f'invalid scout config: {exc}'}
+    if config is None:
+        return {'experimental': True, 'enabled': False}
+    stats = _scout_stats()
+    last = stats.pop('last_check')
+    return {'experimental': True, 'enabled': config['enabled'], 'provider': config['provider'],
+            'model': config.get('model') or 'provider default',
+            'timeout_seconds': config.get('timeout_seconds', SCOUT_DEFAULT_TIMEOUT),
+            'cli_detected': bool(shutil.which(config['provider'])),
+            'last_check': {k: last.get(k) for k in ('result', 'at', 'detail')} if last else None,
+            'counters': stats}
+
+
 def cmd_scout(_phase, args):
     usage = ('usage: plan scout template KIND | request KIND NAME=VALUE... --purpose TEXT '
              '[--include PATH]... [--exclude PATH]... [--known TEXT]... | '
-             'validate REPORT.json --request REQUEST.json [--json] | cached --request REQUEST.json [--json]')
-    if not args or args[0] not in ('template', 'request', 'validate', 'cached'):
+             'validate REPORT.json --request REQUEST.json [--json] | cached --request REQUEST.json [--json] | '
+             'setup [--provider agy] [--model NAME] [--timeout SECONDS] [--exclude PATH]... '
+             '[--accept-data-sharing] [--json] | model NAME|--default | exclude add|remove PATH... | disable')
+    if not args or args[0] not in ('template', 'request', 'validate', 'cached', 'setup', 'model', 'exclude', 'disable'):
         die(usage)
     action, rest = args[0], list(args[1:])
     as_json = '--json' in rest
     rest = [value for value in rest if value != '--json']
+    if action == 'setup':
+        return scout_setup(rest, as_json)
+    if action in ('model', 'exclude', 'disable'):
+        return scout_configure(action, rest, as_json)
     if action == 'template':
         if len(rest) != 1:
             die(usage)
@@ -3971,6 +4323,8 @@ def cmd_scout(_phase, args):
             result, accepted = scout_validate(stored.get('report'), request)
             if accepted:
                 result['cache'] = 'hit'
+                if _scout_counting():
+                    _scout_record(cache_hits=1)
                 _scout_print(result, as_json)
                 return 0
             miss = 'stored report no longer validates'
@@ -3987,6 +4341,11 @@ def cmd_scout(_phase, args):
         accepted = False
     else:
         result, accepted = scout_validate(report, request)
+    if _scout_counting():
+        if accepted:
+            _scout_record(accepted=1)
+        else:
+            _scout_record(rejected=sorted({reason['code'] for reason in result['reasons']}))
     if accepted:
         miss = _scout_cacheable(request)
         if miss:
