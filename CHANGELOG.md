@@ -4,6 +4,33 @@ The tool release and phase-file format are versioned separately. A phase file
 records the format it was planned under as `workflow-rev`; `plan lint` checks
 that against the supported format rather than the product release.
 
+## [v3.5.0]
+
+- **Experimental:** add the scout contract for delegated read-only
+  exploration (#18, tracked in #17). This release adds versioned request and
+  report schemas and fixed `locate`, `trace`, and `inventory` templates. The
+  installer ships them beside both the Claude and Codex runtimes. No
+  provider is run, and no network or model call is made.
+- Add `plan scout template|request|validate|cached`. The validator is strict:
+  any failed check rejects the whole report with machine-readable reasons,
+  and shape failures are reported separately. It checks the following:
+  - cited files exist, stay inside the repository after links are resolved,
+    and are within scope, not sensitive, and not excluded;
+  - during an active task claim, cited files are inside that task's read set;
+  - snippets match their lines, ignoring whitespace, with up to 3 lines of
+    drift;
+  - every answer sentence cites evidence;
+  - `locate`, `trace`, and `inventory` rules hold;
+  - `inventory` and `not_found` search patterns rerun in a time-bounded
+    process with no uncited matches;
+  - HEAD is unchanged since the request.
+- Cache accepted reports under `.coldsession-state/scout/`. That directory
+  ignores itself in git. A cached report is reused only on an exact, clean
+  rev and is revalidated first.
+- A scout report is orientation only. `plan verify`, `resolve`, `handoff`,
+  and `integrate` refuse scout reports and scout cache paths with E36, and
+  `plan lint` reports a Verify line that cites one.
+
 ## [v3.4.0]
 
 - Add `/cs-grant` (`$cs-grant`) so a human who cannot edit the phase file can
