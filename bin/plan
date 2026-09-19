@@ -4317,7 +4317,10 @@ def scout_status(as_json):
         reason = f"{info['provider']} is not on PATH"
     else:
         reason = None
-    guide = os.path.relpath(SCOUT_GUIDE, ROOT).replace(os.sep, '/')
+    try:
+        guide = os.path.relpath(SCOUT_GUIDE, ROOT).replace(os.sep, '/')
+    except ValueError:  # Windows: the runtime is on another drive than the repository
+        guide = SCOUT_GUIDE
     if guide.startswith('..') or os.path.isabs(guide):
         guide = SCOUT_GUIDE
     if as_json:
