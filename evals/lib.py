@@ -109,22 +109,7 @@ def setup_project(name, tmp):
     same settings.json, same runtime layout CONTRIBUTING.md's own pre-PR
     check produces.
     """
-    if os.name == "nt":
-        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-File",
-               str(ROOT / "install.ps1"), "-Target", str(tmp), "-Agent", "claude"]
-    else:
-        cmd = [str(ROOT / "install.sh"), str(tmp), "--agent", "claude"]
-    result = subprocess.run(cmd, text=True, capture_output=True, check=False, env=isolated_env(tmp))
-    if result.returncode != 0:
-        raise FixtureError(
-            f"install failed for fixture {name}:\n{result.stdout}{result.stderr}"
-        )
-    preview = json.loads(result.stdout)['preview']
-    result = subprocess.run(cmd + (['-Apply', preview] if os.name == 'nt' else ['--apply', preview]),
-                            text=True, capture_output=True, check=False, env=isolated_env(tmp))
-    if result.returncode:
-        raise FixtureError('install apply failed: ' + result.stderr)
-
+    install(tmp, name)
     src = FIXTURES / name / "project"
     if not src.exists():
         raise FixtureError(f"fixture {name} has no project/ directory")
@@ -136,11 +121,34 @@ def setup_project(name, tmp):
         shutil.copyfile(item, dest)
 
 
+def install(tmp, name):
+    """Preview and apply the real Claude installer into `tmp`."""
+    if os.name == "nt":
+        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-File",
+               str(ROOT / "install.ps1"), "-Target", str(tmp), "-Agent", "claude", "-Json"]
+    else:
+        cmd = [str(ROOT / "install.sh"), str(tmp), "--agent", "claude", "--json"]
+    result = subprocess.run(cmd, text=True, capture_output=True, check=False, env=isolated_env(tmp))
+    if result.returncode != 0:
+        raise FixtureError(
+            f"install failed for fixture {name}:\n{result.stdout}{result.stderr}"
+        )
+    preview = json.loads(result.stdout)['preview']
+    result = subprocess.run(cmd + (['-Apply', preview] if os.name == 'nt' else ['--apply', preview]),
+                            text=True, capture_output=True, check=False, env=isolated_env(tmp))
+    if result.returncode:
+        raise FixtureError('install apply failed: ' + result.stderr)
+
+
 def isolated_env(tmp):
     """Allowlist process essentials/auth; never inherit plugins or session identity."""
     allowed = {'PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP',
                'LANG', 'LC_ALL', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
-               'ANTHROPIC_API_KEY', 'SSL_CERT_FILE', 'SSL_CERT_DIR'}
+               'ANTHROPIC_API_KEY', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
+               # An explicit gateway such as OpenRouter, and the model it serves.
+               'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_MODEL',
+               'ANTHROPIC_SMALL_FAST_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL',
+               'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL'}
     env = {k: v for k, v in os.environ.items() if k.upper() in allowed}
     config = Path(tmp) / '.eval-config'
     config.mkdir(exist_ok=True)
@@ -160,8 +168,13 @@ def redact(value):
     return value
 
 
-def run_claude(tmp, prompt, max_budget_usd=DEFAULT_MAX_BUDGET_USD, timeout=600):
-    """Bounded isolated invocation. Native permissions remain active; failures count."""
+def run_claude(tmp, prompt, max_budget_usd=DEFAULT_MAX_BUDGET_USD, timeout=600, allowed_tools=()):
+    """Bounded isolated invocation. Native permissions remain active; failures count.
+
+    `allowed_tools` are scoped permission rules. They go on the command line
+    because the isolated configuration does not apply a fixture project's
+    settings.json permissions (verified with claude -p on Windows).
+    """
     if float(max_budget_usd) <= 0:
         raise FixtureError('budget must be positive')
     cmd = ["claude", "-p", prompt,
@@ -169,6 +182,8 @@ def run_claude(tmp, prompt, max_budget_usd=DEFAULT_MAX_BUDGET_USD, timeout=600):
            "--setting-sources", "project", "--strict-mcp-config",
            "--mcp-config", '{"mcpServers":{}}',
            "--max-budget-usd", str(max_budget_usd)]
+    for rule in allowed_tools:
+        cmd += ["--allowedTools", rule]
     events = []
     output, retained, truncated = [], [0], [False]
     started = time.monotonic()

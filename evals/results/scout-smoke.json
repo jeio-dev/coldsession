@@ -1,0 +1,223 @@
+{
+  "harness": "claude",
+  "host_endpoint": "https://openrouter.ai/api",
+  "host_model": "anthropic/claude-sonnet-5",
+  "codex": "not run: evals/lib.py drives only the Claude CLI",
+  "budget_usd": 2.0,
+  "budget_per_run_usd": 1.0,
+  "live": true,
+  "repeats": 1,
+  "arms": [
+    "native",
+    "scout:gemini-3.8-flash-low"
+  ],
+  "scenarios": {
+    "evidence-stale-reasons": "a205002338bced0407450287bf74da8aa3ce5083"
+  },
+  "runs": [
+    {
+      "scenario": "evidence-stale-reasons",
+      "arm": "native",
+      "model": null,
+      "correct": true,
+      "failures": [],
+      "budget_usd": 1.0,
+      "tokens": {
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 16279,
+        "cache_read_input_tokens": 364643,
+        "output_tokens": 1562,
+        "output_tokens_details": {
+          "thinking_tokens": 397
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 16279
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 382502,
+      "cost_usd": 0.1292821,
+      "scout": null,
+      "scout_calls": {
+        "status": 2,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": null,
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 55.29666829993948,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01CB8bqXruY5zbZKnPhjbiWL",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\"",
+            "description": "Run scout status check"
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 60.11577979999129,
+      "repeat": 0
+    },
+    {
+      "scenario": "evidence-stale-reasons",
+      "arm": "scout:gemini-3.8-flash-low",
+      "model": "gemini-3.8-flash-low",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 1.0,
+      "tokens": {
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 21669,
+        "cache_read_input_tokens": 425240,
+        "output_tokens": 3363,
+        "output_tokens_details": {
+          "thinking_tokens": 1979
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 21669
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 450292,
+      "cost_usd": 0.1728905,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T02:21:26\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-low\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T02:21:29\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 105.28434859996196,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 113.66734309995081,
+      "repeat": 0
+    }
+  ],
+  "limits": "Includes failed runs. Tokens are harness-reported host usage; scout provider usage is not measured. Answers are graded by fixed checks; unnecessary edits within writable files need human adjudication.",
+  "summary": {
+    "thresholds": {
+      "min_reduction": 0.1,
+      "max_rejection": 0.2
+    },
+    "arms": {
+      "native": {
+        "runs": 1,
+        "correct": 1,
+        "failed": 0,
+        "unknown_tokens": 0,
+        "median_host_tokens": 382502,
+        "median_cost_usd": 0.1292821,
+        "median_agent_seconds": 55.29666829993948,
+        "out_of_scope_runs": 0,
+        "scout": {
+          "runs": 0,
+          "accepted": 0,
+          "fallbacks": 0,
+          "cache_hits": 0,
+          "timeouts": 0,
+          "tree_changes": 0,
+          "rejected": {},
+          "reports": 0,
+          "rejection_rate": null
+        }
+      },
+      "scout:gemini-3.8-flash-low": {
+        "runs": 1,
+        "correct": 1,
+        "failed": 0,
+        "unknown_tokens": 0,
+        "median_host_tokens": 450292,
+        "median_cost_usd": 0.1728905,
+        "median_agent_seconds": 105.28434859996196,
+        "out_of_scope_runs": 0,
+        "scout": {
+          "runs": 2,
+          "accepted": 0,
+          "fallbacks": 1,
+          "cache_hits": 0,
+          "timeouts": 0,
+          "tree_changes": 0,
+          "rejected": {
+            "invalid_shape": 1
+          },
+          "reports": 1,
+          "rejection_rate": 1.0
+        },
+        "paired": [
+          {
+            "scenario": "evidence-stale-reasons",
+            "native": 382502,
+            "scout": 450292,
+            "reduction": -0.17722783148846277
+          }
+        ],
+        "reduction": -0.17722783148846277,
+        "verdict": "fails"
+      }
+    },
+    "fastest_passing_arm": null,
+    "verdict": "fails the rule"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "stale-verify-fix",
+  "derived_from": [
+    "#11",
+    "f2928d8"
+  ],
+  "exploration": "locate",
+  "source": {
+    "rev": "a205002338bced0407450287bf74da8aa3ce5083"
+  },
+  "patches": [
+    {
+      "file": "bin/plan",
+      "old": "    if record.get('checks-hash') != digest(json.dumps(verification_checks(phase, tid), sort_keys=True).encode()):\n        reasons.append('checks_changed')\n",
+      "new": ""
+    }
+  ],
+  "task": "Bug: after someone edits the `Verify:` line of a task in a phase file, `plan done` still accepts the verification evidence recorded for the old command. Evidence must be refused with the reason code `checks_changed` when a task's declared verification checks differ from the ones the evidence was recorded for. Find where bin/plan decides whether evidence is still valid and fix it with the smallest change. Change only bin/plan.",
+  "acceptance": "Changed checks yield checks_changed; unchanged evidence stays valid; spec, input, and failure reasons are unaffected.",
+  "writable": [
+    "bin/plan"
+  ],
+  "checks": [
+    "import importlib.machinery, importlib.util, json; l = importlib.machinery.SourceFileLoader('p', 'bin/plan'); m = importlib.util.module_from_spec(importlib.util.spec_from_loader('p', l)); l.exec_module(m); c = [{'kind': 'automated', 'command': 'python -m unittest'}]; r = {'spec-kind': 'task', 'spec': 'S', 'files': 'F', 'checks-hash': m.digest(json.dumps(c, sort_keys=True).encode()), 'success': True}; m.evidence_path = lambda p: 'unused'; m.task_specification = lambda p, t: 'S'; m.specification = lambda p: 'S'; m.working_fingerprint = lambda p, t: 'F'; m.verification_checks = lambda p, t: c; reasons = lambda **d: (setattr(m, 'load_json', lambda path, default=None: {'T1': dict(r, **d)}), m.evidence_failure_reasons({}, 'T1'))[1]; assert reasons() == [], reasons(); assert reasons(**{'checks-hash': 'old'}) == ['checks_changed'], reasons(**{'checks-hash': 'old'})",
+    "import importlib.machinery, importlib.util, json; l = importlib.machinery.SourceFileLoader('p', 'bin/plan'); m = importlib.util.module_from_spec(importlib.util.spec_from_loader('p', l)); l.exec_module(m); c = [{'kind': 'automated', 'command': 'python -m unittest'}]; r = {'spec-kind': 'task', 'spec': 'S', 'files': 'F', 'checks-hash': m.digest(json.dumps(c, sort_keys=True).encode()), 'success': True}; m.evidence_path = lambda p: 'unused'; m.task_specification = lambda p, t: 'S'; m.specification = lambda p: 'S'; m.working_fingerprint = lambda p, t: 'F'; m.verification_checks = lambda p, t: c; reasons = lambda **d: (setattr(m, 'load_json', lambda path, default=None: {'T1': dict(r, **d)}), m.evidence_failure_reasons({}, 'T1'))[1]; assert reasons(files='G') == ['inputs_changed']; assert reasons(spec='T') == ['spec_changed']; assert reasons(success=False) == ['verification_failed']"
+  ]
+}

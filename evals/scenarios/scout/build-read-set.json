@@ -1,0 +1,22 @@
+{
+  "id": "build-read-set",
+  "derived_from": [
+    "#13",
+    "7aada6a"
+  ],
+  "exploration": "locate",
+  "source": {
+    "rev": "a205002338bced0407450287bf74da8aa3ce5083"
+  },
+  "patches": [],
+  "task": "A Build session may open only its task's read set. Find the bin/plan function that computes that read set, the `plan` subcommands that use it to print or enforce it, and decide whether, in a strict (format 2) phase, the files of a task's dependencies are part of its read set. Write only ANSWER.json at the repository root; change no other file.",
+  "acceptance": "ANSWER.json is {\"function\": \"<name>\", \"commands\": [\"<plan subcommand>\", ...], \"strict_includes_dependency_files\": true|false}.",
+  "writable": [
+    "ANSWER.json"
+  ],
+  "checks": [
+    "import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['function'] == 'read_set', a['function']",
+    "import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert {'brief', 'guard'} <= set(a['commands']), a['commands']",
+    "import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['strict_includes_dependency_files'] is False, a['strict_includes_dependency_files']"
+  ]
+}

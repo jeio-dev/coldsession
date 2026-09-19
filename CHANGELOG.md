@@ -84,6 +84,30 @@ that against the supported format rather than the product release.
   The stage gate allows `/cs-scout` from every stage and records it as
   neither authoring nor judging. The prompt wording has no live eval yet, and
   no token saving is claimed (#22).
+- Add the paired scout benchmark (#22). `evals/scenarios/scout/` holds six
+  exploration-heavy tasks from this repository's history (#7, #9, #11, #13,
+  #15), pinned to v3.4.0, each graded by fixed checks outside the agent's
+  writable files. `evals/scout.py` runs each task natively and with scout for
+  every model you name. The prompt and permissions are the same in both arms.
+  It records host tokens and cost, scout counters, fallbacks, correctness, and
+  out-of-scope changes, and it keeps failed runs. `--summarize` applies the
+  keep rule: at least 10% fewer host tokens, rejection below 20%, and
+  correctness no lower than native. `--prepare-only` checks the harness
+  without any model call. Only Claude is covered; the runner cannot drive
+  Codex yet.
+- Record the first live scout comparison in `evals/results/`: 48 runs with
+  Sonnet 5 as host and three `agy` models. No model saved host tokens, and
+  runs were 2–3 times slower. Only `gemini-3.8-flash-high` stayed below 20%
+  rejected reports; `claude-sonnet-4-6` through `agy` produced no valid
+  report. The decision is to narrow scout: it stays experimental and opt-in,
+  the automatic rule in the workflow commands is to be removed, and the
+  default model is to become `gemini-3.8-flash-high`. Those changes are
+  follow-ups.
+- Fix `evals/lib.py` installation, which parsed the installer's human output
+  as JSON and failed every `evals/run.py` fixture before the model ran.
+- Eval sessions now receive scoped permissions on the command line, because
+  the isolated configuration ignores a fixture's `settings.json` permissions.
+  They also accept a gateway such as OpenRouter.
 
 ## [v3.4.0]
 

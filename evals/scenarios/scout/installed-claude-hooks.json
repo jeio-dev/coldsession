@@ -1,0 +1,23 @@
+{
+  "id": "installed-claude-hooks",
+  "derived_from": [
+    "#7",
+    "#9",
+    "9e5ffc1",
+    "8c583df"
+  ],
+  "exploration": "inventory",
+  "source": {
+    "rev": "a205002338bced0407450287bf74da8aa3ce5083"
+  },
+  "patches": [],
+  "task": "Find which Claude Code hook events and tool matchers the coldsession installer registers, and which guard kind each one runs. Then decide whether a Claude Code Bash tool call reaches any coldsession guard hook. Write only ANSWER.json at the repository root; change no other file.",
+  "acceptance": "ANSWER.json is {\"hooks\": [{\"event\": \"<hook event>\", \"guard\": \"<guard kind, e.g. read>\", \"matcher\": \"<matcher string or null>\"}, ...], \"bash_guarded\": true|false} listing every registered hook exactly once.",
+  "writable": [
+    "ANSWER.json"
+  ],
+  "checks": [
+    "import json; a = json.load(open('ANSWER.json', encoding='utf-8')); got = sorted((h['event'], h['guard'], sorted(set((h.get('matcher') or '').split('|')) - {''})) for h in a['hooks']); want = sorted([('UserPromptSubmit', 'stage', []), ('PreToolUse', 'read', ['Grep', 'Read']), ('PreToolUse', 'write', ['Edit', 'MultiEdit', 'Write', 'apply_patch']), ('PostToolUse', 'lint', ['Edit', 'MultiEdit', 'Write', 'apply_patch'])]); assert got == want, got",
+    "import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['bash_guarded'] is False, a['bash_guarded']"
+  ]
+}

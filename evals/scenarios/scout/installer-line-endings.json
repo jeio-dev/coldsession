@@ -1,0 +1,21 @@
+{
+  "id": "installer-line-endings",
+  "derived_from": [
+    "#9",
+    "8c583df"
+  ],
+  "exploration": "trace",
+  "source": {
+    "rev": "a205002338bced0407450287bf74da8aa3ce5083"
+  },
+  "patches": [],
+  "task": "The installer treats a managed text file as unchanged when only its line endings differ (CRLF versus LF). Find the function in bin/cs_install.py that normalizes line endings, and every function in that file that calls it. Write only ANSWER.json at the repository root; change no other file.",
+  "acceptance": "ANSWER.json is {\"normalizer\": \"<function>\", \"callers\": [\"<function>\", ...]} naming the normalizer and every function in bin/cs_install.py that calls it.",
+  "writable": [
+    "ANSWER.json"
+  ],
+  "checks": [
+    "import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['normalizer'] == 'canonical_text', a['normalizer']",
+    "import json; a = json.load(open('ANSWER.json', encoding='utf-8')); got = set(a['callers']); assert got == {'matches_hash', 'same_text', 'codex_hook_hash', 'preview'}, sorted(got)"
+  ]
+}

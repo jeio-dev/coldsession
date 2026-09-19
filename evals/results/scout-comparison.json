@@ -1,0 +1,3840 @@
+{
+  "harness": "claude",
+  "host_endpoint": "https://openrouter.ai/api",
+  "host_model": "anthropic/claude-sonnet-5",
+  "codex": "not run: evals/lib.py drives only the Claude CLI",
+  "budget_usd": 12.0,
+  "budget_per_run_usd": 0.25,
+  "live": true,
+  "repeats": 2,
+  "arms": [
+    "native",
+    "scout:gemini-3.8-flash-low",
+    "scout:gemini-3.8-flash-high",
+    "scout:claude-sonnet-4-6"
+  ],
+  "scenarios": {
+    "build-read-set": "a205002338bced0407450287bf74da8aa3ce5083",
+    "evidence-stale-reasons": "a205002338bced0407450287bf74da8aa3ce5083",
+    "installed-claude-hooks": "a205002338bced0407450287bf74da8aa3ce5083",
+    "installer-line-endings": "a205002338bced0407450287bf74da8aa3ce5083",
+    "issue-adoption": "a205002338bced0407450287bf74da8aa3ce5083",
+    "stale-verify-fix": "a205002338bced0407450287bf74da8aa3ce5083"
+  },
+  "runs": [
+    {
+      "scenario": "build-read-set",
+      "arm": "native",
+      "model": null,
+      "correct": false,
+      "failures": [
+        "harness failed or timed out: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n",
+        "harness reported error: error_max_budget_usd"
+      ],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 22,
+        "cache_creation_input_tokens": 51146,
+        "cache_read_input_tokens": 447020,
+        "output_tokens": 2293,
+        "output_tokens_details": {
+          "thinking_tokens": 725
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 51146
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 500481,
+      "cost_usd": 0.25805619999999996,
+      "scout": null,
+      "scout_calls": {
+        "status": 1,
+        "run": 0
+      },
+      "changed_files": [],
+      "out_of_scope": [],
+      "scout_setup": null,
+      "exit": 1,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 76.50695339997765,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['function'] == 'read_set', a['function']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        },
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert {'brief', 'guard'} <= set(a['commands']), a['commands']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        },
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['strict_includes_dependency_files'] is False, a['strict_includes_dependency_files']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        }
+      ],
+      "elapsed_seconds": 80.9096040999284,
+      "repeat": 0
+    },
+    {
+      "scenario": "build-read-set",
+      "arm": "scout:gemini-3.8-flash-low",
+      "model": "gemini-3.8-flash-low",
+      "correct": false,
+      "failures": [
+        "harness failed or timed out: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n",
+        "harness reported error: error_max_budget_usd"
+      ],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 28,
+        "cache_creation_input_tokens": 27346,
+        "cache_read_input_tokens": 636073,
+        "output_tokens": 4221,
+        "output_tokens_details": {
+          "thinking_tokens": 2608
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 27346
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 667668,
+      "cost_usd": 0.2535698,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 2,
+        "run": 1
+      },
+      "changed_files": [],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T02:44:10\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-low\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T02:44:14\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 1,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 121.08064519998152,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_016LiMd69Vd9h95e59tDxEGn",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['function'] == 'read_set', a['function']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        },
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert {'brief', 'guard'} <= set(a['commands']), a['commands']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        },
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['strict_includes_dependency_files'] is False, a['strict_includes_dependency_files']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        }
+      ],
+      "elapsed_seconds": 130.00008519995026,
+      "repeat": 0
+    },
+    {
+      "scenario": "build-read-set",
+      "arm": "scout:gemini-3.8-flash-high",
+      "model": "gemini-3.8-flash-high",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 20009,
+        "cache_read_input_tokens": 429479,
+        "output_tokens": 2946,
+        "output_tokens_details": {
+          "thinking_tokens": 1284
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 20009
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 452454,
+      "cost_usd": 0.16541830000000002,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 1,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 2
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T02:46:20\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-high\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T02:46:23\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 230.5491359999869,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 237.38262139994185,
+      "repeat": 0
+    },
+    {
+      "scenario": "build-read-set",
+      "arm": "scout:claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "correct": false,
+      "failures": [
+        "harness failed or timed out: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n",
+        "harness reported error: error_max_budget_usd"
+      ],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 32,
+        "cache_creation_input_tokens": 25691,
+        "cache_read_input_tokens": 714111,
+        "output_tokens": 3344,
+        "output_tokens_details": {
+          "thinking_tokens": 1040
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 25691
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 743178,
+      "cost_usd": 0.2597819,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 2
+      },
+      "changed_files": [],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T02:50:18\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"claude-sonnet-4-6\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T02:50:20\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 1,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 117.22774499992374,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01JuM5GnRS4Do19hQE1MgfWi",
+          "tool_input": {
+            "command": "cd \"C:\\Users\\Jeio\\AppData\\Local\\Temp\\cs-scout-eval-57czd0fs\" && awk 'NR==2212,NR==2260' bin/plan | head -60; echo ---; grep -n \"^def \" bin/plan | awk -F: '$1>2212 && $1<2500'"
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['function'] == 'read_set', a['function']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        },
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert {'brief', 'guard'} <= set(a['commands']), a['commands']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        },
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['strict_includes_dependency_files'] is False, a['strict_includes_dependency_files']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        }
+      ],
+      "elapsed_seconds": 124.13223510002717,
+      "repeat": 0
+    },
+    {
+      "scenario": "build-read-set",
+      "arm": "scout:gemini-3.8-flash-low",
+      "model": "gemini-3.8-flash-low",
+      "correct": false,
+      "failures": [
+        "harness failed or timed out: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n",
+        "harness reported error: error_max_budget_usd"
+      ],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 26,
+        "cache_creation_input_tokens": 28868,
+        "cache_read_input_tokens": 586008,
+        "output_tokens": 4222,
+        "output_tokens_details": {
+          "thinking_tokens": 2409
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 28868
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 619124,
+      "cost_usd": 0.2504972,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 0,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 0
+      },
+      "changed_files": [],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T02:52:22\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-low\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T02:52:24\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 1,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 102.3725923000602,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['function'] == 'read_set', a['function']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        },
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert {'brief', 'guard'} <= set(a['commands']), a['commands']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        },
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['strict_includes_dependency_files'] is False, a['strict_includes_dependency_files']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        }
+      ],
+      "elapsed_seconds": 110.15729150001425,
+      "repeat": 1
+    },
+    {
+      "scenario": "build-read-set",
+      "arm": "scout:gemini-3.8-flash-high",
+      "model": "gemini-3.8-flash-high",
+      "correct": false,
+      "failures": [
+        "harness failed or timed out: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n",
+        "harness reported error: error_max_budget_usd"
+      ],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 34,
+        "cache_creation_input_tokens": 22784,
+        "cache_read_input_tokens": 752812,
+        "output_tokens": 3338,
+        "output_tokens_details": {
+          "thinking_tokens": 1060
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 22784
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 778968,
+      "cost_usd": 0.25561220000000007,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 2
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T02:54:12\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-high\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T02:54:14\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 1,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 274.85913370002527,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 282.16056470002513,
+      "repeat": 1
+    },
+    {
+      "scenario": "build-read-set",
+      "arm": "scout:claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 22,
+        "cache_creation_input_tokens": 20207,
+        "cache_read_input_tokens": 471442,
+        "output_tokens": 3554,
+        "output_tokens_details": {
+          "thinking_tokens": 1822
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 20207
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 495225,
+      "cost_usd": 0.18038990000000002,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T02:58:54\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"claude-sonnet-4-6\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T02:58:56\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 99.44115570001304,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 105.71564559999388,
+      "repeat": 1
+    },
+    {
+      "scenario": "build-read-set",
+      "arm": "native",
+      "model": null,
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 28,
+        "cache_creation_input_tokens": 30867,
+        "cache_read_input_tokens": 648402,
+        "output_tokens": 3825,
+        "output_tokens_details": {
+          "thinking_tokens": 1133
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 30867
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 683122,
+      "cost_usd": 0.2451539,
+      "scout": null,
+      "scout_calls": {
+        "status": 1,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": null,
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 83.72572159999982,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_011ETttSpHYpeUbsT6Yxz9eh",
+          "tool_input": {
+            "command": "awk 'NR>=2260 && NR<=2510 && /^def /{print NR\": \"$0}' .claude/bin/plan"
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 87.8853704999201,
+      "repeat": 1
+    },
+    {
+      "scenario": "evidence-stale-reasons",
+      "arm": "native",
+      "model": null,
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 14,
+        "cache_creation_input_tokens": 17114,
+        "cache_read_input_tokens": 282130,
+        "output_tokens": 1492,
+        "output_tokens_details": {
+          "thinking_tokens": 583
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 17114
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 300750,
+      "cost_usd": 0.114159,
+      "scout": null,
+      "scout_calls": {
+        "status": 1,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": null,
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 42.482671799953096,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 46.40614680002909,
+      "repeat": 0
+    },
+    {
+      "scenario": "evidence-stale-reasons",
+      "arm": "scout:gemini-3.8-flash-low",
+      "model": "gemini-3.8-flash-low",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 22,
+        "cache_creation_input_tokens": 20345,
+        "cache_read_input_tokens": 466209,
+        "output_tokens": 2114,
+        "output_tokens_details": {
+          "thinking_tokens": 633
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 20345
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 488690,
+      "cost_usd": 0.1652883,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:02:54\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-low\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:02:56\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 79.28299289999995,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 85.69959319999907,
+      "repeat": 0
+    },
+    {
+      "scenario": "evidence-stale-reasons",
+      "arm": "scout:gemini-3.8-flash-high",
+      "model": "gemini-3.8-flash-high",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 12,
+        "cache_creation_input_tokens": 19055,
+        "cache_read_input_tokens": 242546,
+        "output_tokens": 1161,
+        "output_tokens_details": {
+          "thinking_tokens": 416
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 19055
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 262774,
+      "cost_usd": 0.10778070000000001,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 1,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:04:20\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-high\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:04:22\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 106.4154855000088,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 112.84364820003975,
+      "repeat": 0
+    },
+    {
+      "scenario": "evidence-stale-reasons",
+      "arm": "scout:claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 22,
+        "cache_creation_input_tokens": 19702,
+        "cache_read_input_tokens": 460963,
+        "output_tokens": 2128,
+        "output_tokens_details": {
+          "thinking_tokens": 791
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 19702
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 482815,
+      "cost_usd": 0.16277160000000002,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 2,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:06:13\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"claude-sonnet-4-6\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:06:15\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 73.36067139997613,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_013jPmowKwddKuSJwTtUk8BR",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 80.24297339993063,
+      "repeat": 0
+    },
+    {
+      "scenario": "evidence-stale-reasons",
+      "arm": "scout:gemini-3.8-flash-low",
+      "model": "gemini-3.8-flash-low",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 12,
+        "cache_creation_input_tokens": 17616,
+        "cache_read_input_tokens": 240933,
+        "output_tokens": 1223,
+        "output_tokens_details": {
+          "thinking_tokens": 543
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 17616
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 259784,
+      "cost_usd": 0.10448060000000002,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 1,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:07:33\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-low\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:07:37\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 62.93252119992394,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 72.89891919994261,
+      "repeat": 1
+    },
+    {
+      "scenario": "evidence-stale-reasons",
+      "arm": "scout:gemini-3.8-flash-high",
+      "model": "gemini-3.8-flash-high",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 12,
+        "cache_creation_input_tokens": 16860,
+        "cache_read_input_tokens": 240468,
+        "output_tokens": 1139,
+        "output_tokens_details": {
+          "thinking_tokens": 335
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 16860
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 258479,
+      "cost_usd": 0.10165759999999999,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 1,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:08:46\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-high\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:08:49\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 94.52647380006965,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 103.5115101999836,
+      "repeat": 1
+    },
+    {
+      "scenario": "evidence-stale-reasons",
+      "arm": "scout:claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 18317,
+        "cache_read_input_tokens": 418729,
+        "output_tokens": 2527,
+        "output_tokens_details": {
+          "thinking_tokens": 1244
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 18317
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 439593,
+      "cost_usd": 0.15484830000000002,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:10:29\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"claude-sonnet-4-6\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:10:32\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 82.34484130004421,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 90.14125520002563,
+      "repeat": 1
+    },
+    {
+      "scenario": "evidence-stale-reasons",
+      "arm": "native",
+      "model": null,
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 16,
+        "cache_creation_input_tokens": 16454,
+        "cache_read_input_tokens": 322176,
+        "output_tokens": 1273,
+        "output_tokens_details": {
+          "thinking_tokens": 374
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 16454
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 339919,
+      "cost_usd": 0.1183322,
+      "scout": null,
+      "scout_calls": {
+        "status": 2,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": null,
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 40.848740199930035,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01G5nn681s2BH4tVPw6r35gK",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 45.44651589996647,
+      "repeat": 1
+    },
+    {
+      "scenario": "installed-claude-hooks",
+      "arm": "native",
+      "model": null,
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 26295,
+        "cache_read_input_tokens": 390561,
+        "output_tokens": 2846,
+        "output_tokens_details": {
+          "thinking_tokens": 1411
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 26295
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 419720,
+      "cost_usd": 0.1723457,
+      "scout": null,
+      "scout_calls": {
+        "status": 2,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": null,
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 60.76607569993939,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01KYFaJ5nEj5rCRuZY8g5fef",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 65.49339379998855,
+      "repeat": 0
+    },
+    {
+      "scenario": "installed-claude-hooks",
+      "arm": "scout:gemini-3.8-flash-low",
+      "model": "gemini-3.8-flash-low",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 16,
+        "cache_creation_input_tokens": 29319,
+        "cache_read_input_tokens": 339448,
+        "output_tokens": 2016,
+        "output_tokens_details": {
+          "thinking_tokens": 843
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 29319
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 370799,
+      "cost_usd": 0.16137910000000003,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 1,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 2
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:13:50\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-low\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:13:54\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": true,
+      "agent_seconds": 163.02664789999835,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 171.40994370006956,
+      "repeat": 0
+    },
+    {
+      "scenario": "installed-claude-hooks",
+      "arm": "scout:gemini-3.8-flash-high",
+      "model": "gemini-3.8-flash-high",
+      "correct": false,
+      "failures": [
+        "harness failed or timed out: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n",
+        "harness reported error: error_max_budget_usd"
+      ],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 34,
+        "cache_creation_input_tokens": 20317,
+        "cache_read_input_tokens": 741766,
+        "output_tokens": 4706,
+        "output_tokens_details": {
+          "thinking_tokens": 2454
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 20317
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 766823,
+      "cost_usd": 0.2650021,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 2,
+        "run": 1
+      },
+      "changed_files": [],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:16:42\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-high\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:16:44\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 1,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 314.11957129999064,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01WBGASVsZ9v6xB8uuWYCpzr",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        },
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01GGDtk4Re84GWHYSsByxziM",
+          "tool_input": {
+            "command": "powershell -Command \"Get-Process | Where-Object { $_.ProcessName -like '*node*' -or $_.ProcessName -like '*plan*' } | Select-Object Id,ProcessName,StartTime\" 2>&1 | head -50"
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); got = sorted((h['event'], h['guard'], sorted(set((h.get('matcher') or '').split('|')) - {''})) for h in a['hooks']); want = sorted([('UserPromptSubmit', 'stage', []), ('PreToolUse', 'read', ['Grep', 'Read']), ('PreToolUse', 'write', ['Edit', 'MultiEdit', 'Write', 'apply_patch']), ('PostToolUse', 'lint', ['Edit', 'MultiEdit', 'Write', 'apply_patch'])]); assert got == want, got\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        },
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['bash_guarded'] is False, a['bash_guarded']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        }
+      ],
+      "elapsed_seconds": 321.4273670000257,
+      "repeat": 0
+    },
+    {
+      "scenario": "installed-claude-hooks",
+      "arm": "scout:claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 26898,
+        "cache_read_input_tokens": 444416,
+        "output_tokens": 4976,
+        "output_tokens_details": {
+          "thinking_tokens": 3319
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 26898
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 476310,
+      "cost_usd": 0.20592819999999998,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 0,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 2,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:22:03\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"claude-sonnet-4-6\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:22:05\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 87.61682869994547,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01UEjWJMmmYbrQaTeB9DcLyp",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 94.75675780000165,
+      "repeat": 0
+    },
+    {
+      "scenario": "installed-claude-hooks",
+      "arm": "scout:gemini-3.8-flash-low",
+      "model": "gemini-3.8-flash-low",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 16,
+        "cache_creation_input_tokens": 19910,
+        "cache_read_input_tokens": 331478,
+        "output_tokens": 2684,
+        "output_tokens_details": {
+          "thinking_tokens": 1238
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 19910
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 354088,
+      "cost_usd": 0.1429426,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 1,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 2,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:23:38\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-low\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:23:41\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 107.19445660000201,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01474Cqsd2TyXvZRNTdmseLJ",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 114.52101589995436,
+      "repeat": 1
+    },
+    {
+      "scenario": "installed-claude-hooks",
+      "arm": "scout:gemini-3.8-flash-high",
+      "model": "gemini-3.8-flash-high",
+      "correct": false,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 28,
+        "cache_creation_input_tokens": 22526,
+        "cache_read_input_tokens": 617266,
+        "output_tokens": 4049,
+        "output_tokens_details": {
+          "thinking_tokens": 2273
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 22526
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 643869,
+      "cost_usd": 0.22031420000000002,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 2
+      },
+      "changed_files": [],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:25:32\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-high\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:25:35\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 420.7110593999969,
+      "permission_denials": [
+        {
+          "tool_name": "Write",
+          "tool_use_id": "toolu_012h9thVETB1kcYNJbwVvwLf",
+          "tool_input": {
+            "file_path": "\\tmp\\cs-scout-eval-yatn5evi\\ANSWER.json",
+            "content": "{\n  \"hooks\": [\n    {\"event\": \"UserPromptSubmit\", \"guard\": \"stage\", \"matcher\": null},\n    {\"event\": \"PreToolUse\", \"guard\": \"read\", \"matcher\": \"Read|Grep\"},\n    {\"event\": \"PreToolUse\", \"guard\": \"write\", \"matcher\": \"Edit|Write|MultiEdit|apply_patch\"},\n    {\"event\": \"PostToolUse\", \"guard\": \"lint\", \"matcher\": \"Edit|Write|MultiEdit|apply_patch\"}\n  ],\n  \"bash_guarded\": false\n}\n"
+          }
+        },
+        {
+          "tool_name": "Write",
+          "tool_use_id": "toolu_012Vfz93NcYo8VfymwX4ZzPU",
+          "tool_input": {
+            "file_path": "\\tmp\\cs-scout-eval-yatn5evi\\ANSWER.json",
+            "content": "{\n  \"hooks\": [\n    {\"event\": \"UserPromptSubmit\", \"guard\": \"stage\", \"matcher\": null},\n    {\"event\": \"PreToolUse\", \"guard\": \"read\", \"matcher\": \"Read|Grep\"},\n    {\"event\": \"PreToolUse\", \"guard\": \"write\", \"matcher\": \"Edit|Write|MultiEdit|apply_patch\"},\n    {\"event\": \"PostToolUse\", \"guard\": \"lint\", \"matcher\": \"Edit|Write|MultiEdit|apply_patch\"}\n  ],\n  \"bash_guarded\": false\n}\n"
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); got = sorted((h['event'], h['guard'], sorted(set((h.get('matcher') or '').split('|')) - {''})) for h in a['hooks']); want = sorted([('UserPromptSubmit', 'stage', []), ('PreToolUse', 'read', ['Grep', 'Read']), ('PreToolUse', 'write', ['Edit', 'MultiEdit', 'Write', 'apply_patch']), ('PostToolUse', 'lint', ['Edit', 'MultiEdit', 'Write', 'apply_patch'])]); assert got == want, got\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        },
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['bash_guarded'] is False, a['bash_guarded']\n                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'ANSWER.json'\n"
+        }
+      ],
+      "elapsed_seconds": 427.433092399966,
+      "repeat": 1
+    },
+    {
+      "scenario": "installed-claude-hooks",
+      "arm": "scout:claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 28,
+        "cache_creation_input_tokens": 22065,
+        "cache_read_input_tokens": 600601,
+        "output_tokens": 3781,
+        "output_tokens_details": {
+          "thinking_tokens": 1883
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 22065
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 626475,
+      "cost_usd": 0.2131487,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 5,
+        "run": 2
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:32:40\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"claude-sonnet-4-6\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:32:42\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 107.37532529991586,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01Uo8x6dCVDpBCMwhRmdRCG5",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        },
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_0161WgZcgQt3Fuyym8uwMZxz",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status >/tmp/out.txt 2>&1; echo \"EXIT:$?\"; cat /tmp/out.txt"
+          }
+        },
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_016EWtEFTj3fpvsR4RggNZ6K",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo EXITCODE=$?"
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 114.35511190001853,
+      "repeat": 1
+    },
+    {
+      "scenario": "installed-claude-hooks",
+      "arm": "native",
+      "model": null,
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 14,
+        "cache_creation_input_tokens": 18205,
+        "cache_read_input_tokens": 284839,
+        "output_tokens": 1951,
+        "output_tokens_details": {
+          "thinking_tokens": 899
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 18205
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 305009,
+      "cost_usd": 0.12201830000000001,
+      "scout": null,
+      "scout_calls": {
+        "status": 2,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": null,
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 46.17532759997994,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_019XhQFRT6xTHvw9kZmnKZWH",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 50.24837950000074,
+      "repeat": 1
+    },
+    {
+      "scenario": "installer-line-endings",
+      "arm": "native",
+      "model": null,
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 15856,
+        "cache_read_input_tokens": 363833,
+        "output_tokens": 1346,
+        "output_tokens_details": {
+          "thinking_tokens": 267
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 15856
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 381053,
+      "cost_usd": 0.1259026,
+      "scout": null,
+      "scout_calls": {
+        "status": 2,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": null,
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 45.75602179998532,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_011ZwKT2d24fmKoZSPuqiBCv",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 49.90193019993603,
+      "repeat": 0
+    },
+    {
+      "scenario": "installer-line-endings",
+      "arm": "scout:gemini-3.8-flash-low",
+      "model": "gemini-3.8-flash-low",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 18827,
+        "cache_read_input_tokens": 374886,
+        "output_tokens": 1802,
+        "output_tokens_details": {
+          "thinking_tokens": 269
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 18827
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 395533,
+      "cost_usd": 0.1401007,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 1,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 2,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:36:14\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-low\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:36:16\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 71.25865480001085,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01Qiinn9iGoMoueAW8oFi9gL",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT_CODE:$?\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 77.89663400000427,
+      "repeat": 0
+    },
+    {
+      "scenario": "installer-line-endings",
+      "arm": "scout:gemini-3.8-flash-high",
+      "model": "gemini-3.8-flash-high",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 19743,
+        "cache_read_input_tokens": 428708,
+        "output_tokens": 3795,
+        "output_tokens_details": {
+          "thinking_tokens": 2324
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 19743
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 452266,
+      "cost_usd": 0.17308910000000002,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 0,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:37:33\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-high\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:37:34\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 78.53800079994835,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 85.70642019994557,
+      "repeat": 0
+    },
+    {
+      "scenario": "installer-line-endings",
+      "arm": "scout:claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 24,
+        "cache_creation_input_tokens": 19779,
+        "cache_read_input_tokens": 513977,
+        "output_tokens": 2894,
+        "output_tokens_details": {
+          "thinking_tokens": 1448
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 19779
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 536674,
+      "cost_usd": 0.1812309,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 2,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:38:58\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"claude-sonnet-4-6\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:39:00\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 93.67579980008304,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01Ag9h3fRrAqmjB2zsrNfVmf",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 100.52274010004476,
+      "repeat": 0
+    },
+    {
+      "scenario": "installer-line-endings",
+      "arm": "scout:gemini-3.8-flash-low",
+      "model": "gemini-3.8-flash-low",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 12,
+        "cache_creation_input_tokens": 28427,
+        "cache_read_input_tokens": 264679,
+        "output_tokens": 1347,
+        "output_tokens_details": {
+          "thinking_tokens": 796
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 28427
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 294465,
+      "cost_usd": 0.1374973,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 0,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:40:39\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-low\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:40:41\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": true,
+      "agent_seconds": 42.02626730001066,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 50.08687750005629,
+      "repeat": 1
+    },
+    {
+      "scenario": "installer-line-endings",
+      "arm": "scout:gemini-3.8-flash-high",
+      "model": "gemini-3.8-flash-high",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 24,
+        "cache_creation_input_tokens": 18777,
+        "cache_read_input_tokens": 512113,
+        "output_tokens": 1870,
+        "output_tokens_details": {
+          "thinking_tokens": 128
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 18777
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 532784,
+      "cost_usd": 0.1681131,
+      "scout": {
+        "accepted": 2,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 2
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:41:29\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-high\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:41:31\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 150.6603414999554,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01V2eZ7zgJ3mkDY85AHsw4ks",
+          "tool_input": {
+            "command": "grep -n \"^def \" bin/cs_install.py | awk -F: '$1<400' | tail -5",
+            "description": "Find enclosing function name for line ~395"
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 158.290934599936,
+      "repeat": 1
+    },
+    {
+      "scenario": "installer-line-endings",
+      "arm": "scout:claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 14,
+        "cache_creation_input_tokens": 29586,
+        "cache_read_input_tokens": 323906,
+        "output_tokens": 2420,
+        "output_tokens_details": {
+          "thinking_tokens": 1539
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 29586
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 355926,
+      "cost_usd": 0.1629742,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 0,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:44:07\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"claude-sonnet-4-6\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:44:09\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": true,
+      "agent_seconds": 59.63510399998631,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 67.0974004000891,
+      "repeat": 1
+    },
+    {
+      "scenario": "installer-line-endings",
+      "arm": "native",
+      "model": null,
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 22,
+        "cache_creation_input_tokens": 18072,
+        "cache_read_input_tokens": 456844,
+        "output_tokens": 1552,
+        "output_tokens_details": {
+          "thinking_tokens": 140
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 18072
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 476490,
+      "cost_usd": 0.1521128,
+      "scout": null,
+      "scout_calls": {
+        "status": 2,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": null,
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 50.02602850005496,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01Tv79Bgt9hSDKKhtgV3QXEN",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 54.58315770002082,
+      "repeat": 1
+    },
+    {
+      "scenario": "issue-adoption",
+      "arm": "native",
+      "model": null,
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 14,
+        "cache_creation_input_tokens": 17155,
+        "cache_read_input_tokens": 281526,
+        "output_tokens": 1096,
+        "output_tokens_details": {
+          "thinking_tokens": 221
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 17155
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 299791,
+      "cost_usd": 0.1101807,
+      "scout": null,
+      "scout_calls": {
+        "status": 1,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": null,
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 39.682927899993956,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 44.3962818,
+      "repeat": 0
+    },
+    {
+      "scenario": "issue-adoption",
+      "arm": "scout:gemini-3.8-flash-low",
+      "model": "gemini-3.8-flash-low",
+      "correct": false,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 28,
+        "cache_creation_input_tokens": 24304,
+        "cache_read_input_tokens": 602634,
+        "output_tokens": 3332,
+        "output_tokens_details": {
+          "thinking_tokens": 1131
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 24304
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 630298,
+      "cost_usd": 0.21466280000000001,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 2,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:46:53\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-low\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:46:56\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 162.16989570006263,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01GTyUgoiV2kKtfzNjeVFqST",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert (a['adoption'], a['body_hash'], a['entry_guard']) == ('issue_adoptions', 'issue_body_sha256', '_issue_entry_guard'), a\n                                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: {'adoption': 'issue_adoptions', 'body_hash': 'source_issue', 'entry_guard': '_issue_entry_guard', 'url_case_insensitive': True}\n"
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 170.0713684000075,
+      "repeat": 0
+    },
+    {
+      "scenario": "issue-adoption",
+      "arm": "scout:gemini-3.8-flash-high",
+      "model": "gemini-3.8-flash-high",
+      "correct": false,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 21141,
+        "cache_read_input_tokens": 417844,
+        "output_tokens": 2385,
+        "output_tokens_details": {
+          "thinking_tokens": 1190
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 21141
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 441390,
+      "cost_usd": 0.1603113,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 1,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 2,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:49:43\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-high\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:49:46\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 165.75844719994348,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01UiykPoWTGRX775nB1EVkD8",
+          "tool_input": {
+            "command": ".claude/bin/plan.cmd scout status; echo \"EXIT:$?\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 1,
+          "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert (a['adoption'], a['body_hash'], a['entry_guard']) == ('issue_adoptions', 'issue_body_sha256', '_issue_entry_guard'), a\n                                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: {'adoption': 'issue_adoptions', 'body_hash': 'source_issue', 'entry_guard': '_issue_entry_guard', 'url_case_insensitive': True}\n"
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 173.1410695000086,
+      "repeat": 0
+    },
+    {
+      "scenario": "issue-adoption",
+      "arm": "scout:claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 20950,
+        "cache_read_input_tokens": 418249,
+        "output_tokens": 1531,
+        "output_tokens_details": {
+          "thinking_tokens": 334
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 20950
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 440750,
+      "cost_usd": 0.15137479999999998,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:52:36\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"claude-sonnet-4-6\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:52:39\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 72.97647599992342,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 80.70912550005596,
+      "repeat": 0
+    },
+    {
+      "scenario": "issue-adoption",
+      "arm": "scout:gemini-3.8-flash-low",
+      "model": "gemini-3.8-flash-low",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 22803,
+        "cache_read_input_tokens": 378070,
+        "output_tokens": 4103,
+        "output_tokens_details": {
+          "thinking_tokens": 2777
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 22803
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 404994,
+      "cost_usd": 0.1736875,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 1,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 2
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:53:57\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-low\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:53:59\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 128.9590557999909,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 136.0293790999567,
+      "repeat": 1
+    },
+    {
+      "scenario": "issue-adoption",
+      "arm": "scout:gemini-3.8-flash-high",
+      "model": "gemini-3.8-flash-high",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 14,
+        "cache_creation_input_tokens": 19481,
+        "cache_read_input_tokens": 286949,
+        "output_tokens": 1275,
+        "output_tokens_details": {
+          "thinking_tokens": 325
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 19481
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 307719,
+      "cost_usd": 0.1188703,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 1,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:56:13\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-high\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:56:15\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 133.3299242000794,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 139.59680429997388,
+      "repeat": 1
+    },
+    {
+      "scenario": "issue-adoption",
+      "arm": "scout:claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 21614,
+        "cache_read_input_tokens": 422795,
+        "output_tokens": 1858,
+        "output_tokens_details": {
+          "thinking_tokens": 494
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 21614
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 446287,
+      "cost_usd": 0.157214,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 2
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T03:58:33\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"claude-sonnet-4-6\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T03:58:35\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 80.98067179997452,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 88.06700050004292,
+      "repeat": 1
+    },
+    {
+      "scenario": "issue-adoption",
+      "arm": "native",
+      "model": null,
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 14,
+        "cache_creation_input_tokens": 19128,
+        "cache_read_input_tokens": 283164,
+        "output_tokens": 1126,
+        "output_tokens_details": {
+          "thinking_tokens": 76
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 19128
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 303432,
+      "cost_usd": 0.11574080000000002,
+      "scout": null,
+      "scout_calls": {
+        "status": 1,
+        "run": 0
+      },
+      "changed_files": [
+        "ANSWER.json"
+      ],
+      "out_of_scope": [],
+      "scout_setup": null,
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 38.620637099957094,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 43.26693630008958,
+      "repeat": 1
+    },
+    {
+      "scenario": "stale-verify-fix",
+      "arm": "native",
+      "model": null,
+      "correct": false,
+      "failures": [
+        "harness failed or timed out: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n",
+        "harness reported error: error_max_budget_usd"
+      ],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 26,
+        "cache_creation_input_tokens": 32059,
+        "cache_read_input_tokens": 603919,
+        "output_tokens": 4013,
+        "output_tokens_details": {
+          "thinking_tokens": 2343
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 32059
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 640017,
+      "cost_usd": 0.2604276,
+      "scout": null,
+      "scout_calls": {
+        "status": 1,
+        "run": 0
+      },
+      "changed_files": [],
+      "out_of_scope": [],
+      "scout_setup": null,
+      "exit": 1,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 99.69996009999886,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 1,
+          "output": "T1'))[1]; assert reasons() == [], reasons(); assert reasons(**{'checks-hash': 'old'}) == ['checks_changed'], reasons(**{'checks-hash': 'old'})\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: []\n"
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 104.62844040000346,
+      "repeat": 0
+    },
+    {
+      "scenario": "stale-verify-fix",
+      "arm": "scout:gemini-3.8-flash-low",
+      "model": "gemini-3.8-flash-low",
+      "correct": false,
+      "failures": [
+        "harness failed or timed out: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n",
+        "harness reported error: error_max_budget_usd"
+      ],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 30,
+        "cache_creation_input_tokens": 24638,
+        "cache_read_input_tokens": 676273,
+        "output_tokens": 3847,
+        "output_tokens_details": {
+          "thinking_tokens": 1947
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 24638
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 704788,
+      "cost_usd": 0.2513247,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "uncited_hit": 1
+        },
+        "retries": 0,
+        "runs": 1,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "bin/plan"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T04:02:29\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-low\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T04:02:31\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 1,
+      "timed_out": false,
+      "trace_truncated": true,
+      "agent_seconds": 162.42906310001854,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01P1yvZQscFiDm4B1KRr72hv",
+          "tool_input": {
+            "command": "python -c \"import py_compile; py_compile.compile('bin/plan', doraise=True); print('ok')\""
+          }
+        },
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01LqKDnz9zVncpSf3emnyep9",
+          "tool_input": {
+            "command": "python -c \"import py_compile; py_compile.compile('bin/plan', doraise=True); print('ok')\"",
+            "dangerouslyDisableSandbox": true
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 170.08104590000585,
+      "repeat": 0
+    },
+    {
+      "scenario": "stale-verify-fix",
+      "arm": "scout:gemini-3.8-flash-high",
+      "model": "gemini-3.8-flash-high",
+      "correct": false,
+      "failures": [
+        "harness failed or timed out: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n",
+        "harness reported error: error_max_budget_usd"
+      ],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 28,
+        "cache_creation_input_tokens": 27551,
+        "cache_read_input_tokens": 646600,
+        "output_tokens": 3871,
+        "output_tokens_details": {
+          "thinking_tokens": 2331
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 27551
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 678050,
+      "cost_usd": 0.2532712,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 1,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "bin/plan"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T04:05:19\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-high\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T04:05:32\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 1,
+      "timed_out": false,
+      "trace_truncated": true,
+      "agent_seconds": 140.34093519998714,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_015bGnJ95r6KAygckXmnN5eZ",
+          "tool_input": {
+            "command": "python -c \"import ast; ast.parse(open('bin/plan').read())\" && echo OK"
+          }
+        },
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01Wz2XFHkSSE5eAX5mJMHWNs",
+          "tool_input": {
+            "command": "python -c \"import ast; ast.parse(open('bin/plan').read())\""
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 159.02221299998928,
+      "repeat": 0
+    },
+    {
+      "scenario": "stale-verify-fix",
+      "arm": "scout:claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "correct": false,
+      "failures": [
+        "harness failed or timed out: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n",
+        "harness reported error: error_max_budget_usd"
+      ],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 26,
+        "cache_creation_input_tokens": 30758,
+        "cache_read_input_tokens": 600881,
+        "output_tokens": 4178,
+        "output_tokens_details": {
+          "thinking_tokens": 2485
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 30758
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 635843,
+      "cost_usd": 0.2522348,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "bin/plan"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T04:07:58\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"claude-sonnet-4-6\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T04:08:00\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 1,
+      "timed_out": false,
+      "trace_truncated": true,
+      "agent_seconds": 111.99769530002959,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01Y1bcB61hvQk8TMqknySoio",
+          "tool_input": {
+            "command": "python -c \"import ast; ast.parse(open('bin/plan', encoding='utf-8').read())\" && echo OK"
+          }
+        },
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01VVn6WcsF36SSakVE31kJGP",
+          "tool_input": {
+            "command": "python -c \"import ast; ast.parse(open('bin/plan', encoding='utf-8').read())\" "
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 119.97565760009456,
+      "repeat": 0
+    },
+    {
+      "scenario": "stale-verify-fix",
+      "arm": "scout:gemini-3.8-flash-low",
+      "model": "gemini-3.8-flash-low",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 30,
+        "cache_creation_input_tokens": 25563,
+        "cache_read_input_tokens": 698266,
+        "output_tokens": 4472,
+        "output_tokens_details": {
+          "thinking_tokens": 2031
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 25563
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 728331,
+      "cost_usd": 0.2483407,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "bin/plan"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T04:09:59\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-low\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T04:10:02\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": true,
+      "agent_seconds": 142.42943540005945,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01UtyZt76yGoj2jbt91LfGbF",
+          "tool_input": {
+            "command": "cd \"C:\\Users\\Jeio\\AppData\\Local\\Temp\\cs-scout-eval-rwgxbze0\" && python -c \"import ast; ast.parse(open('bin/plan').read())\" && echo OK"
+          }
+        },
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01XZy7HidEr1xTQBWWHsxNTD",
+          "tool_input": {
+            "command": "python -c \"import ast; ast.parse(open('bin/plan').read())\" && echo OK",
+            "description": "Syntax-check bin/plan by parsing it"
+          }
+        },
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01Vxu3FNjvxkntpfT8NB6T1v",
+          "tool_input": {
+            "command": "python -m py_compile bin/plan",
+            "description": "Compile-check bin/plan for syntax errors"
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 150.8757697000401,
+      "repeat": 1
+    },
+    {
+      "scenario": "stale-verify-fix",
+      "arm": "scout:gemini-3.8-flash-high",
+      "model": "gemini-3.8-flash-high",
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 28,
+        "cache_creation_input_tokens": 22896,
+        "cache_read_input_tokens": 639073,
+        "output_tokens": 4167,
+        "output_tokens_details": {
+          "thinking_tokens": 2361
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 22896
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 666164,
+      "cost_usd": 0.22678059999999997,
+      "scout": {
+        "accepted": 1,
+        "cache_hits": 0,
+        "fallbacks": 0,
+        "rejected": {},
+        "retries": 0,
+        "runs": 1,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [
+        "bin/plan"
+      ],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T04:12:28\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"gemini-3.8-flash-high\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T04:12:31\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": true,
+      "agent_seconds": 247.52894589991774,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_018gAHdvyh9XXxssTVtzKza6",
+          "tool_input": {
+            "command": "python -m py_compile bin/plan && echo OK"
+          }
+        },
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_017shmEdXpNzMyH4d6KcyYJr",
+          "tool_input": {
+            "command": "python -m py_compile bin/plan"
+          }
+        },
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01ND7n5wu7yMYi7kehxuX74H",
+          "tool_input": {
+            "command": "python -m py_compile bin/plan"
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 254.11839790001977,
+      "repeat": 1
+    },
+    {
+      "scenario": "stale-verify-fix",
+      "arm": "scout:claude-sonnet-4-6",
+      "model": "claude-sonnet-4-6",
+      "correct": false,
+      "failures": [
+        "harness failed or timed out: Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n",
+        "harness reported error: error_max_budget_usd"
+      ],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 30,
+        "cache_creation_input_tokens": 29060,
+        "cache_read_input_tokens": 690546,
+        "output_tokens": 3860,
+        "output_tokens_details": {
+          "thinking_tokens": 1783
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 29060
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 723496,
+      "cost_usd": 0.2807712,
+      "scout": {
+        "accepted": 0,
+        "cache_hits": 0,
+        "fallbacks": 1,
+        "rejected": {
+          "invalid_shape": 1
+        },
+        "retries": 1,
+        "runs": 2,
+        "timeouts": 0,
+        "tree_changes": 0
+      },
+      "scout_calls": {
+        "status": 1,
+        "run": 1
+      },
+      "changed_files": [],
+      "out_of_scope": [],
+      "scout_setup": {
+        "exit": 0,
+        "output": "{\n  \"experimental\": true,\n  \"check\": {\n    \"provider\": \"agy\",\n    \"at\": \"2026-09-19T04:16:43\",\n    \"cli\": \"C:\\\\Users\\\\Jeio\\\\AppData\\\\Local\\\\agy\\\\bin\\\\agy.EXE\",\n    \"result\": \"ok\",\n    \"detail\": \"\",\n    \"version\": \"1.2.7\",\n    \"models\": [\n      \"gemini-3.8-flash-high\",\n      \"gemini-3.8-flash-medium\",\n      \"gemini-3.8-flash-low\",\n      \"gemini-3.7-flash-high\",\n      \"gemini-3.7-flash-medium\",\n      \"gemini-3.7-flash-low\",\n      \"gemini-3.6-flash-high\",\n      \"gemini-3.6-flash-medium\",\n      \"gemini-3.6-flash-low\",\n      \"gemini-3.1-pro-high\",\n      \"gemini-3.1-pro-low\",\n      \"claude-sonnet-4-6\",\n      \"claude-opus-4-6-thinking\",\n      \"gpt-oss-120b-medium\"\n    ],\n    \"auth\": \"unknown\",\n    \"quota\": \"unknown\"\n  },\n  \"disclosure\": \"Scout is experimental. When it runs, repository content inside each request's scope is sent to Google through agy (Antigravity CLI). sensitive() paths, .coldsession-state/, and your exclusions are never in scope. Coldsession adds no spending cap; usage is governed by the provider's own limits.\",\n  \"enabled\": true,\n  \"config\": {\n    \"experimental\": true,\n    \"enabled\": true,\n    \"provider\": \"agy\",\n    \"model\": \"claude-sonnet-4-6\",\n    \"timeout_seconds\": 180,\n    \"exclusions\": [],\n    \"threshold\": \"strict\",\n    \"disclosure\": {\n      \"recipient\": \"Google\",\n      \"accepted_at\": \"2026-09-19T04:16:46\"\n    }\n  },\n  \"always_excluded\": [\n    \"sensitive()\",\n    \".coldsession-state\"\n  ]\n}\n"
+      },
+      "exit": 1,
+      "timed_out": false,
+      "trace_truncated": false,
+      "agent_seconds": 134.287852199981,
+      "permission_denials": [],
+      "checks": [
+        {
+          "exit": 1,
+          "output": "T1'))[1]; assert reasons() == [], reasons(); assert reasons(**{'checks-hash': 'old'}) == ['checks_changed'], reasons(**{'checks-hash': 'old'})\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: []\n"
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 142.0998307999689,
+      "repeat": 1
+    },
+    {
+      "scenario": "stale-verify-fix",
+      "arm": "native",
+      "model": null,
+      "correct": true,
+      "failures": [],
+      "budget_usd": 0.25,
+      "tokens": {
+        "input_tokens": 28,
+        "cache_creation_input_tokens": 25227,
+        "cache_read_input_tokens": 640626,
+        "output_tokens": 4435,
+        "output_tokens_details": {
+          "thinking_tokens": 2406
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 25227
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "host_tokens": 670316,
+      "cost_usd": 0.2355987,
+      "scout": null,
+      "scout_calls": {
+        "status": 1,
+        "run": 0
+      },
+      "changed_files": [
+        "bin/plan"
+      ],
+      "out_of_scope": [],
+      "scout_setup": null,
+      "exit": 0,
+      "timed_out": false,
+      "trace_truncated": true,
+      "agent_seconds": 89.46711039997172,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_014GwatDryKndVrP2eA18sd7",
+          "tool_input": {
+            "command": "python -m pytest tests/test_reliability.py -q 2>&1 | tail -40"
+          }
+        },
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01GLoiqnC46dzUFb8QXW8qJK",
+          "tool_input": {
+            "command": "python -m pytest tests/test_reliability.py -q"
+          }
+        },
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "toolu_01P5CkoHAXdUD7jPq9HBbQLa",
+          "tool_input": {
+            "command": "python -m pytest tests/test_reliability.py -q"
+          }
+        }
+      ],
+      "checks": [
+        {
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "exit": 0,
+          "output": ""
+        }
+      ],
+      "elapsed_seconds": 94.66135479998775,
+      "repeat": 1
+    }
+  ],
+  "limits": "Includes failed runs. Tokens are harness-reported host usage; scout provider usage is not measured. Answers are graded by fixed checks; unnecessary edits within writable files need human adjudication.",
+  "summary": {
+    "thresholds": {
+      "min_reduction": 0.1,
+      "max_rejection": 0.2
+    },
+    "arms": {
+      "native": {
+        "runs": 12,
+        "correct": 10,
+        "failed": 2,
+        "unknown_tokens": 0,
+        "median_host_tokens": 400386.5,
+        "median_cost_usd": 0.1390077,
+        "median_agent_seconds": 48.10067805001745,
+        "out_of_scope_runs": 0,
+        "scout": {
+          "runs": 0,
+          "accepted": 0,
+          "fallbacks": 0,
+          "cache_hits": 0,
+          "timeouts": 0,
+          "tree_changes": 0,
+          "rejected": {},
+          "reports": 0,
+          "rejection_rate": null
+        }
+      },
+      "scout:gemini-3.8-flash-low": {
+        "runs": 12,
+        "correct": 8,
+        "failed": 3,
+        "unknown_tokens": 0,
+        "median_host_tokens": 446842.0,
+        "median_cost_usd": 0.1694879,
+        "median_agent_seconds": 114.13755089999177,
+        "out_of_scope_runs": 0,
+        "scout": {
+          "runs": 14,
+          "accepted": 6,
+          "fallbacks": 4,
+          "cache_hits": 0,
+          "timeouts": 0,
+          "tree_changes": 0,
+          "rejected": {
+            "invalid_shape": 3,
+            "uncited_hit": 1
+          },
+          "reports": 10,
+          "rejection_rate": 0.4
+        },
+        "paired": [
+          {
+            "scenario": "build-read-set",
+            "native": 591801.5,
+            "scout": 643396.0,
+            "reduction": -0.08718210413457883
+          },
+          {
+            "scenario": "evidence-stale-reasons",
+            "native": 320334.5,
+            "scout": 374237.0,
+            "reduction": -0.16826941837360643
+          },
+          {
+            "scenario": "installed-claude-hooks",
+            "native": 362364.5,
+            "scout": 362443.5,
+            "reduction": -0.00021801252606157284
+          },
+          {
+            "scenario": "installer-line-endings",
+            "native": 428771.5,
+            "scout": 344999.0,
+            "reduction": 0.19537795772340283
+          },
+          {
+            "scenario": "issue-adoption",
+            "native": 301611.5,
+            "scout": 517646.0,
+            "reduction": -0.7162674500143396
+          },
+          {
+            "scenario": "stale-verify-fix",
+            "native": 655166.5,
+            "scout": 716559.5,
+            "reduction": -0.09370595108266366
+          }
+        ],
+        "reduction": -0.1124907426552133,
+        "verdict": "fails"
+      },
+      "scout:gemini-3.8-flash-high": {
+        "runs": 12,
+        "correct": 7,
+        "failed": 3,
+        "unknown_tokens": 0,
+        "median_host_tokens": 492619.0,
+        "median_cost_usd": 0.1706011,
+        "median_agent_seconds": 158.20939434994943,
+        "out_of_scope_runs": 0,
+        "scout": {
+          "runs": 15,
+          "accepted": 10,
+          "fallbacks": 1,
+          "cache_hits": 0,
+          "timeouts": 0,
+          "tree_changes": 0,
+          "rejected": {
+            "invalid_shape": 1
+          },
+          "reports": 11,
+          "rejection_rate": 0.09090909090909091
+        },
+        "paired": [
+          {
+            "scenario": "build-read-set",
+            "native": 591801.5,
+            "scout": 615711.0,
+            "reduction": -0.040401215610301744
+          },
+          {
+            "scenario": "evidence-stale-reasons",
+            "native": 320334.5,
+            "scout": 260626.5,
+            "reduction": 0.18639266142110822
+          },
+          {
+            "scenario": "installed-claude-hooks",
+            "native": 362364.5,
+            "scout": 705346.0,
+            "reduction": -0.9465096608525394
+          },
+          {
+            "scenario": "installer-line-endings",
+            "native": 428771.5,
+            "scout": 492525.0,
+            "reduction": -0.14868875380010094
+          },
+          {
+            "scenario": "issue-adoption",
+            "native": 301611.5,
+            "scout": 374554.5,
+            "reduction": -0.24184422676191053
+          },
+          {
+            "scenario": "stale-verify-fix",
+            "native": 655166.5,
+            "scout": 672107.0,
+            "reduction": -0.025856786023094935
+          }
+        ],
+        "reduction": -0.17323734516268496,
+        "verdict": "fails"
+      },
+      "scout:claude-sonnet-4-6": {
+        "runs": 12,
+        "correct": 9,
+        "failed": 3,
+        "unknown_tokens": 0,
+        "median_host_tokens": 489020.0,
+        "median_cost_usd": 0.1808104,
+        "median_agent_seconds": 90.64631425001426,
+        "out_of_scope_runs": 0,
+        "scout": {
+          "runs": 20,
+          "accepted": 0,
+          "fallbacks": 10,
+          "cache_hits": 0,
+          "timeouts": 0,
+          "tree_changes": 0,
+          "rejected": {
+            "invalid_shape": 10
+          },
+          "reports": 10,
+          "rejection_rate": 1.0
+        },
+        "paired": [
+          {
+            "scenario": "build-read-set",
+            "native": 591801.5,
+            "scout": 619201.5,
+            "reduction": -0.04629930812949956
+          },
+          {
+            "scenario": "evidence-stale-reasons",
+            "native": 320334.5,
+            "scout": 461204.0,
+            "reduction": -0.4397575034846388
+          },
+          {
+            "scenario": "installed-claude-hooks",
+            "native": 362364.5,
+            "scout": 551392.5,
+            "reduction": -0.5216515414727436
+          },
+          {
+            "scenario": "installer-line-endings",
+            "native": 428771.5,
+            "scout": 446300.0,
+            "reduction": -0.04088074883708459
+          },
+          {
+            "scenario": "issue-adoption",
+            "native": 301611.5,
+            "scout": 443518.5,
+            "reduction": -0.4704959857299871
+          },
+          {
+            "scenario": "stale-verify-fix",
+            "native": 655166.5,
+            "scout": 679669.5,
+            "reduction": -0.0373996533705554
+          }
+        ],
+        "reduction": -0.20346835585797263,
+        "verdict": "fails"
+      }
+    },
+    "fastest_passing_arm": null,
+    "verdict": "fails the rule"
+  }
+}

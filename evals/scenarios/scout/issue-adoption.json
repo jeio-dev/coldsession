@@ -1,0 +1,21 @@
+{
+  "id": "issue-adoption",
+  "derived_from": [
+    "#15",
+    "65c04f1"
+  ],
+  "exploration": "trace",
+  "source": {
+    "rev": "a205002338bced0407450287bf74da8aa3ce5083"
+  },
+  "patches": [],
+  "task": "`plan issue NUMBER` refuses an issue that a phase already adopted. Find the bin/plan functions that (a) find the phases which already adopted an issue, (b) compute the issue body hash recorded in a phase, and (c) refuse before any network call when the current phase is not closed. Also decide whether adoption matching ignores letter case in the issue URL. Write only ANSWER.json at the repository root; change no other file.",
+  "acceptance": "ANSWER.json is {\"adoption\": \"<function>\", \"body_hash\": \"<function>\", \"entry_guard\": \"<function>\", \"url_case_insensitive\": true|false}.",
+  "writable": [
+    "ANSWER.json"
+  ],
+  "checks": [
+    "import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert (a['adoption'], a['body_hash'], a['entry_guard']) == ('issue_adoptions', 'issue_body_sha256', '_issue_entry_guard'), a",
+    "import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['url_case_insensitive'] is True, a['url_case_insensitive']"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "evidence-stale-reasons",
+  "derived_from": [
+    "#11",
+    "f2928d8"
+  ],
+  "exploration": "locate",
+  "source": {
+    "rev": "a205002338bced0407450287bf74da8aa3ce5083"
+  },
+  "patches": [],
+  "task": "In this repository (the coldsession workflow runtime), recorded verification evidence for a task can be refused as no longer valid. Find the function in bin/plan that computes the list of reasons evidence is no longer valid, and every reason code that function itself can add (not codes it copies from a stored record). Write only ANSWER.json at the repository root; change no other file.",
+  "acceptance": "ANSWER.json is {\"function\": \"<name>\", \"reasons\": [\"<code>\", ...]} with the exact function name and the complete set of reason codes.",
+  "writable": [
+    "ANSWER.json"
+  ],
+  "checks": [
+    "import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert a['function'] == 'evidence_failure_reasons', a['function']",
+    "import json; a = json.load(open('ANSWER.json', encoding='utf-8')); assert sorted(set(a['reasons'])) == ['checks_changed', 'evidence_missing', 'inputs_changed', 'spec_changed', 'verification_failed'], a['reasons']"
+  ]
+}
