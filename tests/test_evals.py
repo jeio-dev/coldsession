@@ -350,11 +350,11 @@ class ScoutScenarioTest(unittest.TestCase):
         # A shallow CI checkout lacks the pinned revision; the hunk is unchanged in HEAD.
         text = (rev.stdout if rev.returncode == 0 else (ROOT / "bin" / "plan").read_bytes()).decode("utf-8")
         (self.tmp / "bin").mkdir()
-        (self.tmp / "bin" / "plan").write_text(text, encoding="utf-8", newline="\n")
+        (self.tmp / "bin" / "plan").write_bytes(text.encode("utf-8"))
         self.assertEqual(self.passes(scenario), [True, True])
         patch = scenario["patches"][0]
         self.assertEqual(text.count(patch["old"]), 1)
-        (self.tmp / "bin" / "plan").write_text(text.replace(patch["old"], patch["new"]), encoding="utf-8", newline="\n")
+        (self.tmp / "bin" / "plan").write_bytes(text.replace(patch["old"], patch["new"]).encode("utf-8"))
         self.assertEqual(self.passes(scenario), [False, True])
 
     def test_changed_files_ignore_harness_state_only(self):
