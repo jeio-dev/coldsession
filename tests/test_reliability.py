@@ -565,6 +565,19 @@ class ReliabilityTest(unittest.TestCase):
             self.run_plan('guard', 'write', payload={'tool_name': tool, 'tool_input': data})
         self.run_plan('guard', 'read', '.env', ok=False)
 
+    def test_scout_commands_pass_the_guard_during_a_build_claim(self):
+        """Scout bounds its own evidence to the read set, so the guard has no
+        reason to stop the host from invoking it."""
+        self.approve()
+        self.run_plan('start', 'T1')
+        for tool, data in (
+                ('Bash', {'command': '.claude/bin/plan scout status'}),
+                ('Bash', {'command': '.claude/bin/plan scout run locate symbol=x --purpose "find x"',
+                          'run_in_background': True}),
+                ('PowerShell', {'command': r'.claude\bin\plan.cmd scout run trace from=a to=b --purpose p'}),
+                ('exec_command', {'cmd': '.agents/coldsession/bin/plan scout status'})):
+            self.run_plan('guard', 'write', payload={'tool_name': tool, 'tool_input': data})
+
     def test_grep_is_bounded_but_filename_discovery_is_not_a_content_read(self):
         self.edit('files: [src/a.py]}', 'files: [src/a.py], reads: [src/b.py]}')
         self.approve()

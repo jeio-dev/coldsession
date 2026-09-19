@@ -36,6 +36,8 @@ exactly once when the revision is complete. Remove `active:` in the same edit.
 Discover facts before asking me for them. For an existing codebase, inspect
 only repository guidance, architecture notes, README, and dependency manifests
 needed to establish current constraints. Do not infer product intent from code.
+Scout (experimental): when orientation would need more than about 5 files, run
+`.claude/bin/plan scout status` first, and only if it exits 0, follow what it prints.
 
 ## Questioning
 

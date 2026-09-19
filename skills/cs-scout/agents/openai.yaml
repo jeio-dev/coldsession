@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coldsession Scout"
+  short_description: "Delegate read-only exploration to the configured scout"
+  default_prompt: "Use $cs-scout to locate where a symbol is defined."
