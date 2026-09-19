@@ -41,6 +41,8 @@ Do not open, search, quote, or otherwise read `OBJECTIVE.md`, even on
 A one-line phase is an intention, not a specification. Ask all material
 questions before writing, as one numbered round: every question asked together,
 each with its recommended answer, then stop and wait. Find discoverable facts with bounded read-only search. Use one agent by default.
+Scout (experimental): when orientation would need more than about 5 files, run
+`.claude/bin/plan scout status` first, and only if it exits 0, follow what it prints.
 
 Normally one round, at most two. Phase scope is not product scope and Plan is
 not a second Define. Needing a third round means the phase is too large; split

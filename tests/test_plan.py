@@ -1163,6 +1163,9 @@ class PlanRuntimeTest(unittest.TestCase):
             "cs-cold": 0,
             # Dispatches builds and judges nothing, so it sits with cs-build.
             "cs-fanout": 0,
+            # Read-only orientation, allowed from every stage, the judging
+            # ones included; its reports are never review evidence (E36).
+            "cs-scout": 0,
             "cs-review": 2, "cs-approve": 2, "cs-close": 2, "cs-recheck": 2,
         }
         shipped = sorted(path.stem for path in (ROOT / "commands").glob("cs-*.md"))
@@ -1178,6 +1181,21 @@ class PlanRuntimeTest(unittest.TestCase):
             actual = self.run_guard("stage", f"/{name}", "--session", "S")
             self.assertEqual(actual.returncode, code,
                              f"/{name} expected {code}, got {actual.returncode}")
+
+    def test_scout_runs_from_every_stage_and_authors_nothing(self):
+        """Scout is orientation, so the gate lets it into the authoring and
+        the judging sessions alike, and a session that only scouted is still
+        cold enough to judge."""
+        self.write_phase()
+        for opener in ("/cs-plan", "/cs-review", "/cs-build T1"):
+            session = opener.strip("/").split()[0]
+            self.assertEqual(self.run_guard("stage", opener, "--session", session).returncode, 0)
+            for spelling in ("/cs-scout locate symbol=x", "$cs-scout"):
+                self.assertEqual(
+                    self.run_guard("stage", spelling, "--session", session).returncode, 0,
+                    f"{spelling} after {opener}")
+        self.assertEqual(self.run_guard("stage", "/cs-scout", "--session", "fresh").returncode, 0)
+        self.assertEqual(self.run_guard("stage", "/cs-review", "--session", "fresh").returncode, 0)
 
     def test_grant_prompt_approves_a_ready_revision(self):
         self.write_phase(reviewed=1, ready=1)

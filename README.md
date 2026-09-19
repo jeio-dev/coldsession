@@ -99,6 +99,10 @@ acceptance criteria, and references. They do not create phase tasks or grant
 approval. Incorporate an issue through new phase planning or explicit replan
 when ready.
 
+`cs-scout <kind> <target>` is an optional, experimental helper that can run
+from any stage. It delegates read-only exploration to an external agent CLI,
+once a human has opted the project in. See [Scout](#scout-experimental).
+
 `cs-plan --issue <number>` plans one open issue from the current GitHub
 repository into exactly one normal phase. It first runs the read-only
 `plan issue <number>`, which refuses before any workflow document changes when
@@ -336,8 +340,8 @@ The phase index remains on the closed phase until planning creates the next one.
 
 Scout lets an external agent CLI do read-only exploration, so the host model
 does not spend its own quota on it. This release adds the contract, its
-deterministic validator, opt-in setup, and `plan scout run` for the `agy`
-provider. `/cs-scout` and host guidance come in a later release.
+deterministic validator, opt-in setup, `plan scout run` for the `agy`
+provider, and the `/cs-scout` command (Codex: `$cs-scout`) with host guidance.
 
 ### Setup and data sharing
 
@@ -436,9 +440,12 @@ before returning it.
 
 ```text
 plan scout run --request REQUEST.json [--json]
+plan scout run KIND NAME=VALUE... --purpose TEXT [--include PATH]... [--exclude PATH]... [--known TEXT]... [--json]
 ```
 
-`run` answers one request made with `plan scout request`. It refuses, with
+`run` answers one request, either made with `plan scout request` or given
+inline in the same form. The inline form writes no request file, so it
+leaves the tree clean and the cache usable. It refuses, with
 the command that fixes it, when scout is not set up or is disabled. It
 returns a cached report first. Otherwise it calls the provider once, retries
 once only when the report's shape is invalid, and validates the result.
@@ -451,6 +458,40 @@ scout unavailable (<reason>); explore natively
 
 The exit status is 0 for a report and 1 for the fallback line. A report
 that fails validation is not retried.
+
+### Using scout from Claude Code and Codex
+
+```text
+plan scout status [--json]
+/cs-scout locate symbol=refresh_token      (Codex: $cs-scout ...)
+```
+
+`status` exits 0 only when a run can reach its provider: scout is set up,
+enabled, and its CLI is on PATH. It then names the installed `cs-scout.md`
+for the host to follow. Otherwise it prints one line,
+`scout off (<reason>); explore natively`, and exits 1. It never calls the
+provider.
+
+`/cs-define`, `/cs-plan`, and `/cs-issue` carry one conditional line: when
+orientation would need more than about 5 files, the host runs `status`
+first, and scouts only if it exits 0. With scout off, that is the only
+change: one local call, made only before broad exploration. Groundwork,
+Revise, Build, and the judging stages do not prompt for scout. `/cs-scout`
+can still be invoked from any stage, and the stage gate lets it through. It
+counts as neither authoring nor judging. During an active Build claim,
+reports can cite only files in the task's read set.
+
+`/cs-scout` turns a kind and its parameters into an inline `run`. Claude
+Code runs it in the background and keeps working; Codex runs it in the
+foreground. The runtime timeout applies either way. The host treats verified
+locations as fact and the answer as working assumptions. It reads each
+`read next` range itself before editing, and follows up on each `unknown`
+natively or with one narrower request. On the fallback line it explores
+natively. The command never runs `setup`, because enabling scout accepts
+the data-sharing disclosure, which only a human may do.
+
+The prompt wording has not been checked with a live behavioral eval, and no
+token saving is claimed; #22 measures that.
 
 **What `agy` does and does not block.** Checked with `agy` 1.2.6 on Windows
 (2026-09-18):

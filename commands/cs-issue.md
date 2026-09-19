@@ -25,6 +25,8 @@ rule or source conflicts with the request, ask only the blocking questions
 before publishing, as one numbered round: every question asked together, each
 with its recommended answer, then stop and wait. Do not invent missing
 behavior or file paths.
+Scout (experimental): when orientation would need more than about 5 files, run
+`.claude/bin/plan scout status` first, and only if it exits 0, follow what it prints.
 
 Check for a substantially duplicate open issue with
 `gh issue list --repo <owner/repo> --state open --search <keywords> --json number,title,url,body`

@@ -65,6 +65,25 @@ that against the supported format rather than the product release.
   is killed, including on Windows. Provider output is bounded, never stored,
   and credential-filtered wherever it is shown. `plan doctor` also counts
   retries, timeouts, and working-tree changes, and lists the `agy` gap.
+- **Experimental:** add `/cs-scout` and its Codex adapter `$cs-scout` (#21).
+  It turns a `locate`, `trace`, or `inventory` request into one scout run
+  and tells the host how to use the report. Verified locations are fact, and
+  the answer is a working assumption. The host reads `read next` ranges
+  itself before editing and follows up on unknowns. A report is never
+  evidence. Claude Code runs the request in the background; Codex runs it in
+  the foreground. The host never runs `setup` itself.
+- Add `plan scout status`. It exits 0 only when scout is set up, enabled, and
+  its CLI is on PATH, and then names the installed `cs-scout.md`. Otherwise
+  it prints one `scout off (<reason>); explore natively` line.
+- `plan scout run` also takes a request inline
+  (`KIND NAME=VALUE... --purpose TEXT`), so hosts write no request file into
+  the tree.
+- `/cs-define`, `/cs-plan`, and `/cs-issue` gain one conditional line: before
+  orientation that would need more than about 5 files, check `plan scout
+  status` and scout only if it exits 0. With scout off, nothing else changes.
+  The stage gate allows `/cs-scout` from every stage and records it as
+  neither authoring nor judging. The prompt wording has no live eval yet, and
+  no token saving is claimed (#22).
 
 ## [v3.4.0]
 

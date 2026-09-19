@@ -31,7 +31,9 @@ Stdlib only, no install step.
   plan guard KIND [target]        shared hook checks; quiet for unrelated projects
   plan issue NUMBER               read-only GitHub issue intake for /cs-plan --issue
   plan scout template|request|validate|cached   experimental scout report contract
-  plan scout run --request REQUEST.json         run one request through the provider (experimental)
+  plan scout run --request REQUEST.json | KIND NAME=VALUE... --purpose TEXT
+                                  run one request through the provider (experimental)
+  plan scout status [--json]      exit 0 only when a scout run can reach its provider
   plan scout setup|model|exclude|disable        opt-in scout configuration (experimental)
   plan version                    print the coldsession release version
 """
@@ -4293,6 +4295,45 @@ def scout_doctor():
             'counters': stats}
 
 
+# The host-facing instructions for a run, beside this runtime in both installs:
+# .claude/commands/ and .agents/coldsession/commands/ sit next to bin/.
+SCOUT_GUIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'commands', 'cs-scout.md')
+
+
+def scout_status(as_json):
+    """Whether a host should try scout now: exit 0 only when a run could reach the provider.
+
+    Workflow commands ask this before broad exploration, so with scout off it
+    costs one local call and one line, and nothing else changes.
+    """
+    info = scout_doctor()
+    if info.get('error'):
+        reason = info['error']
+    elif 'provider' not in info:
+        reason = 'not set up'
+    elif not info['enabled']:
+        reason = 'disabled'
+    elif not info['cli_detected']:
+        reason = f"{info['provider']} is not on PATH"
+    else:
+        reason = None
+    guide = os.path.relpath(SCOUT_GUIDE, ROOT).replace(os.sep, '/')
+    if guide.startswith('..') or os.path.isabs(guide):
+        guide = SCOUT_GUIDE
+    if as_json:
+        print(json.dumps({'experimental': True, 'available': reason is None, 'reason': reason,
+                          'provider': info.get('provider'), 'model': info.get('model'),
+                          'timeout_seconds': info.get('timeout_seconds'),
+                          'guide': guide if reason is None else None}, indent=2))
+    elif reason:
+        print(f'scout off ({reason}); explore natively')
+    else:
+        print(f"scout on (experimental): {info['provider']}, model {info['model']}, "
+              f"timeout {info['timeout_seconds']}s")
+        print(f'before exploring, read {guide} and follow its "Run a request" and "Use the report" sections')
+    return 1 if reason else 0
+
+
 # Provider run. agy (verified on Windows, 1.2.6) has no read-only mode: with a
 # workspace set, print mode reads and writes files there without prompting and
 # soft-denies shell commands; --mode plan approves its own plan and then
@@ -4592,15 +4633,20 @@ def cmd_scout(_phase, args):
     usage = ('usage: plan scout template KIND | request KIND NAME=VALUE... --purpose TEXT '
              '[--include PATH]... [--exclude PATH]... [--known TEXT]... | '
              'validate REPORT.json --request REQUEST.json [--json] | cached --request REQUEST.json [--json] | '
-             'run --request REQUEST.json [--json] | '
+             'run --request REQUEST.json [--json] | run KIND NAME=VALUE... --purpose TEXT [--include PATH]... '
+             '[--exclude PATH]... [--known TEXT]... [--json] | status [--json] | '
              'setup [--provider agy] [--model NAME] [--timeout SECONDS] [--exclude PATH]... '
              '[--accept-data-sharing] [--json] | model NAME|--default | exclude add|remove PATH... | disable')
-    if not args or args[0] not in ('template', 'request', 'validate', 'cached', 'run', 'setup', 'model', 'exclude',
-                                   'disable'):
+    if not args or args[0] not in ('template', 'request', 'validate', 'cached', 'run', 'status', 'setup', 'model',
+                                   'exclude', 'disable'):
         die(usage)
     action, rest = args[0], list(args[1:])
     as_json = '--json' in rest
     rest = [value for value in rest if value != '--json']
+    if action == 'status':
+        if rest:
+            die(usage)
+        return scout_status(as_json)
     if action == 'setup':
         return scout_setup(rest, as_json)
     if action in ('model', 'exclude', 'disable'):
@@ -4623,7 +4669,9 @@ def cmd_scout(_phase, args):
         else:
             positional.append(rest[index])
             index += 1
-    if action == 'request':
+    # A run may carry its request inline, so a host needs no request file:
+    # one written into the tree would make it dirty and defeat the cache.
+    if action == 'request' or (action == 'run' and not options['--request']):
         if not positional or len(options['--purpose']) != 1 or options['--request']:
             die(usage)
         params = {}
@@ -4637,6 +4685,8 @@ def cmd_scout(_phase, args):
                                     options['--known'], options['--purpose'][0])
         except ValueError as exc:
             die(f'invalid scout request: {exc}')
+        if action == 'run':
+            return scout_run(request, as_json)
         print(json.dumps(request, indent=2))
         return 0
     if len(options['--request']) != 1 or any(options[key] for key in ('--include', '--exclude', '--known', '--purpose')):
